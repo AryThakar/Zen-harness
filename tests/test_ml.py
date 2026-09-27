@@ -8,7 +8,7 @@ import pytest
 from app.datagen import generate, planted_events
 from app.db.connection import Database
 from app.ingestion.pipeline import ingest_file
-from app.ml import anomalies, forecast, runner, segments
+from app.ml import anomalies, basket, churn, forecast, results, runner, segments
 from app.ml.base import NotEnoughData
 
 from .conftest import TODAY
@@ -140,3 +140,95 @@ def test_runner_records_success_failure_and_skips_duplicates(db):
     assert created and not created_again and again == first  # a double click reuses the running run
     assert runner.mark_interrupted(db) == 1
     assert cur.execute("SELECT status FROM ml_runs WHERE run_id = ?", [first]).fetchone()[0] == "failed"
+
+
+# --- churn -------------------------------------------------------------------------
+
+def test_churn_beats_the_recency_rule_and_explains_scores(cur):
+    result = churn.run(cur, horizon_days=90)
+    m = result.metrics
+    assert m["model"] in ("logistic", "boosting") and m["auc"] > m["baseline_auc"] + 0.03
+    assert m["top20_capture_pct"] > 20  # better than picking customers at random
+    assert m["scored"] == m["high"] + m["medium"] + m["low"] > 100
+
+    scores = result.tables["churn_scores"]
+    assert scores["probability"].between(0, 1).all()
+    assert ((scores["probability"] >= churn.HIGH) == (scores["risk"] == "high")).all()
+    assert scores["value_at_risk"].is_monotonic_decreasing
+    # Only regular, still-active repeat customers are scored.
+    assert (scores["purchases"] >= 2).all() and (scores["recency_days"] <= 90).all()
+    assert (scores["typical_gap_days"] <= 90).all()
+    assert scores["signals"].str.len().gt(0).all()
+    assert f"{m['one_time']:,} one-time buyers" in result.message
+
+
+def test_churn_features_use_only_the_past_and_labels_only_the_future():
+    days = pd.DataFrame({
+        "customer_id": ["A"] * 4 + ["B"] * 3,
+        "day": pd.to_datetime(["2025-01-01", "2025-01-11", "2025-01-21", "2025-02-15",
+                               "2025-01-05", "2025-01-15", "2025-01-25"]),
+        "revenue": [100.0, 100.0, 50.0, 500.0, 10.0, 10.0, -10.0],
+        "items": [1, 1, 1, 3, 1, 1, 0],
+        "returns": [0, 0, 0, 0, 0, 0, 1],
+    })
+    snapshot = pd.Timestamp("2025-01-25")
+    f = churn.features(days, snapshot, horizon=30)
+    a = f.loc["A"]
+    assert (a["recency_days"], a["typical_gap_days"], a["purchases"], a["revenue"]) == (4, 10, 3, 250)  # not 2025-02-15
+    b = f.loc["B"]
+    assert b["recency_days"] == 10 and b["returns"] == 1 and b["purchases"] == 2  # a return day is not a purchase
+    assert churn.left(days, f.index, snapshot, 30).to_dict() == {"A": 0, "B": 1}
+
+
+def test_churn_explains_missing_data(tmp_path):
+    short = Database()
+    path = tmp_path / "short.csv"
+    path.write_text("Date,Item,Qty,Price,Customer\n2025-01-01,Pen,1,10,A\n2025-03-01,Ink,1,5,A\n")
+    ingest_file(short, path, today=TODAY)
+    with pytest.raises(NotEnoughData, match="needs at least 270 days"):
+        churn.run(short.cursor(), horizon_days=90)
+    no_customers = Database()
+    path.write_text("Date,Item,Qty,Price\n2025-01-01,Pen,1,10\n")
+    ingest_file(no_customers, path, today=TODAY)
+    with pytest.raises(NotEnoughData, match="needs a customer_id"):
+        churn.run(no_customers.cursor())
+
+
+# --- basket ------------------------------------------------------------------------
+
+def test_basket_finds_the_planted_pairs(cur):
+    result = basket.run(cur)
+    rules = result.tables["basket_rules"]
+    products = rules[rules["level"] == "product"].set_index(["antecedent", "consequent"])
+    phone_case = products.loc[("Smartphone X1", "Phone Case")]
+    assert 40 < phone_case["confidence_pct"] < 60 and phone_case["lift"] > 2  # planted: 55% add a case
+    assert ("Laptop 14 inch", "Wireless Mouse") in products.index
+    assert ("Tablet 10 inch", "Keyboard") in products.index
+    assert (rules["lift"] >= basket.MIN_LIFT).all()
+    assert not any("Air Fryer" in pair for pair in products.index)  # no planted pattern, no rule
+    assert "product pairs are bought together" in result.message
+
+
+def test_basket_needs_real_order_numbers(tmp_path):
+    small = Database()
+    path = tmp_path / "lines.csv"
+    path.write_text("Date,Item,Qty,Price\n2025-01-01,Pen,1,10\n2025-01-01,Ink,1,5\n")
+    ingest_file(small, path, today=TODAY)
+    with pytest.raises(NotEnoughData, match="real order numbers"):
+        basket.run(small.cursor())
+
+
+def test_churn_and_basket_results_are_read_back(db):
+    cur = db.cursor()
+    churn_run = results.get_run(cur, runner.run(db, "churn", {"horizon_days": 90}))
+    view = results.churn_view(cur, churn_run, limit=5)
+    assert [b["risk"] for b in view["bands"]] == ["high", "medium", "low"][: len(view["bands"])]
+    assert len(view["customers"]) == 5
+    high = results.churn_customers(cur, churn_run, "high", 500)
+    assert high["total"] == churn_run["metrics"]["high"] and all(r["risk"] == "high" for r in high["rows"])
+
+    basket_run = results.get_run(cur, runner.run(db, "basket"))
+    companions = results.basket_view(cur, basket_run, item="smartphone x1")["rules"]  # any case
+    assert companions[0]["consequent"] == "Phone Case"
+    assert companions == sorted(companions, key=lambda r: -r["confidence_pct"])
+    assert cur.execute("SELECT count(*) FROM latest_basket_rules").fetchone()[0] > 0

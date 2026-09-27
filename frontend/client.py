@@ -179,3 +179,45 @@ def chat(message: str, thread_id: str | None = None) -> Iterator[tuple[str, dict
                     event, data = None, []
     except requests.RequestException as exc:
         raise ApiError("Lost the connection to the API while the answer was being written.") from exc
+
+
+def churn_customers(risk: str | None = None, limit: int = 100) -> dict:
+    return _call("GET", "/ml/churn/customers", params=_clean({"risk": risk, "limit": limit}))
+
+
+def basket(level: str = "product", item: str | None = None, limit: int = 30) -> dict | None:
+    """Bought-together pairs from the latest run, or None if there is none yet."""
+    try:
+        return _call("GET", "/ml/basket", params=_clean({"level": level, "item": item, "limit": limit}))
+    except ApiError as exc:
+        if exc.status == 404:
+            return None
+        raise
+
+
+def documents() -> dict:
+    return _call("GET", "/documents")
+
+
+def add_document(filename: str, data: bytes) -> dict:
+    return _call("POST", "/documents", files={"file": (filename, data)})
+
+
+def add_sample_documents() -> dict:
+    return _call("POST", "/documents/samples")
+
+
+def delete_document(doc_id: int) -> None:
+    _call("DELETE", f"/documents/{doc_id}")
+
+
+def document_passages(doc_id: int, limit: int = 5) -> list[dict]:
+    return _call("GET", f"/documents/{doc_id}/passages", params={"limit": limit})
+
+
+def search_documents(query: str, k: int = 5) -> dict:
+    return _call("GET", "/documents/search", params={"q": query, "k": k})
+
+
+def reindex_documents() -> dict:
+    return _call("POST", "/documents/reindex")

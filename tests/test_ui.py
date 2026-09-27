@@ -19,6 +19,7 @@ from app.agent.providers import ModelTurn, ScriptedProvider  # noqa: E402
 from app.agent.providers.scripted import call  # noqa: E402
 from app.db.connection import Database  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.rag.embed import HashEmbedder  # noqa: E402
 
 APP = str(Path(__file__).resolve().parent.parent / "frontend" / "app.py")
 TIMEOUT = 120
@@ -31,7 +32,7 @@ def api(tmp_path_factory):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     app = create_app(Database(), tmp_path_factory.mktemp("staging"), provider=PROVIDER,
-                     checkpointer=InMemorySaver())
+                     checkpointer=InMemorySaver(), embedder=HashEmbedder())
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -84,6 +85,26 @@ def test_pages_render_empty_then_with_demo_data(api):
     run(at)
     next(b for b in at.button if b.label == "Check for unusual days").click()
     run(at)
+    next(b for b in at.button if b.label == "Predict churn").click()
+    run(at)
+    assert {"Likely to stop buying", "Ranking quality (AUC)", "Found in top 20%"} <= {m.label for m in at.metric}
+    next(b for b in at.button if b.label == "Find products bought together").click()
+    run(at)
+    assert at.selectbox(key="basket_item").value  # a product with companions is preselected
+    at.selectbox(key="basket_item").set_value("Smartphone X1")
+    run(at)
+    assert any(h.value == "Bought with Smartphone X1" for h in at.subheader)
+    assert not at.error
+
+    at.sidebar.radio(key="page").set_value("Documents")
+    run(at)
+    assert any("No documents yet" in i.value for i in at.info)
+    next(b for b in at.button if b.label == "Load sample documents").click()
+    run(at)
+    assert len(at.expander) == 4
+    at.text_input(key="docs_query").set_value("UPI refund")
+    run(at)
+    assert any('returns_and_warranty_policy.md - "Refunds"' in m.value for m in at.markdown)
     assert not at.error
 
     at.sidebar.radio(key="page").set_value("Upload data")
@@ -108,25 +129,30 @@ def test_ask_ai_streams_steps_charts_and_remembers(api):
             call("run_sql", sql="SELECT product, sum(revenue) AS revenue FROM sales GROUP BY 1 ORDER BY 2 DESC LIMIT 5"),
             call("make_chart", chart_type="bar", unit="money", title="Top products", x="product", y="revenue",
                  sql="SELECT product, sum(revenue) AS revenue FROM sales GROUP BY 1 ORDER BY 2 DESC LIMIT 5"),
+            call("search_docs", query="return opened phone"),
+            call("churn_risk", horizon_days=90, limit=5),
         ]),
         ModelTurn(text="Your top product earns the most; see the chart."),
     ])
-    next(b for b in at.button if b.label == "Which 5 products bring in the most profit?").click()
+    next(b for b in at.button if b.label == "Can customers return an opened phone?").click()
     run(at)
     assert not at.error
     texts = [m.value for m in at.markdown]
     assert "**Top products**" in texts
+    assert "**Customers most likely to stop buying (next 90 days)**" in texts  # a titled table, next to the answer
     assert any("Your top product earns the most" in t for t in texts)
 
     run(at)  # a rerun redraws the conversation from the saved thread
     assert [m.name for m in at.chat_message] == ["user", "assistant"]
-    assert any("Queried the data" in m.value for m in at.markdown)
+    texts = [m.value for m in at.markdown]
+    assert any("Queried the data" in t for t in texts) and any("Searched your documents" in t for t in texts)
+    assert any("*returns_and_warranty_policy.md" in t for t in texts)  # the passage it found, with its source
 
     PROVIDER.turns.append(ModelTurn(text="It costs $5 to ship."))
     at.chat_input(key="chat_input").set_value("And shipping?")
     run(at)
     assert any("It costs \\$5 to ship." in m.value for m in at.markdown)  # $ escaped, no LaTeX
-    assert len(PROVIDER.requests[-1]["messages"]) == 6  # the first exchange was sent along
+    assert len(PROVIDER.requests[-1]["messages"]) == 8  # the first exchange (question, 4 tool calls, answer) was sent along
 
     next(b for b in at.button if b.label == "New conversation").click()
     run(at)

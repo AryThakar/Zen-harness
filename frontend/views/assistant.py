@@ -12,10 +12,11 @@ import client
 
 SUGGESTIONS = [
     "How did revenue change over the last 3 months?",
-    "Which 5 products bring in the most profit?",
-    "Forecast revenue for the next 30 days",
     "Which customers are we about to lose?",
-    "Were there any unusual days recently?",
+    "What should we sell alongside smartphones?",
+    "Forecast revenue for the next 30 days",
+    "Why was our worst day so slow?",
+    "Can customers return an opened phone?",
 ]
 
 STEP_LABELS = {
@@ -28,6 +29,9 @@ STEP_LABELS = {
     "forecast": "Ran the forecast model",
     "customer_segments": "Grouped customers by buying behaviour",
     "unusual_days": "Looked for unusual days",
+    "churn_risk": "Predicted which customers may stop buying",
+    "bought_together": "Checked what is bought together",
+    "search_docs": "Searched your documents",
 }
 
 PLOT_CONFIG = {"displayModeBar": False}
@@ -174,23 +178,35 @@ def _step(box, step: dict, key: str) -> None:
     artifact = step.get("artifact")
     if step.get("is_error"):
         box.caption(f"Didn't work, so the assistant adjusted: {step.get('summary', '')}")
-    elif artifact and artifact["kind"] == "table":
+    elif artifact and artifact["kind"] == "sources":
+        for n, item in enumerate(artifact["items"], start=1):
+            box.markdown(f"{n}. *{_md(item['source'])}*  \n{_md(_excerpt(item['text']))}")
+    elif artifact and artifact["kind"] == "table" and "sql" in artifact:  # query results stay in the steps box
         box.dataframe(pd.DataFrame(artifact["rows"], columns=artifact["columns"]), hide_index=True,
                       width="stretch", height=min(35 * (len(artifact["rows"]) + 1) + 3, 300),
                       key=f"chat_table_{key}_{step['id']}")
         if artifact["total_rows"] > len(artifact["rows"]):
             box.caption(f"First {len(artifact['rows'])} of {artifact['total_rows']:,} rows.")
-    elif step.get("summary") and step["name"] not in ("make_chart",):
+    elif step.get("summary") and step["name"] not in ("make_chart", "churn_risk", "bought_together"):
         box.caption(_md(step["summary"]).replace("\n", "  \n"))
+    elif step.get("summary"):
+        box.caption(_md(step["summary"].split("\n")[0]))  # the model's verdict; the details are drawn below
 
 
 def _artifact(step: dict, key: str) -> None:
-    """Charts from a step, drawn next to the answer (tables stay in the steps box)."""
+    """Charts and titled tables from a step, drawn next to the answer (query results
+    and document passages stay in the steps box)."""
     a = step.get("artifact")
-    if not a or step.get("is_error") or a["kind"] == "table":
+    if not a or step.get("is_error") or a["kind"] == "sources" or (a["kind"] == "table" and "sql" in a):
         return
     element_key = f"chat_chart_{key}_{step['id']}"
-    st.markdown(f"**{a['title']}**")
+    st.markdown(f"**{_md(a['title'])}**")
+    if a["kind"] == "table":
+        st.dataframe(pd.DataFrame(a["rows"], columns=a["columns"]), hide_index=True, width="stretch",
+                     height=min(35 * (len(a["rows"]) + 1) + 3, 400), key=element_key)
+        if a["total_rows"] > len(a["rows"]):
+            st.caption(f"Top {len(a['rows'])} of {a['total_rows']:,}.")
+        return
     if a["kind"] == "chart":
         fmt = charts.formatter(a.get("unit", "number"))
         if a["chart_type"] == "line":
@@ -205,6 +221,10 @@ def _artifact(step: dict, key: str) -> None:
     else:
         return
     st.plotly_chart(fig, width="stretch", config=PLOT_CONFIG, key=element_key)
+
+
+def _excerpt(text: str, limit: int = 300) -> str:
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + " …"
 
 
 def _md(text: str) -> str:

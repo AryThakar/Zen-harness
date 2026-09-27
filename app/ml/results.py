@@ -137,6 +137,58 @@ def anomalies_view(cur: duckdb.DuckDBPyConnection, run: dict, with_series: bool 
     return view
 
 
+CHURN_KEYS = ("customer_id", "probability", "risk", "recency_days", "typical_gap_days", "purchases",
+              "recent_revenue", "revenue", "value_at_risk", "signals")
+
+
+def churn_view(cur: duckdb.DuckDBPyConnection, run: dict, limit: int = 20) -> dict:
+    """Customers and value at risk per band, and the customers with most at stake."""
+    bands = cur.execute(
+        """
+        SELECT risk, count(*), sum(value_at_risk), avg(probability) FROM churn_scores WHERE run_id = ?
+        GROUP BY risk ORDER BY CASE risk WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
+        """,
+        [run["run_id"]],
+    ).fetchall()
+    return {"run": run,
+            "bands": [dict(zip(("risk", "customers", "value_at_risk", "avg_probability"), b)) for b in bands],
+            "customers": churn_customers(cur, run, None, limit)["rows"]}
+
+
+def churn_customers(cur: duckdb.DuckDBPyConnection, run: dict, risk: str | None, limit: int,
+                    offset: int = 0) -> dict:
+    where, params = "WHERE run_id = ?", [run["run_id"]]
+    if risk:
+        where += " AND risk = ?"
+        params.append(risk)
+    total = cur.execute(f"SELECT count(*) FROM churn_scores {where}", params).fetchone()[0]
+    rows = cur.execute(
+        f"SELECT {', '.join(CHURN_KEYS)} FROM churn_scores {where} "
+        "ORDER BY value_at_risk DESC, customer_id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+    return {"total": total, "rows": [dict(zip(CHURN_KEYS, r)) for r in rows]}
+
+
+BASKET_KEYS = ("level", "antecedent", "consequent", "orders_together", "antecedent_orders", "expected_together",
+               "support_pct", "confidence_pct", "lift")
+
+
+def basket_view(cur: duckdb.DuckDBPyConnection, run: dict, level: str = "product", item: str | None = None,
+                limit: int = 30) -> dict:
+    """Pairs bought together, strongest first. With ``item``: what goes with it
+    (matched case-insensitively), most common companion first."""
+    where, params, order = "WHERE run_id = ? AND level = ?", [run["run_id"], level], "lift DESC, orders_together DESC"
+    if item:
+        where += " AND lower(antecedent) = lower(?)"
+        params.append(item)
+        order = "confidence_pct DESC, lift DESC"
+    rows = cur.execute(
+        f"SELECT {', '.join(BASKET_KEYS)} FROM basket_rules {where} ORDER BY {order} LIMIT ?", [*params, limit]
+    ).fetchall()
+    return {"run": run, "item": item, "rules": [dict(zip(BASKET_KEYS, r)) for r in rows]}
+
+
 def _run(row: tuple) -> dict:
     run = dict(zip(RUN_COLUMNS, row))
     run["params"] = json.loads(run["params"])

@@ -9,5 +9,6 @@ build/
 *.duckdb
 *.duckdb.wal
 data/chat.sqlite*
+data/models/
 data/generated/
 data/staging/

@@ -340,3 +340,121 @@ class AnomaliesOut(BaseModel):
     days: list[AnomalyDayOut]
     lines: list[AnomalyLineOut]
     series: list[DailyPointOut]
+
+
+class ChurnIn(BaseModel):
+    horizon_days: Literal[30, 60, 90] = Field(90, description="predict who buys nothing in this many days")
+
+
+class ChurnBandOut(BaseModel):
+    risk: Literal["high", "medium", "low"]
+    customers: int
+    value_at_risk: float
+    avg_probability: float
+
+
+class ChurnCustomerOut(BaseModel):
+    customer_id: str
+    probability: float
+    risk: Literal["high", "medium", "low"]
+    recency_days: int
+    typical_gap_days: float
+    purchases: int
+    recent_revenue: float
+    revenue: float
+    value_at_risk: float
+    signals: str
+
+
+class ChurnOut(BaseModel):
+    run: RunOut
+    bands: list[ChurnBandOut]
+    customers: list[ChurnCustomerOut]
+
+
+class ChurnCustomersPage(BaseModel):
+    total: int
+    rows: list[ChurnCustomerOut]
+
+
+class BasketRuleOut(BaseModel):
+    level: Literal["product", "category"]
+    antecedent: str
+    consequent: str
+    orders_together: int
+    antecedent_orders: int
+    expected_together: float
+    support_pct: float
+    confidence_pct: float
+    lift: float
+
+
+class BasketOut(BaseModel):
+    run: RunOut
+    item: str | None
+    rules: list[BasketRuleOut]
+
+
+# --- documents -----------------------------------------------------------------
+
+class DocumentOut(BaseModel):
+    doc_id: int
+    filename: str
+    kind: Literal["pdf", "docx", "txt", "md"]
+    title: str | None
+    pages: int | None
+    words: int
+    chunks: int
+    uploaded_at: datetime
+
+
+class DocumentAddedOut(DocumentOut):
+    replaced: DocumentOut | None = Field(None, description="an earlier upload with the same filename, now replaced")
+    semantic: bool = Field(description="false if the passages couldn't be embedded; search uses keywords until reindexed")
+
+
+class LibraryStatusOut(BaseModel):
+    documents: int
+    passages: int
+    embedded: int = Field(description="passages with a vector from the current embedding model")
+    embed_model: str
+    semantic_error: str | None
+
+
+class LibraryOut(BaseModel):
+    status: LibraryStatusOut
+    documents: list[DocumentOut]
+
+
+class PassageOut(BaseModel):
+    chunk_id: int
+    ord: int
+    page: int | None
+    section: str | None
+    text: str
+
+
+class SearchHitOut(BaseModel):
+    chunk_id: int
+    doc_id: int
+    filename: str
+    title: str
+    page: int | None
+    section: str | None
+    text: str
+    source: str
+    score: float
+    keyword: float | None = Field(description="BM25 score, if the passage shares words with the query")
+    similarity: float | None = Field(description="cosine similarity of meaning, if embedded")
+
+
+class SearchOut(BaseModel):
+    query: str
+    mode: Literal["hybrid", "keyword"]
+    note: str | None
+    hits: list[SearchHitOut]
+
+
+class SamplesOut(BaseModel):
+    added: list[DocumentAddedOut]
+    skipped: list[str] = Field(description="sample files already in the library")

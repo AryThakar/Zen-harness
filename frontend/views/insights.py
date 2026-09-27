@@ -19,12 +19,16 @@ HORIZONS = {"day": [14, 30, 60, 90], "week": [8, 12, 26]}
 def render() -> None:
     st.header("Insights")
     st.caption("Machine-learning models run on your own sales. Each result says how far it can be trusted.")
-    forecast_tab, segments_tab, anomalies_tab = st.tabs(["Forecast", "Customer segments", "Unusual days"])
-    with forecast_tab:
+    tabs = st.tabs(["Forecast", "Customer segments", "Churn risk", "Bought together", "Unusual days"])
+    with tabs[0]:
         _forecast()
-    with segments_tab:
+    with tabs[1]:
         _segments()
-    with anomalies_tab:
+    with tabs[2]:
+        _churn()
+    with tabs[3]:
+        _basket()
+    with tabs[4]:
         _anomalies()
 
 
@@ -162,6 +166,113 @@ def _segments() -> None:
         "Spent": charts.money(r["revenue"], compact=False),
     } for r in page["rows"]])
     st.dataframe(rows, hide_index=True, width="stretch")
+
+
+# --- churn ---------------------------------------------------------------------
+
+RISK_LABEL = {"high": "High (over 50%)", "medium": "Medium (25-50%)", "low": "Low (under 25%)"}
+
+
+def _churn() -> None:
+    st.caption("Which regular customers will probably buy nothing in the coming weeks - learned from who "
+               "stopped buying in your own history, and tested on the most recent period.")
+    cols = st.columns([3, 2, 4], vertical_alignment="bottom")
+    horizon = cols[0].segmented_control("Look ahead", [30, 60, 90], default=90, key="churn_horizon",
+                                        format_func=lambda d: f"{d} days") or 90
+    if cols[1].button("Predict churn", type="primary", key="churn_run"):
+        _run("churn", {"horizon_days": horizon})
+    result = _load("churn")
+    if result is None:
+        st.info("No prediction yet. Press **Predict churn** (needs customer ids and at least three times the "
+                "look-ahead period of history).")
+        return
+    run, m = result["run"], result["run"]["metrics"]
+    st.subheader(f"Next {m['horizon_days']} days")
+    tiles = st.columns(4)
+    tiles[0].metric("Likely to stop buying", charts.count(m["high"]), border=True,
+                    help="Regular customers with a better than even chance of buying nothing in the period.")
+    tiles[1].metric("Spend at risk", charts.money(m["value_at_risk"]), border=True,
+                    help="What these customers would normally spend in the period, weighted by their chance of "
+                         "not buying.")
+    tiles[2].metric("Ranking quality (AUC)", f"{m['auc']:.2f}", border=True,
+                    help="How well the model ranked customers who then stopped buying above those who didn't, on "
+                         f"the most recent {m['horizon_days']} days: 0.5 is guessing, 1.0 perfect. Only knowing "
+                         f"days since last purchase scored {m['baseline_auc']:.2f}.")
+    tiles[3].metric("Found in top 20%", charts.pct(m["top20_capture_pct"]), border=True,
+                    help="Share of the customers who actually stopped buying that were in the model's top 20% "
+                         f"(random picking: 20%; days since last purchase: {m['baseline_top20_capture_pct']:.0f}%).")
+    st.caption(f"{run['message']} ({_when(run)})")
+
+    left, right = st.columns([1, 2])
+    with left:
+        items = [{"label": RISK_LABEL[b["risk"]], "customers": b["customers"]} for b in result["bands"]]
+        st.plotly_chart(charts.bar_figure(items, value_key="customers", sort=False, fmt=charts.count),
+                        width="stretch", config={"displayModeBar": False}, key="churn_bands")
+    with right:
+        risk = st.selectbox("Customers", ["high", "medium", "low"], format_func=lambda r: f"{RISK_LABEL[r]} risk",
+                            key="churn_risk")
+        try:
+            page = client.churn_customers(risk, limit=200)
+        except client.ApiError as exc:
+            st.error(str(exc))
+            return
+        st.caption(f"{min(len(page['rows']), page['total']):,} of {page['total']:,}, most at stake first")
+    if page["rows"]:
+        table = pd.DataFrame([{
+            "Customer": r["customer_id"], "Chance of not buying": r["probability"],
+            "Days since last purchase": r["recency_days"], "Usually every (days)": round(r["typical_gap_days"]),
+            "Usual spend at risk": charts.money(r["value_at_risk"], compact=False), "Warning signs": r["signals"],
+        } for r in page["rows"]])
+        st.dataframe(table, hide_index=True, width="stretch", column_config={
+            "Customer": st.column_config.TextColumn(width="small"),
+            "Chance of not buying": st.column_config.ProgressColumn(
+                "Chance", format="percent", min_value=0, max_value=1, width="small",
+                help="Chance of buying nothing in the period"),
+            "Days since last purchase": st.column_config.NumberColumn("Days since", width="small",
+                                                                      help="Days since their last purchase"),
+            "Usually every (days)": st.column_config.NumberColumn("Usual gap", width="small",
+                                                                  help="Median days between their purchases"),
+            "Usual spend at risk": st.column_config.TextColumn("Spend at risk", width="small"),
+            "Warning signs": st.column_config.TextColumn(width="large"),
+        })
+
+
+# --- basket --------------------------------------------------------------------
+
+def _basket() -> None:
+    st.caption("Products bought in the same order more often than chance - ideas for bundles, displays and "
+               "\"add to cart\" suggestions. Needs real order numbers.")
+    if st.button("Find products bought together", type="primary", key="basket_run"):
+        _run("basket")
+    try:
+        result = client.basket(limit=200)
+    except client.ApiError as exc:
+        st.error(str(exc))
+        return
+    if result is None:
+        st.info("Not analysed yet. Press **Find products bought together**.")
+        return
+    run, rules = result["run"], result["rules"]
+    st.caption(f"{run['message']} ({_when(run)})")
+    if not rules:
+        return
+    products = sorted({r["antecedent"] for r in rules})
+    chosen = st.selectbox("What goes with", products, key="basket_item",
+                          index=products.index(rules[0]["antecedent"]))
+    companions = sorted((r for r in rules if r["antecedent"] == chosen), key=lambda r: -r["confidence_pct"])
+    st.subheader(f"Bought with {chosen}")
+    items = [{"label": r["consequent"], "share": r["confidence_pct"]} for r in companions]
+    st.plotly_chart(charts.bar_figure(items, value_key="share", sort=False, fmt=charts.pct), width="stretch",
+                    config={"displayModeBar": False}, key="basket_chart")
+    st.caption(f"Share of orders with {chosen} that also include each product. "
+               + "; ".join(f"{r['consequent']}: {r['lift']:.1f}x its usual rate" for r in companions[:3]) + ".")
+    with st.expander("All pairs"):
+        table = pd.DataFrame([{
+            "Customers who buy": r["antecedent"], "Also buy": r["consequent"],
+            "Share of their orders": f"{r['confidence_pct']:.0f}%", "Times the usual rate": round(r["lift"], 1),
+            "Orders together": r["orders_together"],
+        } for r in rules])
+        st.dataframe(table, hide_index=True, width="stretch")
 
 
 # --- anomalies -----------------------------------------------------------------

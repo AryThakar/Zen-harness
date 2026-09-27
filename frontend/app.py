@@ -9,10 +9,10 @@ from __future__ import annotations
 import streamlit as st
 
 import client
-from views import assistant, dashboard, explore, insights, upload
+from views import assistant, dashboard, documents, explore, insights, upload
 
 PAGES = {"Dashboard": dashboard.render, "Insights": insights.render, "Ask AI": assistant.render,
-         "Upload data": upload.render, "Explore data": explore.render}
+         "Upload data": upload.render, "Documents": documents.render, "Explore data": explore.render}
 
 st.set_page_config(page_title="AI Business Analyst", layout="wide")
 

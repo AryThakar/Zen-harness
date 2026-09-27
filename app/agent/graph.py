@@ -24,6 +24,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.config import settings
 from app.db.connection import Database
+from app.rag.library import Library
 
 from .context import schema_card
 from .prompts import system_prompt
@@ -39,8 +40,9 @@ class ChatState(TypedDict):
     rounds: int  # tool rounds used for the current question
 
 
-def build_graph(db: Database, provider: Provider, checkpointer=None, currency: str | None = None):
-    ctx = ToolContext(db=db, currency=currency or settings.currency)
+def build_graph(db: Database, provider: Provider, checkpointer=None, currency: str | None = None,
+                library: Library | None = None):
+    ctx = ToolContext(db=db, currency=currency or settings.currency, library=library)
 
     def agent(state: ChatState) -> dict:
         writer = get_stream_writer()

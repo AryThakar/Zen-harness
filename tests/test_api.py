@@ -9,13 +9,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.agent.providers import ScriptedProvider
 from app.db.connection import Database
 from app.main import create_app
+from app.rag.embed import HashEmbedder
 
 from .conftest import SAMPLES
 
 
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(Database(), tmp_path / "staging", provider=ScriptedProvider([]), checkpointer=InMemorySaver())
+    app = create_app(Database(), tmp_path / "staging", provider=ScriptedProvider([]), checkpointer=InMemorySaver(), embedder=HashEmbedder())
     with TestClient(app) as c:
         yield c
 
@@ -94,7 +95,7 @@ def test_upload_errors(client, tmp_path):
 
 
 def test_too_large_files_are_refused(tmp_path):
-    app = create_app(Database(), tmp_path, provider=ScriptedProvider([]), checkpointer=InMemorySaver())
+    app = create_app(Database(), tmp_path, provider=ScriptedProvider([]), checkpointer=InMemorySaver(), embedder=HashEmbedder())
     with TestClient(app) as c:
         app.state.staging.max_bytes = 10
         r = c.post("/uploads/preview", files={"file": ("big.csv", b"Date,Item\n2025-01-01,Pen\n")})
@@ -269,6 +270,18 @@ def test_ml_runs_and_results(client):
 
     runs = client.get("/ml/runs").json()
     assert [r["task"] for r in runs[:3]] == ["anomalies", "segments", "forecast"]
+
+    client.post("/ml/basket")
+    pairs = client.get("/ml/basket", params={"item": "Laptop 14 inch"}).json()["rules"]
+    assert {r["consequent"] for r in pairs} >= {"Wireless Mouse", "Laptop Bag"}
+
+    churn_run = client.post("/ml/churn", json={"horizon_days": 30}).json()
+    status = client.get(f"/ml/runs/{churn_run['run_id']}").json()
+    assert status["status"] in ("succeeded", "failed")  # 8 months may be too little; either way it says why
+    if status["status"] == "succeeded":
+        churn = client.get("/ml/churn").json()
+        assert churn["customers"] and churn["bands"]
+    assert client.post("/ml/churn", json={"horizon_days": 45}).status_code == 422
 
 
 def test_ml_errors(client):

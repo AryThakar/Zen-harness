@@ -10,7 +10,8 @@ from app.ml import results, runner
 
 from .deps import get_cursor, get_db
 from .schemas import (
-    AnomaliesOut, ForecastIn, ForecastOut, RunOut, SegmentCustomersPage, SegmentsOut,
+    AnomaliesOut, BasketOut, ChurnCustomersPage, ChurnIn, ChurnOut, ForecastIn, ForecastOut, RunOut,
+    SegmentCustomersPage, SegmentsOut,
 )
 
 router = APIRouter(prefix="/ml", tags=["ml"])
@@ -45,9 +46,21 @@ def start_anomalies(background: BackgroundTasks, db: Database = Depends(get_db))
     return _start(db, background, "anomalies", {})
 
 
+@router.post("/churn", response_model=RunOut, status_code=status.HTTP_202_ACCEPTED)
+def start_churn(background: BackgroundTasks, body: ChurnIn | None = None, db: Database = Depends(get_db)) -> RunOut:
+    """Predict which regular customers will buy nothing in the next 30, 60 or 90 days."""
+    return _start(db, background, "churn", (body or ChurnIn()).model_dump())
+
+
+@router.post("/basket", response_model=RunOut, status_code=status.HTTP_202_ACCEPTED)
+def start_basket(background: BackgroundTasks, db: Database = Depends(get_db)) -> RunOut:
+    """Find products (and categories) bought together more often than chance."""
+    return _start(db, background, "basket", {})
+
+
 @router.get("/runs", response_model=list[RunOut])
 def list_runs(
-    task: str | None = Query(None, pattern="^(forecast|segments|anomalies)$"),
+    task: str | None = Query(None, pattern="^(forecast|segments|anomalies|churn|basket)$"),
     limit: int = Query(20, ge=1, le=200),
     cur: duckdb.DuckDBPyConnection = Depends(get_cursor),
 ) -> list[RunOut]:
@@ -97,6 +110,39 @@ def anomalies_result(
 ) -> AnomaliesOut:
     """Unusual days and lines, plus the daily series they were found in."""
     return AnomaliesOut(**results.anomalies_view(cur, _result_run(cur, "anomalies", run_id)))
+
+
+@router.get("/churn", response_model=ChurnOut)
+def churn_result(
+    run_id: int | None = None, cur: duckdb.DuckDBPyConnection = Depends(get_cursor)
+) -> ChurnOut:
+    """Risk bands and the customers with most value at risk."""
+    return ChurnOut(**results.churn_view(cur, _result_run(cur, "churn", run_id)))
+
+
+@router.get("/churn/customers", response_model=ChurnCustomersPage)
+def churn_customers(
+    risk: str | None = Query(None, pattern="^(high|medium|low)$"),
+    run_id: int | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    cur: duckdb.DuckDBPyConnection = Depends(get_cursor),
+) -> ChurnCustomersPage:
+    """Scored customers (optionally one risk band), most value at risk first."""
+    run = _result_run(cur, "churn", run_id)
+    return ChurnCustomersPage(**results.churn_customers(cur, run, risk, limit, offset))
+
+
+@router.get("/basket", response_model=BasketOut)
+def basket_result(
+    level: str = Query("product", pattern="^(product|category)$"),
+    item: str | None = Query(None, max_length=200, description="only what is bought with this product/category"),
+    limit: int = Query(30, ge=1, le=500),
+    run_id: int | None = None,
+    cur: duckdb.DuckDBPyConnection = Depends(get_cursor),
+) -> BasketOut:
+    """Pairs bought together more than chance, strongest first."""
+    return BasketOut(**results.basket_view(cur, _result_run(cur, "basket", run_id), level, item, limit))
 
 
 def _result_run(cur: duckdb.DuckDBPyConnection, task: str, run_id: int | None) -> dict:

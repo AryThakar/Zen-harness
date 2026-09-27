@@ -8,12 +8,17 @@ import duckdb
 from fastapi import Request
 
 from app.db.connection import Database
+from app.rag.library import Library
 
 from .staging import Staging
 
 
 def get_db(request: Request) -> Database:
     return request.app.state.db
+
+
+def get_library(request: Request) -> Library:
+    return request.app.state.library
 
 
 def get_staging(request: Request) -> Staging:

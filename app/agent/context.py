@@ -7,6 +7,8 @@ import duckdb
 from app.analytics import dashboard as analytics
 from app.db import registry
 
+MAX_DOCS = 15
+
 TABLES = {
     "sales": "one row per product sold on an order (the main table)",
     "products": "view: totals per product (units_sold, units_returned, revenue, profit, margin_pct)",
@@ -16,6 +18,12 @@ TABLES = {
     "latest_customer_segments": "latest segments (customer_id, recency_days, orders, revenue, segment) - may be empty",
     "latest_anomaly_days": "latest unusual days (day, revenue, expected_revenue, orders, expected_orders, "
                            "signal, direction) - may be empty",
+    "latest_churn_scores": "latest churn scores (customer_id, probability, risk, recency_days, typical_gap_days, "
+                           "purchases, recent_revenue, revenue, value_at_risk, signals) - may be empty",
+    "latest_basket_rules": "latest bought-together pairs (level, antecedent, consequent, orders_together, "
+                           "confidence_pct, lift) - may be empty",
+    "documents": "the user's uploaded documents (filename, title, kind, pages, words, uploaded_at); search their "
+                 "text with search_docs",
 }
 
 
@@ -41,4 +49,11 @@ def schema_card(cur: duckdb.DuckDBPyConnection) -> str:
             lines.append(f"Columns with no data yet: {missing}.")
     else:
         lines.append("Data: no sales loaded yet - the user should upload a file or load demo data.")
+
+    docs = cur.execute("SELECT filename FROM documents ORDER BY uploaded_at DESC LIMIT ?", [MAX_DOCS + 1]).fetchall()
+    if docs:
+        names = ", ".join(d[0] for d in docs[:MAX_DOCS]) + (", ..." if len(docs) > MAX_DOCS else "")
+        lines.append(f"Documents (search with search_docs): {names}.")
+    else:
+        lines.append("Documents: none uploaded yet.")
     return "\n".join(lines)

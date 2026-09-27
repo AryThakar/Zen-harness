@@ -27,6 +27,9 @@ class Settings:
     anthropic_base_url: str = os.environ.get("BIZ_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     # Conversation memory (LangGraph checkpoints).
     chat_db_path: str = os.environ.get("BIZ_CHAT_DB_PATH", "data/chat.sqlite")
+    # Document search: the embedding model (run locally by fastembed, downloaded once).
+    embed_model: str = os.environ.get("BIZ_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+    embed_cache_dir: str = os.environ.get("BIZ_EMBED_CACHE_DIR", "data/models")
 
 
 settings = Settings()

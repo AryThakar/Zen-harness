@@ -13,12 +13,12 @@ Upload CSV/Excel ──► reader ─► mapper ─► user confirms ─► clea
                     tools: describe_data · run_sql · business_summary ────────┘   │   │
                            calculate · business_metric · make_chart               │   │
                            forecast · customer_segments · unusual_days ───────────┘   │
-                           search_docs ⏳                                              │
-                    RAG: documents + glossary ⏳ ─────────────────────────────────────┘
+                           churn_risk · bought_together                               │
+                           search_docs ──► RAG: documents → passages → BM25 + vectors ┘
                               │
-                    FastAPI (/uploads, /dashboard, /sales, /ml, /chat SSE, /documents ⏳)
+                    FastAPI (/uploads, /dashboard, /sales, /ml, /documents, /chat SSE)
                               │
-                    Streamlit UI: dashboard, insights, Ask AI, upload, explore
+                    Streamlit UI: dashboard, insights, Ask AI, upload, documents, explore
 ```
 
 ---
@@ -138,7 +138,8 @@ One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: the numbered files in
 | `schema_migrations` | which numbered files in `app/db/migrations/` have been applied |
 | `ml_runs` | every model run: task, params, status, metrics, message |
 | `forecast_points`, `customer_segments`, `anomaly_days`, `anomaly_lines` | model results per run, plus `latest_*` views |
-| `documents`, `doc_chunks`, `glossary` ⏳ | RAG documents, chunks with `FLOAT[768]` embeddings, metric definitions |
+| `churn_scores`, `basket_rules` | churn probability, warning signs and value at risk per customer; product and category pairs with support, confidence, lift (+ `latest_*` views) |
+| `documents`, `doc_chunks` | uploaded documents (filename, kind, pages, words, content hash) and their passages with page, section and a float32 embedding (BLOB) tagged with the model that made it |
 
 ML outputs are written back to DuckDB so the agent can query them with SQL.
 Concurrency: one connection per process, a cursor per request, writes serialized by a lock.
@@ -160,7 +161,7 @@ extensions (uploads are parsed in Python, so the app never needs it).
 
 ---
 
-## 4. ML ✅ (forecast, segments, anomalies)
+## 4. ML ✅
 
 Code: [`app/ml/`](../app/ml/). Each task is a function that reads with a cursor and
 returns a `TaskResult` (metrics, a plain-language message, result rows). The runner
@@ -174,6 +175,8 @@ AI assistant's tools.
 | **Customer segments** | ≥ 50 customers | RFM (recency, orders, net revenue; log scale for the skewed two) → StandardScaler → KMeans for k = 3-6; the most groups whose silhouette is within 10% of the best (silhouette alone nearly always picks 3, too coarse to act on). Groups named from their median customer's percentiles: Champions, Loyal, At risk, New, Occasional, Lost - each with a meaning and a suggested action | `customer_segments` |
 | **Unusual days** | ≥ 28 days | For orders and for revenue: expected = weekday profile × rolling 29-day median level; robust z-score (median/MAD) of the log difference; flag \|z\| ≥ 3.5. Both signals because revenue is noisy (one laptop doubles a day) while order counts are steady - a flash sale shows in orders first | `anomaly_days` |
 | **Unusual lines** | ≥ 200 lines | IsolationForest on price, quantity and discount relative to each product's median, reported only when something is actually off (price ×1.5, quantity ×3, discount > 30%) with a plain reason | `anomaly_lines` |
+| **Churn risk** | customer ids, ≥ 3× the horizon of history, ≥ 100 regular customers | Who buys nothing in the next 30/60/90 days, among *regular* customers (≥ 2 purchase days, usual gap ≤ horizon, bought within it - for them a quiet period breaks their rhythm; lapsed, infrequent and one-time buyers are counted, not scored). Snapshots every horizon back in time: features from data up to the snapshot only (days since last purchase, usual gap, overdue ratio, purchases and spend in the last vs previous period, basket size, return rate), label = no purchase in the next horizon. Logistic regression and gradient boosting learn on older snapshots and are tested on the latest one; a model is used only if its AUC beats "days since last purchase" by ≥ 0.02. Refit on all snapshots to score today. Each customer gets factual warning signs and value at risk (chance × usual spend per period) | `churn_scores` |
+| **Bought together** | real order numbers, ≥ 100 orders with 2+ products | Pair counts in SQL (orders with > 50 products left out); support, confidence, lift over all orders; kept when bought together ≥ max(5, 0.1% of orders) times, lift ≥ 1.2 and ≥ 3 standard deviations above the independent expectation - so a coincidence among a handful of orders isn't a "pattern". Products and categories | `basket_rules` |
 
 **Honesty rules:** every model reports its backtest error next to the baseline's and
 how often its range held; too little data gives a message saying what's missing, not
@@ -182,26 +185,43 @@ a weak result; a failed run stores why.
 **Checked on the synthetic data:** ETS was 40% more accurate than the baseline (WAPE
 26% vs 43%) and its 80% range held 83% of the time; the planted flash sale (orders
 3.9× normal) and outage (orders -81%) are both found; planted price and quantity
-typos are flagged; Champions are 18% of customers bringing 55% of revenue.
+typos are flagged; Champions are 18% of customers bringing 55% of revenue. Churn (90
+days): logistic regression AUC 0.72 vs 0.61 for days-since-last-purchase, its top 20%
+held 32% of the customers who then stopped (random: 20%); at 30 days the data supports
+only AUC 0.61, and the screen says the scores are rough. Bought together: every planted
+pair is found at about its planted rate (49% of Smartphone X1 orders include a case,
+planted 55%; laptop + mouse 41%, planted 50%) and no unplanted pair passes.
 
 **Runs:** `POST /ml/{task}` returns 202 and runs in the background; the UI polls
 `GET /ml/runs/{id}`. An identical run that is still going is reused (double clicks),
-and runs cut off by a restart are marked failed at startup. Views `latest_forecast`,
-`latest_customer_segments` and `latest_anomaly_days` hold the newest results for SQL.
+and runs cut off by a restart are marked failed at startup. `latest_*` views hold the
+newest results of each task for SQL.
 
-Still to come (week 5): churn prediction and "frequently bought together".
+## 5. Document search (RAG) ✅
 
-## 5. RAG ⏳
+Code: [`app/rag/`](../app/rag/). The shop's own documents - policies, price lists,
+supplier terms, notes, incident logs - answer the questions numbers can't: "can a
+customer return an opened phone?", "why was 15 April so slow?".
 
-* **Content:** business documents (catalogue, pricing/discount/return policy,
-  contracts, SOPs, notes, reports) plus generated text: glossary ("Active customer =
-  ordered in last 90 days"), column descriptions, summaries of past ML runs.
-* **Pipeline:** extract (pypdf, python-docx) → chunk ~500 tokens / 50 overlap →
-  embed with `nomic-embed-text` (Ollama, 768 dims) → `doc_chunks` → hybrid search
-  (cosine similarity + DuckDB full-text BM25, merged) → top 5 with file and page.
-* **Why in a data app:** answers "why" questions from documents, and the glossary
-  keeps generated SQL correct for business terms.
-* Brute-force cosine in DuckDB is fast enough below ~100k chunks; no separate vector DB.
+| Step | Module | What happens |
+|---|---|---|
+| Extract | `extract` | PDF (pypdf, per page), Word .docx (python-docx: paragraphs and tables in order, headings tracked), .txt / .md (UTF-8 or Windows-1252; `#` headings). Wrapped PDF lines rejoined. A PDF with no text says it may be a scan (no OCR); password-protected or broken files get a plain message |
+| Chunk | `chunking` | ~250-word passages of whole paragraphs (long ones split at sentence ends), never across a page or heading, 40 words of overlap; a lone title or heading is merged into the next passage |
+| Embed | `embed` | fastembed runs `BAAI/bge-small-en-v1.5` (384 dims, ~65 MB ONNX, CPU, downloaded once to `data/models`); the heading is embedded with its passage. Swappable: `BIZ_EMBED_MODEL`, and an Ollama embedder in week 6 |
+| Store | `library` | document + passages in one transaction; the embedding is a float32 BLOB tagged with its model. Same file again → 409; same filename, new content → replaces the old version |
+| Search | `search`, `library` | BM25 over the passages (plural-aware tokens) and cosine similarity over the vectors, merged by reciprocal rank fusion (1 / (60 + rank) from each list). Top 5 with file, page and heading. The index (postings + vector matrix) lives in memory and is rebuilt when the passages change |
+
+* **Why hybrid:** keywords catch exact terms (product codes, names, "7 days");
+  embeddings catch the same meaning in other words. On the sample documents the
+  embedding model finds "who is our contact person at the electronics supplier?" on
+  the right page, which keywords alone miss.
+* **Degrades, doesn't fail:** if the model can't be loaded (offline on first use),
+  documents are still stored and searched by keywords; `POST /documents/reindex` adds
+  the vectors later, and passages from an old model are re-embedded the same way.
+* **No vector database:** a numpy dot product over a few thousand 384-dim vectors takes
+  microseconds; DuckDB stores them with everything else.
+* **Sample documents** for the demo shop, one per format, with an operations log dated
+  to the demo data's planted events ([`samples.py`](../app/rag/samples.py)).
 
 ## 6. Model providers ✅ (Claude) · ⏳ (local)
 
@@ -270,8 +290,10 @@ artifact (chart or table data) for the UI.
 | `make_chart` | line or bar, SQL, x, y, unit, title → chart artifact drawn by the UI in house style |
 | `forecast` | horizon, day/week, optional slice → forecast with 80% range and backtest vs baseline |
 | `customer_segments` | → segments with sizes, revenue share, meaning and action |
-| `unusual_days` | → unusual days and sale lines with the reason |
-| `search_docs` ⏳ | question → document chunks with sources (week 5) |
+| `unusual_days` | → unusual days (most unusual first, with % vs normal) and sale lines with the reason |
+| `churn_risk` | horizon, limit → customers likely to stop buying with chance, warning signs, value at risk, model quality |
+| `bought_together` | optional product or category → companions with share of orders and lift; close matches for a misspelt name |
+| `search_docs` | query → top 5 passages with file, page and section to cite |
 
 The ML tools run the same code as the Insights page and store their runs the same way.
 
@@ -288,9 +310,11 @@ The ML tools run the same code as the Insights page and store their runs the sam
 4. At most 200 rows are fetched; a query running over 10 s is interrupted.
 5. Underneath it all, the database itself has external access switched off.
 
-Data values reach the model only as tool results. Every tool is read-only and none
-reaches the network, so text planted in the data (a product named "ignore your
-instructions") can at worst produce a wrong answer, not change or leak data.
+Data values and document passages reach the model only as tool results, labelled as
+information rather than instructions, and the system prompt says to ignore any
+instructions inside them. Every tool is read-only and none reaches the network, so text
+planted in the data or a document ("ignore your instructions") can at worst produce a
+wrong answer, not change or leak data.
 
 ## 9. API (FastAPI) ✅
 
@@ -315,7 +339,9 @@ Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs a
 | `GET /chat/status` | which model answers and whether it is set up |
 | `POST /chat` | `{message, thread_id?}` → server-sent events: `thread`, `text`, `restart`, `tool_start`, `tool_end`, `done`, `error` |
 | `GET /chat/threads/{id}` | a conversation as question / steps / answer, for redisplay |
-| `POST /documents` ⏳ | week 5 |
+| `POST /ml/churn`, `/ml/basket`; `GET /ml/churn`, `/ml/churn/customers`, `/ml/basket` | churn scores by risk band; bought-together pairs (optionally for one product) |
+| `GET /documents`, `POST /documents`, `POST /documents/samples` | library status and list; add a PDF/DOCX/TXT/MD (409 duplicate, 422 unreadable, 413 too large); add the sample documents |
+| `GET /documents/search`, `GET /documents/{id}/passages`, `DELETE /documents/{id}`, `POST /documents/reindex` | hybrid search; a document's passages; delete; embed passages that have no vector for the current model |
 
 * **Two-step upload:** preview stores the file under `data/staging/<uuid>` (24 h
   expiry, 100 MB limit, CSV/TSV/TXT/XLSX/XLSM only) so the user can edit the
@@ -347,9 +373,11 @@ Pages: Dashboard (period presets, 8 KPI tiles, trend with Revenue / Orders / Pro
 switch, four breakdown charts), Insights (forecast with actual vs dashed forecast and
 80% band plus error vs baseline; segment sizes, revenue share, meaning and action,
 customer lists; unusual days on the orders or revenue line with dated markers, and
-unusual sale lines), Upload (mapping editor with dropdowns per field,
+unusual sale lines; churn risk with ranking quality vs the simple rule and the customers
+most at stake with their warning signs; bought together, per product), Upload (mapping editor with dropdowns per field,
 custom-column table with keep / rename / describe, date and discount options, save
-as profile, report with rejected rows), Explore (sales rows, upload history with
+as profile, report with rejected rows), Documents (upload, sample documents, a
+search box that shows how each passage matched, passages per document, delete), Explore (sales rows, upload history with
 undo, column descriptions, saved formats), Ask AI (streaming answers; the steps it
 took - queries with their SQL and result tables, calculations, models - in a
 collapsible box above each answer; its charts drawn in house style; suggested
@@ -370,5 +398,5 @@ crore (`BIZ_CURRENCY` changes the symbol).
 | 2 | FastAPI endpoints, dashboard KPIs, Streamlit upload / dashboard / explore screens | ✅ |
 | 3 | ML: forecast, segments, anomalies (Insights page) + review fixes | ✅ |
 | 4 | Agent: provider adapters (Claude), SQL guard, 9 tools, LangGraph graph with memory, streaming chat API, Ask AI page | ✅ |
-| 5 | RAG + glossary, churn prediction, basket analysis (with agent tools) | ⏳ |
+| 5 | Document search (hybrid BM25 + embeddings), churn prediction, bought together, 3 agent tools, Documents page | ✅ |
 | 6 | Ollama provider in Docker, 40-question eval set, README polish, demo | ⏳ |

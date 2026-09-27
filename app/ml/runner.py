@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from app.db.connection import Database
 
-from . import anomalies, forecast, segments
+from . import anomalies, basket, churn, forecast, segments
 from .base import NotEnoughData, TaskResult
 
 log = logging.getLogger(__name__)
@@ -22,6 +22,8 @@ TASKS: dict[str, Callable[..., TaskResult]] = {
     "forecast": forecast.run,
     "segments": segments.run,
     "anomalies": anomalies.run,
+    "churn": churn.run,
+    "basket": basket.run,
 }
 
 

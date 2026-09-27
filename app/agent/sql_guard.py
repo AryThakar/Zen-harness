@@ -24,6 +24,7 @@ ALLOWED_TABLES = {
     "sales", "products", "customers", "uploads", "column_registry",
     "ml_runs", "forecast_points", "customer_segments", "anomaly_days", "anomaly_lines",
     "latest_forecast", "latest_customer_segments", "latest_anomaly_days",
+    "churn_scores", "basket_rules", "latest_churn_scores", "latest_basket_rules", "documents",
 }
 ALLOWED_TABLE_FUNCTIONS = {"unnest", "generate_series", "range"}
 BLOCKED_FUNCTION_PREFIXES = ("read_", "sniff_", "glob", "getenv", "query", "load", "install", "parquet_")
