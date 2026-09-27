@@ -1,9 +1,16 @@
 """Write cleaned rows to DuckDB in one transaction.
 
-De-duplication: each row gets a hash of its business content plus an
-occurrence counter. Two identical lines in one file (two customers buying the
-same item at the same price) stay two rows, while re-uploading the same file -
-or an export that overlaps an earlier one - skips what is already stored.
+Spelling: names that differ only in case from values already stored ('wireless
+mouse' vs 'Wireless Mouse') take the stored spelling, so one product stays one
+product across uploads.
+
+De-duplication: each row gets a hash of what identifies a transaction - order
+number (if real), date, product, quantity, price, discount, customer, location and
+channel, ignoring case - plus an occurrence counter. Two identical lines in one
+file stay two rows (two customers buying the same item), while re-uploading a file
+or an export that overlaps an earlier one skips what is already stored. Product
+attributes (category, cost) and custom columns are left out on purpose: correcting
+them in a later export shouldn't turn old sales into new ones.
 """
 
 from __future__ import annotations
@@ -16,11 +23,13 @@ from dataclasses import dataclass, field
 import duckdb
 import pandas as pd
 
+from app.db import registry
+
 from .cleaner import CleanResult
 from .fields import SALES_COLUMNS
 from .mapper import Mapping
 
-SAMPLE_VALUES = 5
+TEXT_DIMENSIONS = ("product", "category", "location", "channel")
 
 
 @dataclass
@@ -48,20 +57,53 @@ class UploadReport:
 
 def row_hashes(sales: pd.DataFrame) -> pd.Series:
     """Stable content hash per row, with an occurrence counter for identical rows."""
-    real_order_id = sales["order_id"].where(~sales["order_id_generated"], "").fillna("")
+    def text(col: str) -> pd.Series:
+        return sales[col].fillna("").astype(str).str.lower()
+
+    real_order_id = sales["order_id"].where(~sales["order_id_generated"], "").fillna("").astype(str).str.lower()
     key = (
-        real_order_id.astype(str)
+        real_order_id
         + "|" + sales["order_date"].dt.strftime("%Y-%m-%d %H:%M:%S")
-        + "|" + sales["product"].astype(str)
+        + "|" + text("product")
         + "|" + sales["quantity"].round(6).astype(str)
         + "|" + sales["unit_price"].round(4).astype(str)
-        + "|" + sales["customer_id"].fillna("").astype(str)
+        + "|" + sales["discount"].round(4).astype(str)
+        + "|" + text("customer_id")
+        + "|" + text("location")
+        + "|" + text("channel")
     )
     occurrence = key.groupby(key).cumcount().astype(str)
     return pd.Series(
         [hashlib.md5(k.encode()).hexdigest() for k in key + "|" + occurrence],
         index=sales.index,
     )
+
+
+def match_existing_spelling(cur: duckdb.DuckDBPyConnection, sales: pd.DataFrame) -> pd.DataFrame:
+    """Give names the spelling already used in the database when only the case differs."""
+    sales = sales.copy()
+    for col in TEXT_DIMENSIONS:
+        values = sales[col].dropna().unique()
+        if not len(values):
+            continue
+        cur.register("new_values", pd.DataFrame({"value": values}))
+        try:
+            rows = cur.execute(
+                f"""
+                WITH existing AS (
+                    SELECT lower("{col}") AS key, arg_max("{col}", n) AS spelling
+                    FROM (SELECT "{col}", count(*) AS n FROM sales WHERE "{col}" IS NOT NULL GROUP BY 1)
+                    GROUP BY 1
+                )
+                SELECT v.value, e.spelling FROM new_values v JOIN existing e ON lower(v.value) = e.key
+                WHERE v.value <> e.spelling
+                """
+            ).fetchall()
+        finally:
+            cur.unregister("new_values")
+        if rows:
+            sales[col] = sales[col].replace(dict(rows))
+    return sales
 
 
 def load(
@@ -75,7 +117,7 @@ def load(
     locked_features: dict[str, list[str]] | None = None,
 ) -> UploadReport:
     """Insert ``result`` using a cursor that is already inside a transaction."""
-    sales = result.sales.copy()
+    sales = match_existing_spelling(cur, result.sales)
     sales["row_hash"] = row_hashes(sales)
     upload_id = cur.execute("SELECT nextval('upload_id_seq')").fetchone()[0]
     sales["upload_id"] = upload_id
@@ -84,7 +126,7 @@ def load(
         f"AUTO-{upload_id}-" + pd.Series(sales.index[generated], index=sales.index[generated]).astype(str)
     )
 
-    _add_custom_columns(cur, result.custom_types, mapping.descriptions)
+    registry.add_custom_columns(cur, result.custom_types, mapping.descriptions)
 
     custom = list(result.custom_types)
     columns = ["upload_id", "row_hash", *SALES_COLUMNS, *custom]
@@ -128,8 +170,6 @@ def load(
         [upload_id, filename, profile_name, rows_total, inserted, len(rejected), rows_duplicate,
          json.dumps(mapping.to_dict()), json.dumps(result.warnings)],
     )
-    refresh_summaries(cur)
-    _update_samples(cur)
 
     reasons = Counter(r for rs in rejected["reasons"] for r in rs.split("; "))
     return UploadReport(
@@ -152,87 +192,4 @@ def delete_upload(cur: duckdb.DuckDBPyConnection, upload_id: int) -> bool:
         return False
     for table in ("sales", "rejected_rows", "uploads"):
         cur.execute(f"DELETE FROM {table} WHERE upload_id = ?", [upload_id])
-    refresh_summaries(cur)
-    _update_samples(cur)
     return True
-
-
-def custom_column_types(cur: duckdb.DuckDBPyConnection) -> dict[str, str]:
-    rows = cur.execute(
-        "SELECT column_name, data_type FROM column_registry WHERE kind = 'custom'"
-    ).fetchall()
-    return dict(rows)
-
-
-def _add_custom_columns(
-    cur: duckdb.DuckDBPyConnection, types: dict[str, str], descriptions: dict[str, str]
-) -> None:
-    for name, sql_type in types.items():
-        cur.execute(f'ALTER TABLE sales ADD COLUMN IF NOT EXISTS "{name}" {sql_type}')
-        cur.execute(
-            """
-            INSERT INTO column_registry (column_name, data_type, kind, description, sample_values)
-            VALUES (?, ?, 'custom', ?, '[]')
-            ON CONFLICT (column_name) DO UPDATE SET
-                description = coalesce(excluded.description, column_registry.description)
-            """,
-            [name, sql_type, descriptions.get(name)],
-        )
-
-
-def refresh_summaries(cur: duckdb.DuckDBPyConnection) -> None:
-    """Rebuild the products and customers tables from sales."""
-    cur.execute(
-        """
-        CREATE OR REPLACE TABLE products AS
-        SELECT
-            product,
-            mode(category)                                   AS category,
-            min(order_date)                                  AS first_sold,
-            max(order_date)                                  AS last_sold,
-            coalesce(sum(quantity) FILTER (WHERE NOT is_return), 0)  AS units_sold,
-            coalesce(-sum(quantity) FILTER (WHERE is_return), 0)     AS units_returned,
-            sum(revenue)                                     AS revenue,
-            sum(revenue) / nullif(sum(quantity), 0)          AS avg_net_price,
-            sum(profit)                                      AS profit,
-            100 * sum(profit) / nullif(sum(revenue) FILTER (WHERE profit IS NOT NULL), 0)
-                                                             AS margin_pct
-        FROM sales
-        GROUP BY product
-        """
-    )
-    cur.execute(
-        """
-        CREATE OR REPLACE TABLE customers AS
-        SELECT
-            customer_id,
-            min(order_date)                                        AS first_order,
-            max(order_date)                                        AS last_order,
-            count(DISTINCT order_id) FILTER (WHERE NOT is_return)  AS orders,
-            sum(revenue)                                           AS revenue,
-            sum(revenue) / nullif(count(DISTINCT order_id) FILTER (WHERE NOT is_return), 0)
-                                                                   AS avg_order_value,
-            -- measured from the latest sale in the data, so old datasets still make sense
-            date_diff('day', max(order_date), (SELECT max(order_date) FROM sales))
-                                                                   AS recency_days
-        FROM sales
-        WHERE customer_id IS NOT NULL
-        GROUP BY customer_id
-        """
-    )
-
-
-def _update_samples(cur: duckdb.DuckDBPyConnection) -> None:
-    """Store a few example values per text column so the AI knows what's in them."""
-    columns = cur.execute(
-        "SELECT column_name FROM column_registry WHERE data_type = 'VARCHAR'"
-    ).fetchall()
-    for (name,) in columns:
-        values = cur.execute(
-            f'SELECT "{name}", count(*) AS n FROM sales WHERE "{name}" IS NOT NULL '
-            f"GROUP BY 1 ORDER BY n DESC, 1 LIMIT {SAMPLE_VALUES}"
-        ).fetchall()
-        cur.execute(
-            "UPDATE column_registry SET sample_values = ? WHERE column_name = ?",
-            [json.dumps([v for v, _ in values]), name],
-        )

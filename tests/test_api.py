@@ -211,3 +211,31 @@ def test_csv_upload_from_memory(client):
     report = client.post("/uploads", json={"file_id": p["file_id"]}).json()
     assert report["rows_loaded"] == 1
     assert client.get("/sales").json()["rows"][0]["revenue"] == 7.0
+
+
+def test_mapping_check_gives_actionable_problems(client):
+    r = client.post("/uploads/check", json={"fields": {"product": "item", "unit_price": "price"},
+                                            "custom": {"a": "revenue"}})
+    body = r.json()
+    assert r.status_code == 200
+    assert any("sale date" in p for p in body["problems"])
+    assert any("quantity" in p for p in body["problems"])
+    assert any("Invalid custom column names: revenue" in p for p in body["problems"])
+    assert "customer_id" in body["locked_features"]
+    ok = client.post("/uploads/check", json={"fields": {"order_date": "d", "product": "i", "amount": "a"}}).json()
+    assert ok["problems"] == []
+
+
+def test_preview_gives_every_column_a_default_name(client):
+    p = preview(client, SAMPLES / "retail_pos_messy.csv").json()
+    names = {c["original"]: c["default_name"] for c in p["columns"]}
+    assert names["Disc %"] == "disc"
+    assert names["Payment Mode"] == "payment_mode"
+
+
+def test_range_and_dimensions(client):
+    assert client.get("/dashboard/range").json() == {"has_data": False, "start": None, "end": None}
+    upload(client, SAMPLES / "superstore_sample.csv")
+    assert client.get("/dashboard/range").json() == {"has_data": True, "start": "2024-01-28", "end": "2024-09-07"}
+    dims = client.get("/dashboard/dimensions").json()
+    assert "category" in dims and "segment" in dims and "revenue" not in dims

@@ -117,3 +117,37 @@ def test_unify_case_uses_the_most_common_spelling():
 
 def test_clean_ids_undoes_float_formatting():
     assert clean_ids(pd.Series(["17850.0", " C-1 ", "", "nan"])).tolist() == ["17850", "C-1", None, None]
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("13-03-2025", "2025-03-13"),  # the year must not be mistaken for a timezone
+        ("2025-03-02T10:15:23+05:30", "2025-03-02 10:15:23"),
+        ("2025-03-02T10:15:23.5Z", "2025-03-02 10:15:23.5"),
+    ],
+)
+def test_dash_dates_and_timezones(text, expected):
+    out, bad = parse_dates(pd.Series([text]))
+    assert out[0] == pd.Timestamp(expected)
+    assert not bad[0]
+
+
+@pytest.mark.parametrize("text", ["01/01/0001", "0001-01-01", "31-12-20255"])
+def test_impossible_years_are_flagged_not_crashing(text):
+    out, bad = parse_dates(pd.Series([text, "2025-01-01"]))
+    assert bad.tolist() == [True, False]
+
+
+@pytest.mark.parametrize(
+    "text, value",
+    [("€3,50", 3.5), ("₹1.234,50", 1234.5), ("Rs. 12,5", 12.5), ("(3,50)", -3.5)],
+)
+def test_decimal_comma_with_currency(text, value):
+    values, bad, _ = parse_numbers(pd.Series([text]))
+    assert values[0] == pytest.approx(value)
+    assert not bad[0]
+
+
+def test_infer_type_reads_dash_dates():
+    assert infer_type("visit_date", pd.Series(["13-03-2025", "14-03-2025"])) == "TIMESTAMP"

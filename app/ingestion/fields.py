@@ -114,6 +114,8 @@ REQUIRED = tuple(f.name for f in FIELDS if f.kind == "required")
 
 # Columns the cleaner adds. Descriptions feed the column registry the AI reads.
 DERIVED_COLUMNS: dict[str, tuple[str, str]] = {
+    "order_id_generated": ("BOOLEAN", "True when the file had no order number and one was generated; "
+                                      "each such line then counts as its own order."),
     "is_return": ("BOOLEAN", "True when quantity is negative (a return or cancellation)."),
     "revenue": ("DOUBLE", "quantity x unit_price - discount. Negative for returns."),
     "cost": ("DOUBLE", "quantity x unit_cost. Empty when cost is unknown."),
@@ -127,7 +129,7 @@ DERIVED_COLUMNS: dict[str, tuple[str, str]] = {
 
 # Canonical columns stored in the sales table, in order.
 SALES_COLUMNS: tuple[str, ...] = (
-    "order_id", "order_date", "product", "quantity", "unit_price", "customer_id", "unit_cost",
+    "order_id", "order_id_generated", "order_date", "product", "quantity", "unit_price", "customer_id", "unit_cost",
     "category", "discount", "location", "channel", "is_return", "revenue", "cost", "profit",
     "year", "month", "week", "weekday",
 )

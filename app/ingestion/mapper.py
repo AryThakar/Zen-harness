@@ -184,33 +184,49 @@ def suggest_mapping(
     )
 
 
-def validate_mapping(mapping: Mapping, columns: list[str]) -> None:
-    """Raise MappingError if the mapping can't be applied to a file with ``columns``."""
+REQUIRED_HINTS = {
+    "order_date": "Match the column with the sale date (order_date).",
+    "product": "Match the column with the product or service sold (product).",
+    "quantity": "With a unit price, a quantity column is needed too (quantity).",
+    "unit_price (or a line total / amount)": "Match a unit price column, or a line total as amount.",
+}
+
+
+def mapping_problems(mapping: Mapping) -> list[str]:
+    """Everything wrong with a mapping that can be told without the file,
+    as sentences a user can act on. Used by the API check and by validation."""
     problems = []
     unknown_fields = set(mapping.fields) - set(FIELDS_BY_NAME)
     if unknown_fields:
-        problems.append(f"unknown fields: {', '.join(sorted(unknown_fields))}")
+        problems.append(f"Unknown fields: {', '.join(sorted(unknown_fields))}.")
     sources = list(mapping.fields.values()) + list(mapping.custom)
-    missing_sources = [s for s in sources if s not in columns]
-    if missing_sources:
-        problems.append(f"columns not in the file: {', '.join(missing_sources)}")
     used_twice = {s for s in sources if sources.count(s) > 1}
     if used_twice:
-        problems.append(f"columns mapped more than once: {', '.join(sorted(used_twice))}")
+        problems.append(f"Each file column can be used once: {', '.join(sorted(used_twice))}.")
     names = list(mapping.custom.values())
     repeated = {n for n in names if names.count(n) > 1}
     if repeated:
-        problems.append(f"custom column names used more than once: {', '.join(sorted(repeated))}")
-    bad_names = [n for n in mapping.custom.values()
-                 if n in RESERVED_NAMES or not re.fullmatch(r"[a-z][a-z0-9_]*", n)]
+        problems.append(f"Custom column names used more than once: {', '.join(sorted(repeated))}.")
+    bad_names = [n for n in names if n in RESERVED_NAMES or not re.fullmatch(r"[a-z][a-z0-9_]*", n)]
     if bad_names:
-        problems.append(f"invalid custom column names: {', '.join(bad_names)}")
+        problems.append(
+            f"Invalid custom column names: {', '.join(bad_names)} (use lowercase letters, digits and _, "
+            "starting with a letter, and not a built-in column name)."
+        )
     if mapping.date_order not in DATE_ORDERS:
-        problems.append(f"date_order must be one of {DATE_ORDERS}")
+        problems.append(f"date_order must be one of {', '.join(DATE_ORDERS)}.")
     if mapping.discount_type not in DISCOUNT_TYPES:
-        problems.append(f"discount_type must be one of {DISCOUNT_TYPES}")
-    missing = missing_required(mapping.fields)
-    if missing:
-        problems.append(f"required columns not mapped: {', '.join(missing)}")
+        problems.append(f"discount_type must be one of {', '.join(DISCOUNT_TYPES)}.")
+    problems += [REQUIRED_HINTS[m] for m in missing_required(mapping.fields)]
+    return problems
+
+
+def validate_mapping(mapping: Mapping, columns: list[str]) -> None:
+    """Raise MappingError if the mapping can't be applied to a file with ``columns``."""
+    problems = mapping_problems(mapping)
+    sources = list(mapping.fields.values()) + list(mapping.custom)
+    missing_sources = [s for s in sources if s not in columns]
+    if missing_sources:
+        problems.insert(0, f"Columns not in the file: {', '.join(missing_sources)}.")
     if problems:
-        raise MappingError("; ".join(problems))
+        raise MappingError(" ".join(problems))

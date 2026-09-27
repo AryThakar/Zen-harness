@@ -59,6 +59,11 @@ def test_pages_render_empty_then_with_demo_data(api):
     assert labels[:4] == ["Revenue", "Orders", "Avg order value", "Profit"]
     assert all(m.value != "—" for m in at.metric)
 
+    dimension = at.selectbox(key="dash_dimension")
+    assert "category" not in dimension.options and "product" not in dimension.options  # already charted
+    dimension.set_value("payment_mode")
+    run(at)
+
     at.selectbox(key="dash_preset").set_value("All time")
     run(at)
     assert any("no % changes" in c.value for c in at.caption)  # nothing before the first day

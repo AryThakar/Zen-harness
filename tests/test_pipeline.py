@@ -1,10 +1,15 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from app.db import registry
+from app.db.connection import Database
+from app.ingestion import pipeline
 from app.ingestion.mapper import MappingError
 from app.ingestion.pipeline import ingest_file, preview_file
+from app.ingestion.profiles import ProfileError
 
 from .conftest import SAMPLES, TODAY
 
@@ -96,11 +101,12 @@ def test_custom_columns_are_added_and_registered(db, write_file):
     mapping.descriptions = {"salesperson": "Who made the sale"}
     ingest_file(db, path, mapping, today=TODAY)
 
-    registry = query(db, "SELECT column_name, data_type, description, sample_values FROM column_registry "
-                         "WHERE kind = 'custom' ORDER BY column_name")
-    assert registry == [
-        ("gift_wrap", "BOOLEAN", None, "[]"),
-        ("salesperson", "VARCHAR", "Who made the sale", '["Asha"]'),
+    cur = db.cursor()
+    custom = [c for c in registry.columns(cur) if c["kind"] == "custom"]
+    cur.close()
+    assert [(c["column_name"], c["data_type"], c["description"], c["sample_values"]) for c in custom] == [
+        ("gift_wrap", "BOOLEAN", None, [True]),
+        ("salesperson", "VARCHAR", "Who made the sale", ["Asha"]),
     ]
     assert query(db, "SELECT salesperson, gift_wrap FROM sales") == [("Asha", True)]
 
@@ -122,7 +128,7 @@ def test_saved_profile_is_recognised_next_time(db, write_file):
 
 def test_builtin_profiles_cannot_be_overwritten(db, write_file):
     path = write_file("Date,Item,Qty,Price\n2025-03-01,Pen,1,10\n")
-    with pytest.raises(ValueError, match="built-in"):
+    with pytest.raises(ProfileError, match="built-in"):
         ingest_file(db, path, save_profile_as="Shopify orders export", today=TODAY)
     assert query(db, "SELECT count(*) FROM sales") == [(0,)]  # nothing half-loaded
 
@@ -159,3 +165,69 @@ def test_upload_record_keeps_the_mapping(db):
     report = ingest_file(db, SAMPLES / "agency_invoices.csv", today=TODAY)
     mapping = json.loads(query(db, "SELECT mapping FROM uploads WHERE upload_id = ?", [report.upload_id])[0][0])
     assert mapping["fields"]["amount"] == "amount"
+
+
+def test_same_item_in_two_stores_is_not_a_duplicate(db, write_file):
+    header = "Date,Item,Qty,Price,Store\n"
+    ingest_file(db, write_file(header + "2025-01-05,Tea,1,10,Pune\n", "pune.csv"), today=TODAY)
+    report = ingest_file(db, write_file(header + "2025-01-05,Tea,1,10,Mumbai\n", "mumbai.csv"), today=TODAY)
+    assert (report.rows_loaded, report.rows_duplicate) == (1, 0)
+
+
+def test_spelling_follows_what_is_already_stored(db, write_file):
+    header = "Date,Item,Qty,Price,Category\n"
+    ingest_file(db, write_file(header + "2025-01-05,Wireless Mouse,1,10,Accessories\n", "a.csv"), today=TODAY)
+    ingest_file(db, write_file(header + "2025-01-06,wireless mouse,1,10,ACCESSORIES\n", "b.csv"), today=TODAY)
+    assert query(db, "SELECT DISTINCT product, category FROM sales") == [("Wireless Mouse", "Accessories")]
+    # and a re-export in different case is recognised as the same sales
+    again = ingest_file(db, write_file(header + "2025-01-05,WIRELESS MOUSE,1,10,accessories\n", "c.csv"), today=TODAY)
+    assert again.rows_duplicate == 1
+
+
+def test_generated_order_ids_are_flagged_not_guessed(db, write_file):
+    ingest_file(db, write_file("Order,Date,Item,Qty,Price\nAUTO-77,2025-03-01,Pen,1,10\n,2025-03-01,Ink,1,5\n"),
+                today=TODAY)
+    assert query(db, "SELECT order_id, order_id_generated FROM sales ORDER BY sale_id") == [
+        ("AUTO-77", False), ("AUTO-1-3", True),
+    ]
+
+
+def test_concurrent_custom_column_types_are_reconciled(db, write_file, monkeypatch):
+    # Another upload created 'batch' as a number after this upload read the types.
+    ingest_file(db, write_file("Date,Item,Qty,Price,Batch\n2025-03-01,Pen,1,10,7\n", "first.csv"), today=TODAY)
+    real = registry.custom_types
+    calls = {"n": 0}
+
+    def stale_then_real(cur):
+        calls["n"] += 1
+        return {} if calls["n"] == 1 else real(cur)
+
+    monkeypatch.setattr(pipeline.registry, "custom_types", stale_then_real)
+    report = ingest_file(db, write_file("Date,Item,Qty,Price,Batch\n2025-03-02,Ink,1,5,B-12\n", "second.csv"),
+                         today=TODAY)
+    assert report.rows_loaded == 1
+    assert report.custom_columns == {"batch": "DOUBLE"}
+    assert "could not be read as DOUBLE" in report.warnings[0]
+
+
+def test_week_one_database_is_upgraded(tmp_path):
+    import duckdb
+
+    path = tmp_path / "old.duckdb"
+    old = duckdb.connect(str(path))
+    old.execute((Path(pipeline.__file__).parent.parent / "db" / "migrations" / "001_initial.sql").read_text())
+    old.execute("INSERT INTO sales (sale_id, upload_id, row_hash, order_id, order_date, product, quantity, unit_price, "
+                "discount, is_return, revenue, year, month, week, weekday) VALUES "
+                "(1, 1, 'h1', 'AUTO-1-2', '2025-01-01', 'Pen', 1, 10, 0, false, 10, 2025, 1, 1, 'Wednesday'), "
+                "(2, 1, 'h2', 'INV-9', '2025-01-02', 'Pen', 2, 10, 0, false, 20, 2025, 1, 1, 'Thursday')")
+    old.execute("CREATE TABLE products AS SELECT product, sum(revenue) AS revenue FROM sales GROUP BY 1")
+    old.close()
+
+    db = Database(path)
+    assert query(db, "SELECT order_id, order_id_generated FROM sales ORDER BY sale_id") == [
+        ("AUTO-1-2", True), ("INV-9", False),
+    ]
+    assert query(db, "SELECT table_type FROM information_schema.tables WHERE table_name = 'products'") == [("VIEW",)]
+    assert query(db, "SELECT units_sold FROM products") == [(3.0,)]
+    assert db.migrate() == []  # nothing left to apply
+    db.close()

@@ -8,6 +8,10 @@ import duckdb
 
 from .mapper import Mapping, Profile
 
+
+class ProfileError(ValueError):
+    """A profile can't be saved under that name."""
+
 # Built-in profiles cover exports whose columns the alias list can't guess alone
 # (Shopify's order number is just "Name") or whose dates are month-first.
 BUILTIN_PROFILES: tuple[Profile, ...] = (
@@ -76,7 +80,7 @@ def save_profile(cur: duckdb.DuckDBPyConnection, name: str, mapping: Mapping) ->
     """Create or replace a user profile. Built-in profiles can't be overwritten."""
     existing = cur.execute("SELECT builtin FROM format_profiles WHERE name = ?", [name]).fetchone()
     if existing and existing[0]:
-        raise ValueError(f"'{name}' is a built-in profile; choose another name.")
+        raise ProfileError(f"'{name}' is a built-in profile; choose another name.")
     cur.execute(
         """
         INSERT INTO format_profiles (name, mapping) VALUES (?, ?)

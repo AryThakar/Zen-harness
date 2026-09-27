@@ -38,7 +38,7 @@ SUMMARY_WORDS = {"total", "totals", "grand total", "sub total", "subtotal", "net
 
 @dataclass
 class CleanResult:
-    # SALES_COLUMNS + order_id_generated + custom columns; index = file row number
+    # SALES_COLUMNS + custom columns; index = file row number
     sales: pd.DataFrame
     rejected: pd.DataFrame  # row_number, reasons, raw
     custom_types: dict[str, str] = field(default_factory=dict)
@@ -221,7 +221,7 @@ def clean(
     summary = df.apply(lambda col: col.str.lower().isin(SUMMARY_WORDS)).any(axis=1)
     reasons[failed & summary & is_missing(raw_dates)] = "summary row"
     rejected = _rejected_rows(raw, failed, reasons)
-    columns = list(SALES_COLUMNS) + ["order_id_generated"] + list(types)
+    columns = list(SALES_COLUMNS) + list(types)
     return CleanResult(
         sales=out.loc[~failed, columns],
         rejected=rejected,
@@ -263,13 +263,15 @@ def _split_discount(
     nan = pd.Series(np.nan, index=values.index)
     if discount_type == "amount":
         return nan, values
-    if discount_type == "percent":
-        return values.where(values <= 1, values / 100), nan
-    # auto: '10%' is a percentage; a column where every value is <= 1 holds fractions.
+    # Decided per column, never per row: a column where every plain value is <= 1
+    # holds fractions (0.1 = 10%); otherwise plain values are percentage points
+    # (so 1 means 1%, not 100%). Values written with '%' are always percentages.
     plain = values.where(~pct)
-    fractions = plain.dropna().abs().le(1).all() and plain.notna().any()
+    fractions = plain.dropna().abs().le(1).all()
     rate = (values / 100).where(pct)
-    if fractions:
+    if discount_type == "percent":
+        return rate.fillna(plain if fractions else plain / 100), nan
+    if fractions and plain.notna().any():
         return rate.fillna(plain), nan
     return rate, plain
 

@@ -28,7 +28,7 @@ dev = ["ai-business-analyst[ui]", "httpx2>=2.0", "pytest>=8"]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-"app.db" = ["schema.sql"]
+"app.db" = ["migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

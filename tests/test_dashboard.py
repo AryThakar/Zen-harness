@@ -139,3 +139,10 @@ def test_breakdown_accepts_custom_columns_but_not_arbitrary_sql(db, cur, write_f
     for bad in ("revenue", "order_id", "is_return", 'product" FROM sales; --'):
         with pytest.raises(d.InvalidQuery):
             d.breakdown(cur, period, bad)
+
+
+def test_an_early_end_gives_an_empty_period_not_an_error(db, cur, write_file):
+    load(db, SALES, write_file)
+    period = d.resolve_period(cur, end=date(2020, 1, 1))
+    assert period.end == date(2020, 1, 1) and period.days == d.DEFAULT_DAYS
+    assert d.summary(cur, period)["kpis"]["revenue"]["value"] == 0

@@ -145,3 +145,15 @@ def test_custom_columns_are_typed_and_existing_types_win():
     assert result.sales["size"].tolist()[0] == 1.5
     assert pd.isna(result.sales["size"].tolist()[1])
     assert "1 value(s) in custom column 'size'" in result.warnings[0]
+
+
+def test_percent_columns_are_read_one_way():
+    # 1 means 1% (not 100%) because other values in the column are above 1
+    result = run([line(disc="1"), line(disc="5"), line(disc="0.5")], {**BASE, "discount": "disc"},
+                 discount_type="percent")
+    assert result.sales["discount"].tolist() == [2.0, 10.0, 1.0]
+
+
+def test_dash_dates_load():
+    result = run([line(date="13-03-2025"), line(date="03-04-2025")])
+    assert result.sales["order_date"].tolist() == [pd.Timestamp("2025-03-13"), pd.Timestamp("2025-04-03")]

@@ -77,7 +77,7 @@ Code: [`app/ingestion/`](../app/ingestion/).
 | 2 | Normalize names | `reader` | `Unit Price (₹)` → `unit_price`, duplicates made unique |
 | 3 | Map columns | `mapper` | saved/built-in format profile → alias list → fuzzy match (rapidfuzz ≥ 88). Leftovers become custom columns. A `%` in the original discount header marks it as a percentage |
 | 4 | Fill order-level gaps | `cleaner` | exports that print the date/customer only on an order's first line get them copied to the other lines |
-| 5 | Convert types | `parsing` | dates (ISO always year-first; day/month order detected from values > 12, else the configured default; Excel serials; timezone suffix dropped), numbers (`₹1,23,456.50`, `Rs. 500`, `(500)`, `3,50`, `1.234,50`), IDs (`17850.0` → `17850`), consistent spelling of names |
+| 5 | Convert types | `parsing` | dates (ISO always year-first; day/month order detected from values > 12, else the configured default; Excel serials; timezone offset after a time of day dropped; outside 1900-2100 = bad), numbers (`₹1,23,456.50`, `Rs. 500`, `(500)`, `3,50`, `1.234,50`), IDs (`17850.0` → `17850`), consistent spelling of names |
 | 6 | Derive | `cleaner` | quantity 1 for amount-only files, unit price from totals, unit cost from line cost/profit, money discount from rates |
 | 7 | Validate | `cleaner` | each failed rule adds a reason code: `missing order_date`, `bad order_date`, `order_date in the future`, `missing product`, `quantity is 0`, `negative unit_price`, `bad discount`, `discount larger than line value`, `negative unit_cost`, ... `Total` footers get `summary row` |
 | 8 | Compute | `cleaner` | `revenue`, `cost`, `profit`, `is_return`, `year`, `month`, `week`, `weekday` |
@@ -93,10 +93,20 @@ cleanly or is rejected - values are never guessed (`SKU-884` is not the number �
 `discount` is stored in money with the line's sign, so for returns it reduces the refund.
 With only a line total, the total is treated as the final value after discount.
 
-**De-duplication:** the hash covers order id (if real), date, product, quantity, price
-and customer, plus an occurrence counter. Two identical lines in one file stay two
+**De-duplication:** the hash covers what identifies a transaction - order number (if
+real), date, product, quantity, price, discount, customer, location and channel,
+ignoring case - plus an occurrence counter. Two identical lines in one file stay two
 rows (two customers buying the same item), while re-uploading a file or an
-overlapping export skips rows already stored.
+overlapping export skips rows already stored. Product attributes (category, cost)
+and custom columns are left out so correcting them in a later export doesn't turn
+old sales into new ones.
+
+**Consistent names across uploads:** a product, category, location or channel that
+differs only in case from a stored value takes the stored spelling.
+
+**Concurrent uploads:** cleaning runs outside the write lock; inside it the custom
+column types are re-read and, if another upload created one of the columns with a
+different type meanwhile, the file is cleaned again with the stored types.
 
 **Format profiles:** saved mappings, matched when all their mapped columns are in the
 file. Built-in: Shopify orders export, Superstore dataset, UCI Online Retail
@@ -116,18 +126,23 @@ One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: [`app/db/schema.sql`](
 
 | Table | Holds |
 |---|---|
-| `sales` | canonical + derived + custom columns, `upload_id`, `row_hash` |
-| `products` | per product: category, first/last sold, units sold/returned, revenue, avg net price, profit, margin % |
-| `customers` | per customer: first/last order, orders, revenue, avg order value, recency (days before the latest sale in the data) |
+| `sales` | canonical + derived + custom columns, `upload_id`, `row_hash`, `order_id_generated` |
+| `products` (view) | per product: category, first/last sold, units sold/returned, revenue, avg net price, profit, margin % |
+| `customers` (view) | per customer: first/last order, orders, revenue, avg order value, recency (days before the latest sale in the data) |
 | `uploads` | filename, profile, row counts, mapping used, warnings |
 | `rejected_rows` | upload, file row number, reasons, raw values |
 | `format_profiles` | saved and built-in mappings |
-| `column_registry` | every sales column: type, kind (required/optional/derived/custom), description, sample values |
+| `column_registry` | every sales column: type, kind (required/optional/derived/custom), description; example values are computed from a repeatable 20k-row sample when read |
+| `schema_migrations` | which numbered files in `app/db/migrations/` have been applied |
 | `ml_runs`, `ml_results` ⏳ | model runs (task, params, metrics, artifact path) and per-row outputs |
 | `documents`, `doc_chunks`, `glossary` ⏳ | RAG documents, chunks with `FLOAT[768]` embeddings, metric definitions |
 
 ML outputs are written back to DuckDB so the agent can query them with SQL.
 Concurrency: one connection per process, a cursor per request, writes serialized by a lock.
+
+**Migrations:** the schema is built by numbered SQL files, each applied once and
+recorded, so an existing database file upgrades itself when the app changes.
+`products` and `customers` are views, so uploads and deletes don't rebuild anything.
 
 ---
 
@@ -204,9 +219,11 @@ Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs a
 | Endpoint | Purpose |
 |---|---|
 | `POST /uploads/preview` | multipart file (+ optional sheet) → staged `file_id`, detected layout, suggested mapping, field catalogue |
+| `POST /uploads/check` | mapping → problems in plain sentences + locked features (the UI calls this instead of copying the rules) |
 | `POST /uploads` | `{file_id, mapping?, save_profile_as?}` → clean + load → report (staged file is single-use) |
 | `POST /uploads/demo` | generate and load synthetic data |
 | `GET /uploads`, `GET /uploads/{id}`, `GET /uploads/{id}/rejected`, `DELETE /uploads/{id}` | history, detail with mapping and reason counts, paginated rejected rows, undo |
+| `GET /dashboard/range`, `/dimensions` | first/last sale date; columns `breakdown` accepts |
 | `GET /dashboard/summary`, `/trend`, `/breakdown` | KPIs + comparison, trend buckets, top-N + "Other" |
 | `GET /sales` | filtered, sorted, paginated rows (all columns incl. custom) |
 | `GET /schema`, `PATCH /schema/{column}` | column registry; edit descriptions |

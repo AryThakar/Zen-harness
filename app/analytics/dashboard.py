@@ -57,7 +57,10 @@ def resolve_period(
     if available is None:
         return None
     end = end or available.end
-    start = start or max(available.start, end - timedelta(days=DEFAULT_DAYS - 1))
+    if start is None:
+        start = end - timedelta(days=DEFAULT_DAYS - 1)
+        if available.start <= end:  # don't reach back before the data starts
+            start = max(start, available.start)
     if start > end:
         raise InvalidQuery("start must be on or before end")
     return Period(start, end)
@@ -69,7 +72,7 @@ def availability(cur: duckdb.DuckDBPyConnection) -> dict[str, bool]:
         """
         SELECT count(customer_id) > 0, count(unit_cost) > 0, count(category) > 0,
                count(location) > 0, count(channel) > 0,
-               count(*) FILTER (WHERE NOT starts_with(order_id, 'AUTO-')) > 0
+               count(*) FILTER (WHERE NOT order_id_generated) > 0
         FROM sales
         """
     ).fetchone()

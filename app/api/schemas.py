@@ -45,6 +45,7 @@ class ColumnPreviewOut(BaseModel):
     maps_to: str | None
     custom_name: str | None
     custom_type: str | None
+    default_name: str = Field(description="name used if this column is kept as a custom column")
 
 
 class FieldMatchOut(BaseModel):
@@ -70,6 +71,12 @@ class PreviewOut(BaseModel):
     missing_required: list[str]
     locked_features: dict[str, list[str]]
     fields: list[FieldInfo]
+
+
+class MappingCheckOut(BaseModel):
+    problems: list[str] = Field(description="what must change before the mapping can be loaded")
+    missing_required: list[str]
+    locked_features: dict[str, list[str]]
 
 
 class ConfirmIn(BaseModel):
@@ -159,6 +166,12 @@ class PeriodOut(BaseModel):
     start: date
     end: date
     days: int
+
+
+class RangeOut(BaseModel):
+    has_data: bool
+    start: date | None = None
+    end: date | None = None
 
 
 class KpiOut(BaseModel):

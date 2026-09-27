@@ -103,8 +103,8 @@ def test_validate_mapping_reports_every_problem():
     with pytest.raises(MappingError) as err:
         validate_mapping(mapping, ["date", "x", "a", "b"])
     message = str(err.value)
-    for part in ("unknown fields: bogus", "columns not in the file: missing_col",
-                 "mapped more than once: date", "invalid custom column names: profit",
-                 "custom column names used more than once: note",
-                 "date_order", "required columns not mapped"):
+    for part in ("Unknown fields: bogus", "Columns not in the file: missing_col",
+                 "Each file column can be used once: date", "Invalid custom column names: profit",
+                 "Custom column names used more than once: note",
+                 "date_order must be one of", "Match a unit price column"):
         assert part in message

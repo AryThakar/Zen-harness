@@ -7,12 +7,13 @@ from datetime import date
 from pathlib import Path
 
 from app.config import settings
+from app.db import registry
 from app.db.connection import Database
 
 from .cleaner import clean
-from .loader import UploadReport, custom_column_types, load
+from .loader import UploadReport, load
 from .mapper import (
-    Mapping, Profile, Suggestion, locked_features, suggest_mapping, validate_mapping,
+    Mapping, Profile, Suggestion, custom_column_name, locked_features, suggest_mapping, validate_mapping,
 )
 from .parsing import infer_type
 from .profiles import load_profiles, save_profile
@@ -29,6 +30,7 @@ class ColumnPreview:
     maps_to: str | None  # canonical field, if mapped
     custom_name: str | None
     custom_type: str | None
+    default_name: str  # the name it gets if kept as a custom column
 
 
 @dataclass
@@ -62,6 +64,7 @@ def preview_file(db: Database, path: str | Path, *, sheet: str | None = None) ->
             custom_name=custom_name,
             custom_type=(existing.get(custom_name) or infer_type(custom_name, raw.df[name]))
             if custom_name else None,
+            default_name=custom_column_name(name),
         ))
     return Preview(
         filename=Path(path).name,
@@ -99,11 +102,20 @@ def ingest_file(
         profile_name = profile_name or suggestion.profile
     validate_mapping(mapping, list(raw.df.columns))
 
+    # Cleaning is the slow part, so it runs before taking the write lock...
     result = clean(
         raw, mapping, custom_types=existing, today=today,
         default_date_order=settings.default_date_order,
     )
     with db.transaction() as cur:
+        # ...but another upload may have created one of our custom columns with a
+        # different type in the meantime. Then clean again with the stored types.
+        current = registry.custom_types(cur)
+        if any(current.get(name, sql_type) != sql_type for name, sql_type in result.custom_types.items()):
+            result = clean(
+                raw, mapping, custom_types=current, today=today,
+                default_date_order=settings.default_date_order,
+            )
         if save_profile_as:
             save_profile(cur, save_profile_as, mapping)
         return load(
@@ -119,7 +131,7 @@ def ingest_file(
 def _read_context(db: Database) -> tuple[list[Profile], dict[str, str]]:
     cur = db.cursor()
     try:
-        return load_profiles(cur), custom_column_types(cur)
+        return load_profiles(cur), registry.custom_types(cur)
     finally:
         cur.close()
 

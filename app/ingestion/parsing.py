@@ -18,11 +18,16 @@ _CURRENCY = r"(?i)(?:rs\.?|inr|usd|eur|gbp|aud|cad|[₹$€£¥])"
 _NUMBER = r"\(?[-+]?(?:\d+\.?\d*|\.\d+)\)?%?"
 # Decimal comma: '1.234,50' or '3,50'. A comma followed by only 1-2 digits
 # can't be a thousands separator in any convention (1,234 / 1,23,456).
-_DECIMAL_COMMA = r"-?(?:\d{1,3}(?:\.\d{3})+,\d+|\d+,\d{1,2})%?"
+# Checked after currency symbols and spaces are removed ('€3,50', 'Rs. 12,5').
+_DECIMAL_COMMA = r"\(?[-+]?(?:\d{1,3}(?:\.\d{3})+,\d+|\d+,\d{1,2})%?\)?"
 
 _YEAR_FIRST = r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}"
 DAY_MONTH = r"^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}"
-_TZ_SUFFIX = r"\s*(?:Z|[+-]\d{2}:?\d{2})$"
+# A timezone offset only counts after a time of day, so '13-03-2025' keeps its year.
+_TIME_THEN_TZ = r"(\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?)\s*(?:Z|[+-]\d{2}:?\d{2})$"
+# Sales dates outside this range are typos (year 1, 20255, ...).
+EARLIEST_DATE = pd.Timestamp("1900-01-01")
+LATEST_DATE = pd.Timestamp("2100-12-31")
 _EXCEL_SERIAL = r"\d{5}(?:\.\d+)?"
 
 _TRUE = {"yes", "y", "true"}
@@ -65,15 +70,12 @@ def parse_numbers(s: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
         )
     missing = is_missing(t)
 
+    t = t.str.replace(_CURRENCY, "", regex=True).str.replace(r"\s+", "", regex=True)
     decimal_comma = t.str.fullmatch(_DECIMAL_COMMA)
     t = t.where(
         ~decimal_comma, t.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
     )
-    t = (
-        t.str.replace(_CURRENCY, "", regex=True)
-        .str.replace(",", "", regex=False)
-        .str.replace(r"\s+", "", regex=True)
-    )
+    t = t.str.replace(",", "", regex=False)
 
     ok = t.str.fullmatch(_NUMBER) & ~missing
     pct = ok & t.str.endswith("%")
@@ -108,7 +110,7 @@ def parse_dates(
     always read as year-month-day. Timezone offsets are dropped so the local
     wall-clock time is kept.
     """
-    t = as_text(s).str.replace(_TZ_SUFFIX, "", regex=True)
+    t = as_text(s).str.replace(_TIME_THEN_TZ, r"\1", regex=True)
     missing = is_missing(t)
     out = pd.Series(pd.NaT, index=t.index, dtype="datetime64[ns]")
 
@@ -127,21 +129,47 @@ def parse_dates(
             order = detect_date_order(t[other]) or default_order
         out[other] = _to_datetime(t[other], dayfirst=order == "dayfirst")
 
+    out = out.where((out >= EARLIEST_DATE) & (out <= LATEST_DATE))
     bad = ~missing & out.isna()
     return out, bad
 
 
 def _to_datetime(t: pd.Series, dayfirst: bool) -> pd.Series:
-    """Fast path with one inferred format, then per-value parsing for the leftovers."""
+    """Fast path with one inferred format, then per-value parsing for the leftovers.
+
+    Never raises: anything that can't be placed on the calendar between 1900 and
+    2100 becomes NaT.
+    """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        out = pd.to_datetime(t, dayfirst=dayfirst, errors="coerce")
+        try:
+            out = _in_range(pd.to_datetime(t, dayfirst=dayfirst, errors="coerce"))
+        except (ValueError, OverflowError):  # e.g. an impossible year in the inferred format
+            out = pd.Series(pd.NaT, index=t.index, dtype="datetime64[ns]")
         leftover = out.isna()
         if leftover.any():
-            out[leftover] = pd.to_datetime(
-                t[leftover], format="mixed", dayfirst=dayfirst, errors="coerce"
-            )
-    return out.astype("datetime64[ns]")
+            rest = t[leftover]
+            try:
+                parsed = pd.to_datetime(rest, format="mixed", dayfirst=dayfirst, errors="coerce")
+            except (ValueError, OverflowError):
+                parsed = pd.Series([_one_date(v, dayfirst) for v in rest], index=rest.index)
+            out[leftover] = _in_range(parsed)
+    return out
+
+
+def _in_range(values: pd.Series) -> pd.Series:
+    """Nanosecond datetimes with dates outside 1900-2100 as NaT. The range check runs
+    first because pandas keeps years like 1 in coarser units that don't fit in ns."""
+    s = pd.Series(values)
+    keep = s.notna() & (s >= EARLIEST_DATE) & (s <= LATEST_DATE)
+    return pd.to_datetime(s.where(keep), errors="coerce").astype("datetime64[ns]")
+
+
+def _one_date(value: str, dayfirst: bool):
+    try:
+        return pd.to_datetime(value, dayfirst=dayfirst)
+    except (ValueError, OverflowError):
+        return pd.NaT
 
 
 def parse_booleans(s: pd.Series) -> tuple[pd.Series, pd.Series]:

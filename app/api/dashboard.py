@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.analytics import dashboard as analytics
 
 from .deps import get_cursor
-from .schemas import BreakdownOut, PeriodOut, SummaryOut, TrendOut
+from .schemas import BreakdownOut, PeriodOut, RangeOut, SummaryOut, TrendOut
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -24,6 +24,21 @@ def _period(cur: duckdb.DuckDBPyConnection, start: date | None, end: date | None
 
 def _out(period: analytics.Period | None) -> PeriodOut | None:
     return PeriodOut(start=period.start, end=period.end, days=period.days) if period else None
+
+
+@router.get("/range", response_model=RangeOut)
+def data_range(cur: duckdb.DuckDBPyConnection = Depends(get_cursor)) -> RangeOut:
+    """First and last sale date - cheap, for building period pickers."""
+    available = analytics.data_range(cur)
+    if available is None:
+        return RangeOut(has_data=False)
+    return RangeOut(has_data=True, start=available.start, end=available.end)
+
+
+@router.get("/dimensions", response_model=list[str])
+def dimensions(cur: duckdb.DuckDBPyConnection = Depends(get_cursor)) -> list[str]:
+    """Columns that /dashboard/breakdown accepts in `by`."""
+    return analytics.breakdown_dimensions(cur)
 
 
 @router.get("/summary", response_model=SummaryOut)

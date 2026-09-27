@@ -14,6 +14,7 @@ from app.db.connection import Database
 
 from .mapper import MappingError
 from .pipeline import ingest_file, preview_file
+from .profiles import ProfileError
 from .reader import ReadError
 
 
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             db, args.file, s.mapping, sheet=args.sheet,
             save_profile_as=args.save_profile, profile_name=s.profile,
         )
-    except (MappingError, ValueError) as exc:
+    except (MappingError, ProfileError, ReadError) as exc:
         print(f"Cannot load: {exc}", file=sys.stderr)
         return 1
 

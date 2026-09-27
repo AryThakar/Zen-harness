@@ -43,6 +43,10 @@ def preview(filename: str, data: bytes, sheet: str | None = None) -> dict:
     return _call("POST", "/uploads/preview", files={"file": (filename, data)}, data=_clean({"sheet": sheet}))
 
 
+def check_mapping(mapping: dict) -> dict:
+    return _call("POST", "/uploads/check", json=mapping)
+
+
 def confirm(file_id: str, mapping: dict, save_profile_as: str | None, profile_name: str | None) -> dict:
     body = {"file_id": file_id, "mapping": mapping, "save_profile_as": save_profile_as or None,
             "profile_name": profile_name}
@@ -67,6 +71,14 @@ def rejected(upload_id: int, limit: int = 100, offset: int = 0) -> dict:
 
 def delete_upload(upload_id: int) -> None:
     _call("DELETE", f"/uploads/{upload_id}")
+
+
+def data_range() -> dict:
+    return _call("GET", "/dashboard/range")
+
+
+def dimensions() -> list[str]:
+    return _call("GET", "/dashboard/dimensions")
 
 
 def summary(start=None, end=None) -> dict:

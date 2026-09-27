@@ -29,16 +29,16 @@ LOCKED_BY = {"profit": "unit_cost", "margin_pct": "unit_cost",
 def render() -> None:
     st.header("Dashboard")
     try:
-        probe = client.summary()
+        available = client.data_range()
     except client.ApiError as exc:
         st.error(str(exc))
         return
-    if not probe["has_data"]:
+    if not available["has_data"]:
         _empty_state()
         return
 
-    data_start = date.fromisoformat(probe["data_range"]["start"])
-    data_end = date.fromisoformat(probe["data_range"]["end"])
+    data_start = date.fromisoformat(available["start"])
+    data_end = date.fromisoformat(available["end"])
     start, end = _period_filter(data_start, data_end)
     if start is None:
         return
@@ -123,32 +123,36 @@ def _trend_section(trend: dict, summary: dict) -> None:
 
 def _breakdowns(start: date, end: date, summary: dict) -> None:
     available = summary["available"]
+    first = next((d for d in ("category", "channel", "location") if available.get(d)), None)
     left, right = st.columns(2)
     with left:
-        by = "category" if available.get("category") else "channel" if available.get("channel") else "location"
-        if available.get(by):
-            _breakdown_chart(f"Revenue by {by}", by, start, end, limit=8)
+        if first:
+            _breakdown_chart(f"Revenue by {first}", first, start, end, limit=8, slot="first")
     with right:
-        _breakdown_chart("Top products", "product", start, end, limit=8)
+        _breakdown_chart("Top products", "product", start, end, limit=8, slot="products")
 
     left, right = st.columns(2)
     try:
-        dimensions = client.breakdown("product", start, end, limit=1)["dimensions"]
+        dimensions = client.dimensions()
     except client.ApiError as exc:
         st.error(str(exc))
         return
-    choices = [d for d in dimensions if d not in ("product", "weekday", "customer_id")]
+    shown = {first, "product", "weekday"}
+    choices = [d for d in dimensions if d not in shown and d != "customer_id"]
     with left:
         if choices:
             default = next((c for c in ("location", "channel") if c in choices), choices[0])
             chosen = st.selectbox("Break down revenue by", choices, index=choices.index(default),
                                   key="dash_dimension")
-            _breakdown_chart(None, chosen, start, end, limit=8)
+            _breakdown_chart(None, chosen, start, end, limit=8, slot="chosen")
     with right:
-        _breakdown_chart("Revenue by weekday", "weekday", start, end, limit=7, sort=False)
+        _breakdown_chart("Revenue by weekday", "weekday", start, end, limit=7, sort=False, slot="weekday")
 
 
-def _breakdown_chart(title: str | None, by: str, start: date, end: date, limit: int, sort: bool = True) -> None:
+def _breakdown_chart(title: str | None, by: str, start: date, end: date, limit: int, slot: str,
+                     sort: bool = True) -> None:
+    """One breakdown chart. ``slot`` names its place on the page so element keys
+    stay unique even when two charts show the same column."""
     try:
         data = client.breakdown(by, start, end, limit)
     except client.ApiError as exc:
@@ -160,7 +164,7 @@ def _breakdown_chart(title: str | None, by: str, start: date, end: date, limit: 
         st.caption("No sales in this period.")
         return
     st.plotly_chart(charts.bar_figure(data["items"], data["other"], sort=sort), width="stretch",
-                    config={"displayModeBar": False}, key=f"bar_{by}")
+                    config={"displayModeBar": False}, key=f"bar_{slot}")
     with st.expander("Show as table"):
         rows = data["items"] + ([data["other"]] if data["other"] else [])
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")

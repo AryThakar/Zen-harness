@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 import streamlit as st
 
@@ -44,8 +42,13 @@ def render() -> None:
     if preview is None:
         return
     _file_summary(preview, file)
-    mapping, problems = _mapping_editor(preview)
-    _load_controls(preview, mapping, problems)
+    mapping = _mapping_editor(preview)
+    try:
+        check = client.check_mapping(mapping)  # the API owns the rules; the UI only shows them
+    except client.ApiError as exc:
+        st.error(str(exc))
+        return
+    _load_controls(preview, mapping, check)
 
 
 def _preview(file, sheet: str | None = None) -> dict | None:
@@ -81,7 +84,7 @@ def _file_summary(preview: dict, file) -> None:
             st.rerun()
 
 
-def _mapping_editor(preview: dict) -> tuple[dict, list[str]]:
+def _mapping_editor(preview: dict) -> dict:
     columns = preview["columns"]
     original = {c["name"]: c["original"] for c in columns}
     samples = {c["name"]: ", ".join(c["samples"]) for c in columns}
@@ -114,21 +117,7 @@ def _mapping_editor(preview: dict) -> tuple[dict, list[str]]:
                 if chosen:
                     fields[f["name"]] = chosen
 
-    problems = []
-    used = list(fields.values())
-    twice = sorted({original[c] for c in used if used.count(c) > 1})
-    if twice:
-        problems.append(f"Each file column can be matched once: {', '.join(twice)}")
-    if "order_date" not in fields:
-        problems.append("Choose the column with the sale date (order_date).")
-    if "product" not in fields:
-        problems.append("Choose the column with the product or service (product).")
-    if "unit_price" in fields and "quantity" not in fields:
-        problems.append("With a unit price, a quantity column is needed too.")
-    if "unit_price" not in fields and "amount" not in fields:
-        problems.append("Choose a unit_price column, or a line total under 'Totals' (amount).")
-
-    custom, ignore, descriptions = _custom_columns(preview, set(used))
+    custom, ignore, descriptions = _custom_columns(preview, set(fields.values()))
 
     st.subheader("3. Options")
     cols = st.columns(2)
@@ -144,9 +133,8 @@ def _mapping_editor(preview: dict) -> tuple[dict, list[str]]:
         format_func={"auto": "Detect", "percent": "Percentages", "amount": "Money"}.get,
         key=f"discount_type_{file_id}",
     )
-    mapping = {"fields": fields, "custom": custom, "ignore": ignore, "date_order": date_order,
-               "discount_type": discount_type, "descriptions": descriptions}
-    return mapping, problems
+    return {"fields": fields, "custom": custom, "ignore": ignore, "date_order": date_order,
+            "discount_type": discount_type, "descriptions": descriptions}
 
 
 def _custom_columns(preview: dict, used: set[str]) -> tuple[dict, list[str], dict]:
@@ -161,7 +149,7 @@ def _custom_columns(preview: dict, used: set[str]) -> tuple[dict, list[str], dic
     table = pd.DataFrame({
         "File column": [c["original"] for c in rest],
         "Keep": [c["name"] not in suggested["ignore"] for c in rest],
-        "Save as": [suggested["custom"].get(c["name"]) or _safe_name(c["name"]) for c in rest],
+        "Save as": [suggested["custom"].get(c["name"]) or c["default_name"] for c in rest],
         "Type": [c["custom_type"] or "auto" for c in rest],
         "Description": [suggested["descriptions"].get(suggested["custom"].get(c["name"], ""), "") for c in rest],
         "Example": [", ".join(c["samples"]) for c in rest],
@@ -174,7 +162,7 @@ def _custom_columns(preview: dict, used: set[str]) -> tuple[dict, list[str], dic
     custom, ignore, descriptions = {}, [], {}
     for c, row in zip(rest, edited.itertuples(index=False)):
         if row.Keep:
-            name = _safe_name(row[2])
+            name = str(row[2]).strip()  # checked by the API, which explains any problem
             custom[c["name"]] = name
             if row.Description:
                 descriptions[name] = row.Description
@@ -183,14 +171,14 @@ def _custom_columns(preview: dict, used: set[str]) -> tuple[dict, list[str], dic
     return custom, ignore, descriptions
 
 
-def _load_controls(preview: dict, mapping: dict, problems: list[str]) -> None:
+def _load_controls(preview: dict, mapping: dict, check: dict) -> None:
     st.subheader("4. Load")
+    problems = check["problems"]
     for p in problems:
         st.error(p)
-    locked = [f for f in preview["fields"] if f["kind"] == "optional" and f["name"] not in mapping["fields"]
-              and not (f["name"] == "unit_cost" and ({"line_cost", "line_profit"} & set(mapping["fields"])))]
-    if locked:
-        st.caption("Not in this file: " + "; ".join(f"**{f['name']}** ({', '.join(f['unlocks'])})" for f in locked))
+    if check["locked_features"]:
+        st.caption("Not in this file: " + "; ".join(
+            f"**{col}** ({', '.join(features)})" for col, features in check["locked_features"].items()))
     save_as = st.text_input("Remember this mapping as (optional)",
                             placeholder="e.g. My shop POS – next time it loads automatically",
                             key=f"save_as_{preview['file_id']}")
@@ -226,8 +214,3 @@ def _show_report(report: dict) -> None:
         if page["total"] > len(rows):
             st.caption(f"Showing {len(rows)} of {page['total']}. All are in Explore data → Uploads.")
 
-
-def _safe_name(name: str) -> str:
-    """Same rules the API enforces: lowercase letters, digits and _, starting with a letter."""
-    s = re.sub(r"[^0-9a-z_]+", "_", str(name).lower()).strip("_") or "column"
-    return f"c_{s}" if s[0].isdigit() else s

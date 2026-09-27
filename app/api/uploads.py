@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict
 from datetime import date, timedelta
 
@@ -13,14 +14,15 @@ from app.datagen import generate
 from app.db.connection import Database
 from app.ingestion.fields import FIELDS
 from app.ingestion.loader import UploadReport, delete_upload
-from app.ingestion.mapper import MappingError
+from app.ingestion.mapper import MappingError, locked_features, mapping_problems, missing_required
 from app.ingestion.pipeline import ingest_file, preview_file
+from app.ingestion.profiles import ProfileError
 from app.ingestion.reader import ReadError, list_sheets
 
 from .deps import get_cursor, get_db, get_staging
 from .schemas import (
-    ConfirmIn, DemoDataIn, FieldInfo, MappingModel, PreviewOut, RejectedPage, UploadDetailOut,
-    UploadOut, UploadReportOut,
+    ConfirmIn, DemoDataIn, FieldInfo, MappingCheckOut, MappingModel, PreviewOut, RejectedPage,
+    UploadDetailOut, UploadOut, UploadReportOut,
 )
 from .staging import FileTooLarge, Staging, StagingError
 
@@ -77,6 +79,18 @@ def preview_upload(
     )
 
 
+@router.post("/check", response_model=MappingCheckOut)
+def check_mapping(body: MappingModel) -> MappingCheckOut:
+    """What's wrong with a mapping and which features it leaves locked - the upload
+    screen calls this on every change instead of re-implementing the rules."""
+    mapping = body.to_mapping()
+    return MappingCheckOut(
+        problems=mapping_problems(mapping),
+        missing_required=missing_required(mapping.fields),
+        locked_features=locked_features(mapping.fields),
+    )
+
+
 @router.post("", response_model=UploadReportOut, status_code=status.HTTP_201_CREATED)
 def confirm_upload(
     body: ConfirmIn,
@@ -97,7 +111,7 @@ def confirm_upload(
             save_profile_as=body.save_profile_as,
             profile_name=body.profile_name,
         )
-    except (MappingError, ReadError, ValueError) as exc:
+    except (MappingError, ReadError, ProfileError) as exc:
         raise HTTPException(422, str(exc)) from exc
     staging.delete(body.file_id)
     return _report_out(report)
@@ -112,7 +126,7 @@ def load_demo_data(
     """Generate realistic synthetic sales (an electronics retailer) and load them."""
     body = body or DemoDataIn()
     df = generate(months=body.months, end=date.today() - timedelta(days=1), orders_per_day=body.orders_per_day)
-    path = staging.root / f"demo-{body.months}m.csv"
+    path = staging.root / f"demo-{uuid.uuid4().hex}.csv"
     df.to_csv(path, index=False, date_format="%Y-%m-%d %H:%M:%S")
     try:
         report = ingest_file(db, path, filename="demo data (synthetic)")

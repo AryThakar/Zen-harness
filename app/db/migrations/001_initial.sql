@@ -1,4 +1,4 @@
--- Core tables for ingestion. ML, RAG and chat tables are added with those features.
+-- 001: core ingestion tables.
 
 CREATE SEQUENCE IF NOT EXISTS upload_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS sale_id_seq START 1;

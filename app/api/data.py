@@ -8,6 +8,7 @@ from datetime import date, timedelta
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.db import registry
 from app.db.connection import Database
 
 from .deps import get_cursor, get_db
@@ -75,32 +76,17 @@ def list_sales(
 @router.get("/schema", response_model=list[ColumnInfoOut])
 def list_columns(cur: duckdb.DuckDBPyConnection = Depends(get_cursor)) -> list[ColumnInfoOut]:
     """Every column of the sales table with its meaning - what the AI reads too."""
-    rows = cur.execute(
-        """
-        SELECT column_name, data_type, kind, description, sample_values FROM column_registry
-        ORDER BY CASE kind WHEN 'required' THEN 0 WHEN 'optional' THEN 1
-                           WHEN 'derived' THEN 2 ELSE 3 END, column_name
-        """
-    ).fetchall()
-    return [
-        ColumnInfoOut(column_name=n, data_type=t, kind=k, description=d, sample_values=json.loads(s or "[]"))
-        for n, t, k, d, s in rows
-    ]
+    return [ColumnInfoOut(**c) for c in registry.columns(cur)]
 
 
 @router.patch("/schema/{column}", response_model=ColumnInfoOut)
 def describe_column(column: str, body: DescriptionIn, db: Database = Depends(get_db)) -> ColumnInfoOut:
     """Change a column's description (helps the AI understand custom columns)."""
     with db.transaction() as cur:
-        row = cur.execute(
-            "UPDATE column_registry SET description = ? WHERE column_name = ? "
-            "RETURNING column_name, data_type, kind, description, sample_values",
-            [body.description, column],
-        ).fetchone()
-    if not row:
+        updated = registry.set_description(cur, column, body.description)
+    if updated is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Column '{column}' not found.")
-    n, t, k, d, s = row
-    return ColumnInfoOut(column_name=n, data_type=t, kind=k, description=d, sample_values=json.loads(s or "[]"))
+    return ColumnInfoOut(**updated)
 
 
 @router.get("/profiles", response_model=list[ProfileOut])
