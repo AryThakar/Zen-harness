@@ -1,0 +1,27 @@
+Sharma Electronics - Andheri West
+Sales Register 01/03/2025 to 31/03/2025
+GSTIN: 27ABCDE1234F1Z5
+
+Bill No,Bill Date,Item Name,Category,Qty,Rate (₹),Disc %,Customer,Payment Mode
+B-1001,01/03/2025,Wireless Mouse,Accessories,2,"₹1,299.00",10%,C-501,UPI
+B-1001,01/03/2025,USB-C Cable,Accessories,1,₹399.00,,C-501,UPI
+B-1002,01/03/2025,Bluetooth Speaker,Electronics,1,"₹3,499.00",5%,,Cash
+B-1003,02/03/2025,wireless mouse,accessories,1,"1,299",,C-502,Card
+B-1004,03/03/2025,Smart Watch,Electronics,1,"₹8,999.00",15%,C-503,Card
+B-1004,03/03/2025,Screen Guard,Accessories,2,₹249.00,,C-503,Card
+B-1005,05/03/2025,Earbuds Pro,Electronics,1,"₹4,999.00",,C-501,UPI
+B-1006,07/03/2025,Power Bank 20000mAh,Accessories,1,"₹1,899.00",10%,,Cash
+B-1007,08/03/2025,Earbuds Pro,Electronics,-1,"₹4,999.00",,C-501,UPI
+B-1008,09/03/2025,Laptop Stand,Accessories,1,₹1499,,C-504,UPI
+B-1009,10/03/2025,Smart Watch,Electronics,1,"₹8,999.00",,C-505,Card
+B-1010,12/03/2025,USB-C Cable,Accessories,3,₹399.00,,,Cash
+B-1011,13/03/2025,Bluetooth Speaker,Electronics,1,"₹3,499.00",,C-502,Card
+B-1012,35/03/2025,Wireless Mouse,Accessories,1,"₹1,299.00",,C-506,UPI
+B-1013,15/03/2025,Keyboard,Accessories,0,₹999.00,,C-507,Cash
+B-1014,16/03/2025,,Accessories,1,₹499.00,,C-508,UPI
+B-1015,18/03/2025,Earbuds Pro,Electronics,1,abc,,C-509,Card
+B-1016,20/03/2025,Smart Watch,Electronics,2,"₹8,999.00",10%,C-503,Card
+B-1017,22/03/2025,Power Bank 20000mAh,Accessories,1,"₹1,899.00",,C-510,UPI
+B-1018,25/03/2025,Laptop Stand,Accessories,1,"₹1,499.00",,,Cash
+,,,,,,,,
+Total,,,,,,,,"₹58,421.00"

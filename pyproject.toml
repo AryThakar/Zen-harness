@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-business-analyst"
+version = "0.1.0"
+description = "Upload business sales data, ask questions in plain English, get answers, forecasts and charts."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "charset-normalizer>=3.0",
+    "duckdb>=1.1",
+    "numpy>=1.26",
+    "openpyxl>=3.1",
+    "pandas>=2.2",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.db" = ["schema.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

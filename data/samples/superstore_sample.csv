@@ -1,0 +1,9 @@
+Row ID,Order ID,Order Date,Ship Date,Ship Mode,Customer ID,Customer Name,Segment,Country,City,State,Postal Code,Region,Product ID,Category,Sub-Category,Product Name,Sales,Quantity,Discount,Profit
+1,CA-2024-100006,9/7/2024,9/13/2024,Standard Class,DK-13375,Dennis K,Consumer,United States,New York City,New York,10024,East,TEC-PH-10002075,Technology,Phones,Office Desk Phone,377.97,3,0,109.6113
+2,CA-2024-100090,7/8/2024,7/12/2024,Standard Class,EB-13705,Ed B,Corporate,United States,San Francisco,California,94122,West,FUR-TA-10003715,Furniture,Tables,Corner Conference Table,502.488,3,0.2,-87.9354
+3,CA-2024-100090,7/8/2024,7/12/2024,Standard Class,EB-13705,Ed B,Corporate,United States,San Francisco,California,94122,West,OFF-BI-10001597,Office Supplies,Binders,Ledger Binders,196.704,6,0.2,68.8464
+4,CA-2024-100293,3/14/2024,3/18/2024,Standard Class,NF-18475,Neil F,Home Office,United States,Jacksonville,Florida,32216,South,OFF-PA-10000176,Office Supplies,Paper,Copy Paper Pack,91.056,6,0.2,31.8696
+5,CA-2024-100328,1/28/2024,2/3/2024,Standard Class,JC-15340,Jasper C,Consumer,United States,New York City,New York,10024,East,OFF-BI-10000343,Office Supplies,Binders,Ring Binder Set,3.928,1,0.2,1.3257
+6,CA-2024-100363,4/8/2024,4/15/2024,Standard Class,JM-15655,Jim M,Corporate,United States,Glendale,Arizona,85301,West,OFF-FA-10000611,Office Supplies,Fasteners,Binder Clips,2.368,2,0.2,0.8288
+7,CA-2024-100391,5/25/2024,5/29/2024,Standard Class,BW-11065,Barry W,Consumer,United States,New York City,New York,10035,East,OFF-PA-10001471,Office Supplies,Paper,Notebook Pack,14.62,2,0,6.8714
+8,CA-2024-100678,4/18/2024,4/22/2024,Standard Class,KM-16720,Kunst M,Consumer,United States,Houston,Texas,77070,Central,FUR-CH-10002602,Furniture,Chairs,Mesh Office Chair,317.058,3,0.3,-18.1176

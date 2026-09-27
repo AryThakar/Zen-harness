@@ -1,0 +1,12 @@
+Name,Email,Financial Status,Created at,Currency,Subtotal,Shipping,Taxes,Total,Discount Code,Discount Amount,Lineitem quantity,Lineitem name,Lineitem price,Lineitem sku,Lineitem discount,Billing Name,Billing City,Source,Payment Method
+#1001,priya@example.com,paid,2025-03-02 10:15:23 +0530,INR,2598.00,0.00,0.00,2598.00,,0.00,2,Wireless Mouse,1299.00,ACC-MOU-01,0.00,Priya S,Mumbai,web,Razorpay
+#1002,rahul@example.com,paid,2025-03-02 18:40:02 +0530,INR,9248.00,99.00,0.00,8422.20,WELCOME10,924.80,1,Smart Watch,8999.00,ELE-WAT-01,899.90,Rahul K,Pune,web,Razorpay
+#1002,,,,,,,,,,,1,Screen Guard,249.00,ACC-SCR-01,24.90,,,,
+#1003,anita@example.com,paid,2025-03-05 09:05:11 +0530,INR,4999.00,0.00,0.00,4999.00,,0.00,1,Earbuds Pro,4999.00,ELE-EAR-01,0.00,Anita D,Ahmedabad,pos,Cash
+#1004,priya@example.com,paid,2025-03-09 20:12:45 +0530,INR,5398.00,0.00,0.00,5398.00,,0.00,1,Bluetooth Speaker,3499.00,ELE-SPK-01,0.00,Priya S,Mumbai,web,Razorpay
+#1004,,,,,,,,,,,1,Power Bank 20000mAh,1899.00,ACC-PWR-01,0.00,,,,
+#1005,vikram@example.com,refunded,2025-03-12 14:30:00 +0530,INR,1499.00,49.00,0.00,1548.00,,0.00,1,Laptop Stand,1499.00,ACC-STD-01,0.00,Vikram P,Delhi,web,Razorpay
+#1006,rahul@example.com,paid,2025-03-15 11:02:37 +0530,INR,1197.00,0.00,0.00,1197.00,,0.00,3,USB-C Cable,399.00,ACC-CBL-01,0.00,Rahul K,Pune,web,UPI
+#1007,meera@example.com,paid,2025-03-18 19:45:10 +0530,INR,13998.00,0.00,0.00,11898.30,FEST15,2099.70,1,Smart Watch,8999.00,ELE-WAT-01,1349.85,Meera J,Bengaluru,web,Razorpay
+#1007,,,,,,,,,,,1,Earbuds Pro,4999.00,ELE-EAR-01,749.85,,,,
+#1008,anita@example.com,paid,2025-03-21 16:20:05 +0530,INR,2598.00,0.00,0.00,2598.00,,0.00,2,Wireless Mouse,1299.00,ACC-MOU-01,0.00,Anita D,Ahmedabad,pos,Card

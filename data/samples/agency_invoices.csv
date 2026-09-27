@@ -1,0 +1,11 @@
+Invoice No,Invoice Date,Client,Service,Project,Amount (₹),Status
+INV-2025-001,2025-01-05,Acme Foods,SEO Retainer,Website Growth,"45,000",Paid
+INV-2025-002,2025-01-12,Bright Clinics,Social Media Management,Q1 Campaign,"30,000",Paid
+INV-2025-003,2025-01-20,Acme Foods,Ad Campaign Setup,Website Growth,"18,500",Paid
+INV-2025-004,2025-02-05,Acme Foods,SEO Retainer,Website Growth,"45,000",Paid
+INV-2025-005,2025-02-10,Nova Realty,Website Redesign,New Site,"1,20,000",Pending
+INV-2025-006,2025-02-12,Bright Clinics,Social Media Management,Q1 Campaign,"30,000",Paid
+INV-2025-007,2025-03-05,Acme Foods,SEO Retainer,Website Growth,"45,000",Paid
+INV-2025-008,2025-03-11,Bright Clinics,Social Media Management,Q1 Campaign,"30,000",Overdue
+INV-2025-009,2025-03-18,Nova Realty,Website Maintenance,New Site,"8,000",Paid
+INV-2025-010,2025-03-25,Zen Yoga Studio,Logo & Branding,Brand Kit,"25,000",Paid
