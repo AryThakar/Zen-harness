@@ -146,6 +146,17 @@ def load(
     )
 
 
+def delete_upload(cur: duckdb.DuckDBPyConnection, upload_id: int) -> bool:
+    """Remove an upload and its rows (inside a transaction). False if it doesn't exist."""
+    if not cur.execute("SELECT 1 FROM uploads WHERE upload_id = ?", [upload_id]).fetchone():
+        return False
+    for table in ("sales", "rejected_rows", "uploads"):
+        cur.execute(f"DELETE FROM {table} WHERE upload_id = ?", [upload_id])
+    refresh_summaries(cur)
+    _update_samples(cur)
+    return True
+
+
 def custom_column_types(cur: duckdb.DuckDBPyConnection) -> dict[str, str]:
     rows = cur.execute(
         "SELECT column_name, data_type FROM column_registry WHERE kind = 'custom'"

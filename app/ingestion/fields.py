@@ -50,7 +50,7 @@ FIELDS: tuple[Field, ...] = (
     ),
     Field(
         "order_id", "optional", "text", "Bill / invoice / order number grouping lines together.",
-        ("order_id", "orderid", "order_no", "order_number", "invoice", "invoice_no",
+        ("order_id", "orderid", "order", "order_no", "order_number", "invoice", "invoice_no",
          "invoiceno", "invoice_number", "invoice_id", "bill_no", "bill_number", "bill_id",
          "receipt_no", "transaction_id", "voucher_no", "voucher_number"),
         ("order count & average order value", "frequently bought together"),

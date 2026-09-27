@@ -9,3 +9,4 @@ build/
 *.duckdb
 *.duckdb.wal
 data/generated/
+data/staging/

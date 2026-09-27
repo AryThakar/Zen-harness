@@ -1,0 +1,233 @@
+"""Upload: pick a file, check/edit the column mapping, load, see the report."""
+
+from __future__ import annotations
+
+import re
+
+import pandas as pd
+import streamlit as st
+
+import client
+
+NOT_IN_FILE = ""
+KIND_TITLES = {
+    "required": "Required",
+    "optional": "Optional – each one unlocks features",
+    "input": "Totals – only if the file has no unit price or unit cost",
+}
+
+
+def render() -> None:
+    st.header("Upload data")
+    st.caption("CSV or Excel exports from your shop, POS, Shopify, Tally or spreadsheet. "
+               "Messy files are fine – title rows, ₹ symbols and different date styles are handled.")
+
+    if report := st.session_state.get("last_report"):
+        _show_report(report)
+        if st.button("Upload another file"):
+            st.session_state.pop("last_report")
+            st.session_state.pop("upload_preview", None)
+            st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+            st.rerun()
+        return
+
+    file = st.file_uploader("Sales file", type=["csv", "txt", "tsv", "xlsx", "xlsm"],
+                            key=f"uploader_{st.session_state.get('uploader_key', 0)}")
+    if file is None:
+        st.session_state.pop("upload_preview", None)
+        return
+    if st.session_state.get("upload_file_id") != file.file_id:  # a different file: forget its sheet
+        st.session_state["upload_file_id"] = file.file_id
+        st.session_state.pop("upload_sheet", None)
+
+    preview = _preview(file)
+    if preview is None:
+        return
+    _file_summary(preview, file)
+    mapping, problems = _mapping_editor(preview)
+    _load_controls(preview, mapping, problems)
+
+
+def _preview(file, sheet: str | None = None) -> dict | None:
+    sheet = st.session_state.get("upload_sheet") if sheet is None else sheet
+    cache_key = (file.file_id, sheet)
+    cached = st.session_state.get("upload_preview")
+    if cached and cached[0] == cache_key:
+        return cached[1]
+    with st.spinner("Reading the file…"):
+        try:
+            preview = client.preview(file.name, file.getvalue(), sheet)
+        except client.ApiError as exc:
+            st.error(str(exc))
+            return None
+    st.session_state["upload_preview"] = (cache_key, preview)
+    return preview
+
+
+def _file_summary(preview: dict, file) -> None:
+    facts = [f"**{preview['rows']:,}** rows", f"header on row {preview['header_row']}"]
+    if preview["encoding"]:
+        facts.append(f"encoding {preview['encoding']}")
+    if preview["delimiter"] and preview["delimiter"] != ",":
+        facts.append(f"separator {'tab' if preview['delimiter'] == chr(9) else repr(preview['delimiter'])}")
+    st.markdown(" · ".join(facts))
+    if preview["profile"]:
+        st.success(f"Recognised format: **{preview['profile']}**")
+    if len(preview["sheets"]) > 1:
+        current = preview["sheet"] or preview["sheets"][0]
+        sheet = st.selectbox("Sheet", preview["sheets"], index=preview["sheets"].index(current))
+        if sheet != current:
+            st.session_state["upload_sheet"] = sheet
+            st.rerun()
+
+
+def _mapping_editor(preview: dict) -> tuple[dict, list[str]]:
+    columns = preview["columns"]
+    original = {c["name"]: c["original"] for c in columns}
+    samples = {c["name"]: ", ".join(c["samples"]) for c in columns}
+    suggested = preview["mapping"]
+    by_field = suggested["fields"]
+    file_id = preview["file_id"]
+
+    st.subheader("1. Match your columns")
+    options = [NOT_IN_FILE] + [c["name"] for c in columns]
+
+    def label(name: str) -> str:
+        if name == NOT_IN_FILE:
+            return "— not in file —"
+        example = f"  (e.g. {samples[name][:40]})" if samples[name] else ""
+        return f"{original[name]}{example}"
+
+    fields: dict[str, str] = {}
+    for kind in ("required", "optional", "input"):
+        group = [f for f in preview["fields"] if f["kind"] == kind]
+        container = st.expander(KIND_TITLES[kind], expanded=kind != "input" or any(f["name"] in by_field for f in group))
+        with container:
+            grid = st.columns(3)
+            for i, f in enumerate(group):
+                default = by_field.get(f["name"], NOT_IN_FILE)
+                help_text = f["description"] + (f" Unlocks: {', '.join(f['unlocks'])}." if f["unlocks"] else "")
+                chosen = grid[i % 3].selectbox(
+                    f["name"], options, index=options.index(default), format_func=label,
+                    help=help_text, key=f"map_{file_id}_{f['name']}",
+                )
+                if chosen:
+                    fields[f["name"]] = chosen
+
+    problems = []
+    used = list(fields.values())
+    twice = sorted({original[c] for c in used if used.count(c) > 1})
+    if twice:
+        problems.append(f"Each file column can be matched once: {', '.join(twice)}")
+    if "order_date" not in fields:
+        problems.append("Choose the column with the sale date (order_date).")
+    if "product" not in fields:
+        problems.append("Choose the column with the product or service (product).")
+    if "unit_price" in fields and "quantity" not in fields:
+        problems.append("With a unit price, a quantity column is needed too.")
+    if "unit_price" not in fields and "amount" not in fields:
+        problems.append("Choose a unit_price column, or a line total under 'Totals' (amount).")
+
+    custom, ignore, descriptions = _custom_columns(preview, set(used))
+
+    st.subheader("3. Options")
+    cols = st.columns(2)
+    date_order = cols[0].radio(
+        "Dates like 03/04/2025 mean", ["auto", "dayfirst", "monthfirst"],
+        index=["auto", "dayfirst", "monthfirst"].index(suggested["date_order"]), horizontal=True,
+        format_func={"auto": "Detect", "dayfirst": "3 April", "monthfirst": "March 4"}.get,
+        key=f"date_order_{file_id}",
+    )
+    discount_type = cols[1].radio(
+        "Discount values are", ["auto", "percent", "amount"],
+        index=["auto", "percent", "amount"].index(suggested["discount_type"]), horizontal=True,
+        format_func={"auto": "Detect", "percent": "Percentages", "amount": "Money"}.get,
+        key=f"discount_type_{file_id}",
+    )
+    mapping = {"fields": fields, "custom": custom, "ignore": ignore, "date_order": date_order,
+               "discount_type": discount_type, "descriptions": descriptions}
+    return mapping, problems
+
+
+def _custom_columns(preview: dict, used: set[str]) -> tuple[dict, list[str], dict]:
+    st.subheader("2. Other columns")
+    suggested = preview["mapping"]
+    rest = [c for c in preview["columns"] if c["name"] not in used]
+    if not rest:
+        st.caption("Every column is matched.")
+        return {}, [], {}
+    st.caption("Keep extra columns (salesperson, payment mode, …) to filter and chart by them later. "
+               "A short description helps the AI understand them.")
+    table = pd.DataFrame({
+        "File column": [c["original"] for c in rest],
+        "Keep": [c["name"] not in suggested["ignore"] for c in rest],
+        "Save as": [suggested["custom"].get(c["name"]) or _safe_name(c["name"]) for c in rest],
+        "Type": [c["custom_type"] or "auto" for c in rest],
+        "Description": [suggested["descriptions"].get(suggested["custom"].get(c["name"], ""), "") for c in rest],
+        "Example": [", ".join(c["samples"]) for c in rest],
+    })
+    edited = st.data_editor(
+        table, hide_index=True, width="stretch",
+        disabled=["File column", "Type", "Example"],
+        key=f"custom_{preview['file_id']}_{'|'.join(c['name'] for c in rest)}",
+    )
+    custom, ignore, descriptions = {}, [], {}
+    for c, row in zip(rest, edited.itertuples(index=False)):
+        if row.Keep:
+            name = _safe_name(row[2])
+            custom[c["name"]] = name
+            if row.Description:
+                descriptions[name] = row.Description
+        else:
+            ignore.append(c["name"])
+    return custom, ignore, descriptions
+
+
+def _load_controls(preview: dict, mapping: dict, problems: list[str]) -> None:
+    st.subheader("4. Load")
+    for p in problems:
+        st.error(p)
+    locked = [f for f in preview["fields"] if f["kind"] == "optional" and f["name"] not in mapping["fields"]
+              and not (f["name"] == "unit_cost" and ({"line_cost", "line_profit"} & set(mapping["fields"])))]
+    if locked:
+        st.caption("Not in this file: " + "; ".join(f"**{f['name']}** ({', '.join(f['unlocks'])})" for f in locked))
+    save_as = st.text_input("Remember this mapping as (optional)",
+                            placeholder="e.g. My shop POS – next time it loads automatically",
+                            key=f"save_as_{preview['file_id']}")
+    if st.button("Clean and load", type="primary", disabled=bool(problems)):
+        with st.spinner("Cleaning and loading…"):
+            try:
+                report = client.confirm(preview["file_id"], mapping, save_as.strip() or None, preview["profile"])
+            except client.ApiError as exc:
+                st.error(str(exc))
+                return
+        st.session_state["last_report"] = report
+        st.rerun()
+
+
+def _show_report(report: dict) -> None:
+    if report["rows_loaded"]:
+        st.success(f"Upload #{report['upload_id']} ({report['filename']}): {report['summary']}")
+    else:
+        st.warning(f"Upload #{report['upload_id']} ({report['filename']}): {report['summary']}")
+    for w in report["warnings"]:
+        st.info(w)
+    if report["custom_columns"]:
+        st.caption("Custom columns: " + ", ".join(f"{n} ({t})" for n, t in report["custom_columns"].items()))
+    if report["rows_rejected"]:
+        st.subheader("Rows that were not loaded")
+        try:
+            page = client.rejected(report["upload_id"], limit=200)
+        except client.ApiError as exc:
+            st.error(str(exc))
+            return
+        rows = [{"Row": r["row_number"], "Reason": r["reasons"], **r["raw"]} for r in page["rows"]]
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        if page["total"] > len(rows):
+            st.caption(f"Showing {len(rows)} of {page['total']}. All are in Explore data → Uploads.")
+
+
+def _safe_name(name: str) -> str:
+    """Same rules the API enforces: lowercase letters, digits and _, starting with a letter."""
+    s = re.sub(r"[^0-9a-z_]+", "_", str(name).lower()).strip("_") or "column"
+    return f"c_{s}" if s[0].isdigit() else s

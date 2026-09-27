@@ -65,6 +65,18 @@ def read_file(path: str | Path, sheet: str | int | None = None) -> RawTable:
     return _read_csv(path)
 
 
+def list_sheets(path: str | Path) -> list[str]:
+    """Sheet names of an Excel file; [] for CSV."""
+    path = Path(path)
+    if path.suffix.lower() not in EXCEL_SUFFIXES:
+        return []
+    try:
+        with pd.ExcelFile(path) as book:
+            return [str(name) for name in book.sheet_names]
+    except (ImportError, ValueError) as exc:
+        raise ReadError(f"Could not open the workbook: {exc}") from exc
+
+
 def find_header_row(rows: list[list[str]]) -> int:
     """Index of the first row that looks like a header.
 

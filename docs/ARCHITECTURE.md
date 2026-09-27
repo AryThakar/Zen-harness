@@ -16,9 +16,9 @@ Upload CSV/Excel ──► reader ─► mapper ─► user confirms ─► clea
                            visualize (Plotly JSON)                                    │
                     RAG: documents + glossary ───────────────────────────────────────┘
                               │
-                    FastAPI (/uploads, /dashboard, /ml, /documents, /chat SSE)
+                    FastAPI (/uploads, /dashboard, /sales, /ml, /documents, /chat SSE)
                               │
-                    Streamlit UI: data view + copilot side panel
+                    Streamlit UI: dashboard, upload, explore (+ copilot side panel in week 4)
 ```
 
 ---
@@ -197,13 +197,59 @@ Memory: LangGraph SQLite checkpointer per session.
 | `run_ml` | segments / churn / anomalies / basket → summary + stored results | column + min-data check |
 | `visualize` | chart type + SQL → Plotly JSON | runs the SQL itself |
 
-## 9. API (FastAPI) ⏳
+## 9. API (FastAPI) ✅ (ingestion and dashboard)
 
-`POST /uploads` (preview + suggested mapping) · `POST /uploads/{id}/confirm` ·
-`GET /uploads/{id}/report` · `GET /schema` · `PATCH /schema/{column}` ·
-`GET /dashboard` · `POST /ml/{task}` · `GET /ml/jobs/{id}` · `POST/GET /documents` ·
-`POST /chat` (SSE: tokens, tool steps, charts, tables) · `GET /health`.
-The upload endpoints wrap `preview_file` / `ingest_file` directly.
+Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs at `/docs`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /uploads/preview` | multipart file (+ optional sheet) → staged `file_id`, detected layout, suggested mapping, field catalogue |
+| `POST /uploads` | `{file_id, mapping?, save_profile_as?}` → clean + load → report (staged file is single-use) |
+| `POST /uploads/demo` | generate and load synthetic data |
+| `GET /uploads`, `GET /uploads/{id}`, `GET /uploads/{id}/rejected`, `DELETE /uploads/{id}` | history, detail with mapping and reason counts, paginated rejected rows, undo |
+| `GET /dashboard/summary`, `/trend`, `/breakdown` | KPIs + comparison, trend buckets, top-N + "Other" |
+| `GET /sales` | filtered, sorted, paginated rows (all columns incl. custom) |
+| `GET /schema`, `PATCH /schema/{column}` | column registry; edit descriptions |
+| `GET /profiles`, `DELETE /profiles/{name}` | saved mappings (built-ins protected) |
+| `GET /health` | row and upload counts |
+| `POST /ml/{task}`, `POST /documents`, `POST /chat` ⏳ | weeks 3-5 |
+
+* **Two-step upload:** preview stores the file under `data/staging/<uuid>` (24 h
+  expiry, 100 MB limit, CSV/TSV/TXT/XLSX/XLSM only) so the user can edit the
+  mapping before anything touches the database.
+* **Errors:** unreadable file / bad mapping → 422 with a readable message,
+  unsupported type → 415, too large → 413, unknown `file_id` → 404.
+* Endpoints are sync functions (FastAPI runs them in a thread pool); reads use a
+  per-request cursor, writes go through the database lock.
+
+## 10. Dashboard and UI ✅
+
+Analytics: [`app/analytics/dashboard.py`](../app/analytics/dashboard.py) - plain
+functions over a cursor, so the agent's tools can reuse them.
+
+* **Default period:** the last 90 days *of data* (historical datasets still show something).
+* **Comparison:** each KPI is compared with the same-length period before, but %
+  changes are shown only when the data fully covers that period (`comparison` =
+  full / partial / none). Otherwise a half-covered previous year reads as +100% growth.
+* **Trend:** day/week/month picked from the period length; empty buckets filled with
+  zero; buckets cut off by the period edges flagged `partial` and drawn as open circles.
+* **Breakdowns:** any text column from the registry (custom ones included), top N by
+  revenue plus an "Other" bucket; weekday in calendar order. Dimension names are
+  checked against the registry, never interpolated from user input.
+* **Locked metrics:** profit/margin need cost data, customer KPIs need `customer_id`;
+  without them the tiles show "—" and say which column to add.
+
+UI: Streamlit ([`frontend/`](../frontend/)) talking only to the API over HTTP.
+Pages: Dashboard (period presets, 8 KPI tiles, trend with Revenue / Orders / Profit
+switch, four breakdown charts), Upload (mapping editor with dropdowns per field,
+custom-column table with keep / rename / describe, date and discount options, save
+as profile, report with rejected rows), Explore (sales rows, upload history with
+undo, column descriptions, saved formats).
+
+Chart rules: one series hue (validated for contrast in light and dark mode), bars
+coloured by entity never by rank, "Other" in grey, values at bar tips, hairline
+grid, one y-axis per chart, a table view under every chart, amounts in ₹ lakh /
+crore (`BIZ_CURRENCY` changes the symbol).
 
 ---
 
@@ -212,7 +258,7 @@ The upload endpoints wrap `preview_file` / `ingest_file` directly.
 | Week | Scope | Status |
 |---|---|---|
 | 1 | Data format, reader, mapper + profiles, cleaner, DuckDB loader, samples, synthetic data, CLI, tests | ✅ |
-| 2 | FastAPI endpoints, dashboard KPIs, Streamlit data view | ⏳ |
+| 2 | FastAPI endpoints, dashboard KPIs, Streamlit upload / dashboard / explore screens | ✅ |
 | 3 | ML: forecast, segments, anomalies (UI buttons) | ⏳ |
 | 4 | Agent: sql_query, calculator, business_metrics, visualize, streaming chat | ⏳ |
 | 5 | RAG + glossary, churn, basket, ML as agent tools | ⏳ |

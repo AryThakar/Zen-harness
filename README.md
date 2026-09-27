@@ -3,53 +3,36 @@
 Upload your sales export, ask questions in plain English, and get answers,
 forecasts and charts - running on your own machine.
 
-**Stack:** Python · FastAPI · DuckDB · pandas · scikit-learn · LangGraph · Ollama (local LLM) · RAG · Plotly
+**Stack:** Python · FastAPI · DuckDB · pandas · Streamlit · Plotly · scikit-learn · LangGraph · Ollama (local LLM) · RAG
 
-> Status: **week 1 of 6 done** - the data foundation: upload → map → clean → DuckDB.
+> Status: **week 2 of 6 done** - data pipeline, REST API, dashboard and upload UI.
 > The design for everything else is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+![Dashboard](docs/images/dashboard.png)
 
 ## What works today
 
-* **Reads real, messy exports** - CSV or Excel, title lines above the header,
-  unknown encodings, `;` delimiters, `₹1,23,456.50` amounts, day- or month-first
-  dates, `Total` footer rows.
+* **Dashboard** - revenue, orders, average order value, profit, margin, customers,
+  new customers and return rate for any period, each compared with the period
+  before (only when the data fully covers it, so a half-empty year never shows as
+  +100% growth). Trend by day / week / month with partial weeks marked, and
+  breakdowns by category, product, location, channel, weekday or any custom column.
+  Every chart has a table view; light and dark mode.
+* **Upload with a mapping screen** - drop in a CSV or Excel file, check how its
+  columns were matched, keep or rename extra columns, save the mapping for next time.
+  Rejected rows are listed with the reason and the file row number.
+* **Reads real, messy exports** - title lines above the header, unknown encodings,
+  `;` delimiters, `₹1,23,456.50` amounts, day- or month-first dates, `Total` rows;
+  built-in formats for Shopify, the Superstore dataset and UCI Online Retail.
 * **One standard format** - 4 required columns (`order_date`, `product`, `quantity`,
   `unit_price`), 7 optional ones that unlock features (customer → churn, cost →
-  profit, ...), plus any custom columns the business wants to keep.
-* **Maps columns automatically** - built-in profiles (Shopify, Superstore, UCI Online
-  Retail), 150+ aliases and fuzzy matching; save your own profile once and the next
-  export loads by itself.
-* **Never guesses silently** - every rejected row gets a reason and its file row
-  number; overlapping or repeated uploads are de-duplicated.
-* **Realistic synthetic data** - a generator with planted trends, seasonality,
-  customer churn, basket patterns and anomalies for the ML features to find.
+  profit, ...), plus any custom columns.
+* **REST API** - every screen is built on documented endpoints (OpenAPI at `/docs`),
+  ready for the AI agent in week 4.
+* **Demo data** - one click loads 18 months of realistic synthetic sales with trends,
+  seasonality, customer churn, basket patterns and anomalies planted for the ML.
 
-```text
-$ python -m app.ingestion.cli data/samples/retail_pos_messy.csv --yes
-
-retail_pos_messy.csv: 21 rows, header on row 5
-
-Column mapping
-  order_date   <- Bill Date
-  product      <- Item Name
-  quantity     <- Qty
-  unit_price   <- Rate (₹)
-  order_id     <- Bill No
-  customer_id  <- Customer
-  category     <- Category
-  discount     <- Disc %
-
-Custom columns
-  payment_mode         VARCHAR   e.g. UPI, Cash, Card
-
-Add these columns to unlock more:
-  unit_cost    -> profit & margin
-  location     -> location comparison
-  channel      -> channel comparison
-
-Upload #1: 16 loaded · 5 rejected (bad order_date 1, quantity is 0 1, missing product 1, bad unit_price 1, summary row 1)
-  rejected rows are in table rejected_rows (upload_id = 1)
-```
+![Upload mapping](docs/images/upload-mapping.png)
 
 ## Quick start
 
@@ -57,46 +40,55 @@ Upload #1: 16 loaded · 5 rejected (bad order_date 1, quantity is 0 1, missing p
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# load a sample export into data/business.duckdb
-python -m app.ingestion.cli data/samples/shopify_orders.csv
-
-# generate 18 months of realistic data and load it
-python -m app.datagen
-python -m app.ingestion.cli data/generated/synthetic_sales_canonical.csv --yes
-
-# run the tests
-pytest
+uvicorn app.main:app              # terminal 1: API on http://localhost:8000 (docs at /docs)
+streamlit run frontend/app.py     # terminal 2: UI on http://localhost:8501
 ```
 
-Explore the result with DuckDB:
+Open the UI and click **Load demo data**, or upload one of the files in
+[`data/samples/`](data/samples/). Run the tests with `pytest`.
 
-```python
-import duckdb
-con = duckdb.connect("data/business.duckdb")
-con.sql("SELECT category, round(sum(revenue)) AS revenue, round(sum(profit)) AS profit "
-        "FROM sales GROUP BY 1 ORDER BY 2 DESC").show()
+Settings (environment variables): `BIZ_DB_PATH` (default `data/business.duckdb`),
+`BIZ_API_URL` for the UI (default `http://localhost:8000`), `BIZ_CURRENCY` (default `₹`),
+`BIZ_DEFAULT_DATE_ORDER` (`dayfirst` or `monthfirst`), `BIZ_MAX_UPLOAD_MB` (default 100).
+
+Command-line upload, without the UI:
+
+```bash
+python -m app.ingestion.cli data/samples/retail_pos_messy.csv
 ```
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /uploads/preview` | Upload a file → detected layout + suggested column mapping |
+| `POST /uploads` | Confirm (optionally edited) mapping → clean and load → report |
+| `POST /uploads/demo` | Load synthetic demo data |
+| `GET /uploads` · `GET /uploads/{id}` · `GET /uploads/{id}/rejected` · `DELETE /uploads/{id}` | History, details, rejected rows, undo |
+| `GET /dashboard/summary` · `/trend` · `/breakdown` | KPIs with comparison, trend, top-N breakdowns |
+| `GET /sales` | Browse and filter sales rows |
+| `GET /schema` · `PATCH /schema/{column}` | Column meanings (read by the AI later) |
+| `GET /profiles` · `DELETE /profiles/{name}` | Saved column mappings |
+| `GET /health` | Status |
 
 ## Project layout
 
 ```
 app/
-  config.py            settings (BIZ_DB_PATH, BIZ_DEFAULT_DATE_ORDER)
-  datagen.py           synthetic sales data generator
+  main.py              FastAPI app
+  api/                 routers (uploads, data, dashboard), request/response models, staging
+  analytics/           KPI, trend and breakdown queries (shared by API and, later, the agent)
+  ingestion/           standard format, reader, parsers, mapper, cleaner, loader, CLI
   db/                  DuckDB connection + schema.sql
-  ingestion/
-    fields.py          the standard format: required / optional columns and aliases
-    reader.py          CSV/Excel reading, header detection
-    parsing.py         strict number / date / type parsers
-    mapper.py          column matching and mapping validation
-    profiles.py        built-in and saved format profiles
-    cleaner.py         derivations, validation with reasons
-    loader.py          de-duplication, transactional load, summary tables
-    pipeline.py        preview_file() / ingest_file()
-    cli.py             command-line upload
-data/samples/          small example exports (see its README)
-docs/ARCHITECTURE.md   full design and roadmap
-tests/                 pytest suite
+  datagen.py           synthetic sales data generator
+frontend/
+  app.py               Streamlit entry point
+  client.py            HTTP client for the API
+  charts.py            Plotly styling and number formatting (₹ lakh / crore)
+  views/               dashboard, upload, explore pages
+data/samples/          small example exports
+docs/                  architecture and screenshots
+tests/                 pytest suite (pipeline, analytics, API, UI smoke test)
 ```
 
 ## Roadmap
@@ -104,7 +96,7 @@ tests/                 pytest suite
 | Week | Scope | |
 |---|---|---|
 | 1 | Data format, cleaning pipeline, DuckDB, samples, synthetic data | ✅ |
-| 2 | FastAPI endpoints, dashboard, Streamlit data view | |
+| 2 | FastAPI endpoints, dashboard, Streamlit upload and explore screens | ✅ |
 | 3 | ML: sales forecast, customer segments, anomaly detection | |
 | 4 | LangGraph agent with SQL, calculator, metrics and chart tools | |
 | 5 | RAG over business documents, churn prediction, basket analysis | |
