@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 import duckdb
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.analytics import dashboard as analytics
 

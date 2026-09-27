@@ -16,6 +16,17 @@ class Settings:
     max_upload_mb: int = int(os.environ.get("BIZ_MAX_UPLOAD_MB", "100"))
     # Where the Streamlit UI finds the API.
     api_url: str = os.environ.get("BIZ_API_URL", "http://localhost:8000")
+    # Currency symbol the AI uses when talking about money.
+    currency: str = os.environ.get("BIZ_CURRENCY", "₹")
+    # The AI assistant's model. "anthropic" uses Claude through the official SDK
+    # (needs ANTHROPIC_API_KEY); a local model via Ollama comes next.
+    llm_provider: str = os.environ.get("BIZ_LLM_PROVIDER", "anthropic")
+    llm_model: str = os.environ.get("BIZ_LLM_MODEL", "claude-opus-5")
+    llm_effort: str | None = os.environ.get("BIZ_LLM_EFFORT") or None  # low | medium | high | xhigh | max
+    # The app's own endpoint setting, so it never picks up ANTHROPIC_BASE_URL meant for other tools.
+    anthropic_base_url: str = os.environ.get("BIZ_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    # Conversation memory (LangGraph checkpoints).
+    chat_db_path: str = os.environ.get("BIZ_CHAT_DB_PATH", "data/chat.sqlite")
 
 
 settings = Settings()

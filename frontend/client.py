@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+from collections.abc import Iterator
 from typing import Any
 
 import requests
@@ -20,8 +22,13 @@ class ApiError(Exception):
 
 
 def _call(method: str, path: str, **kwargs) -> Any:
+    r = _request(method, path, timeout=TIMEOUT, **kwargs)
+    return r.json() if r.content else None
+
+
+def _request(method: str, path: str, **kwargs) -> requests.Response:
     try:
-        r = requests.request(method, f"{API_URL}{path}", timeout=TIMEOUT, **kwargs)
+        r = requests.request(method, f"{API_URL}{path}", **kwargs)
     except requests.ConnectionError as exc:
         raise ApiError(f"Can't reach the API at {API_URL}. Is it running? (uvicorn app.main:app)") from exc
     if r.status_code >= 400:
@@ -32,7 +39,7 @@ def _call(method: str, path: str, **kwargs) -> Any:
         if isinstance(detail, list):  # FastAPI validation errors
             detail = "; ".join(f"{'.'.join(map(str, d.get('loc', [])))}: {d.get('msg')}" for d in detail)
         raise ApiError(str(detail), r.status_code)
-    return r.json() if r.content else None
+    return r
 
 
 def _clean(params: dict) -> dict:
@@ -137,3 +144,38 @@ def ml_result(task: str) -> dict | None:
 
 def segment_customers(segment: str, limit: int = 50) -> dict:
     return _call("GET", "/ml/segments/customers", params={"segment": segment, "limit": limit})
+
+
+def chat_status() -> dict:
+    return _call("GET", "/chat/status")
+
+
+def chat_thread(thread_id: str) -> list[dict]:
+    """A conversation's exchanges (question, tool steps, answer); empty if it doesn't exist."""
+    try:
+        return _call("GET", f"/chat/threads/{thread_id}")["exchanges"]
+    except ApiError as exc:
+        if exc.status == 404:
+            return []
+        raise
+
+
+def chat(message: str, thread_id: str | None = None) -> Iterator[tuple[str, dict]]:
+    """Ask the assistant; yields (event, data) server-sent events as the answer is worked out."""
+    body = _clean({"message": message, "thread_id": thread_id})
+    # The read timeout is the longest silence allowed between events, not the whole answer.
+    r = _request("POST", "/chat", json=body, stream=True, timeout=(10, TIMEOUT))
+    r.encoding = "utf-8"
+    event, data = None, []
+    try:
+        with r:
+            for line in r.iter_lines(decode_unicode=True):
+                if line.startswith("event: "):
+                    event = line[len("event: "):]
+                elif line.startswith("data: "):
+                    data.append(line[len("data: "):])
+                elif not line and event:
+                    yield event, json.loads("\n".join(data))
+                    event, data = None, []
+    except requests.RequestException as exc:
+        raise ApiError("Lost the connection to the API while the answer was being written.") from exc

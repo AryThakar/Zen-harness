@@ -4,20 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-business-analyst"
-version = "0.3.0"
+version = "0.4.0"
 description = "Upload business sales data, ask questions in plain English, get answers, forecasts and charts."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "anthropic>=1.8",
     "charset-normalizer>=3.0",
     "duckdb>=1.1",
     "fastapi>=0.115",
+    "langgraph>=1.2",
+    "langgraph-checkpoint-sqlite>=3.1",
     "numpy>=1.26",
     "openpyxl>=3.1",
     "pandas>=2.2",
     "python-multipart>=0.0.9",
     "rapidfuzz>=3.0",
     "scikit-learn>=1.4",
+    "simpleeval>=1.0",
+    "sqlglot>=30.0",
     "statsforecast>=2.0",
     "uvicorn>=0.30",
 ]

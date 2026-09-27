@@ -8,5 +8,6 @@ build/
 # local databases and generated data
 *.duckdb
 *.duckdb.wal
+data/chat.sqlite*
 data/generated/
 data/staging/

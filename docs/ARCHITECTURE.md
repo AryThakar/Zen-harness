@@ -9,16 +9,16 @@ Status legend: ✅ built · ⏳ planned (see [Roadmap](#roadmap)).
 ```
 Upload CSV/Excel ──► reader ─► mapper ─► user confirms ─► cleaner ─► loader ─► DuckDB
                                                                               ▲   ▲   ▲
-                    LangGraph agent (local LLM via Ollama)                    │   │   │
-                    tools: describe_data · sql_query · search_docs ───────────┘   │   │
-                           calculator · business_metrics                          │   │
-                           forecast · run_ml ─────────────────────────────────────┘   │
-                           visualize (Plotly JSON)                                    │
-                    RAG: documents + glossary ───────────────────────────────────────┘
+                    LangGraph agent (Claude now, local model via Ollama later)│   │   │
+                    tools: describe_data · run_sql · business_summary ────────┘   │   │
+                           calculate · business_metric · make_chart               │   │
+                           forecast · customer_segments · unusual_days ───────────┘   │
+                           search_docs ⏳                                              │
+                    RAG: documents + glossary ⏳ ─────────────────────────────────────┘
                               │
-                    FastAPI (/uploads, /dashboard, /sales, /ml, /documents, /chat SSE)
+                    FastAPI (/uploads, /dashboard, /sales, /ml, /chat SSE, /documents ⏳)
                               │
-                    Streamlit UI: dashboard, upload, explore (+ copilot side panel in week 4)
+                    Streamlit UI: dashboard, insights, Ask AI, upload, explore
 ```
 
 ---
@@ -122,7 +122,9 @@ missing product 1, bad unit_price 1, summary row 1)`.
 
 ## 3. DuckDB schema ✅ (ingestion tables)
 
-One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: [`app/db/schema.sql`](../app/db/schema.sql).
+One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: the numbered files in
+[`app/db/migrations/`](../app/db/migrations/). Chat history lives separately in
+`data/chat.sqlite` (`BIZ_CHAT_DB_PATH`), written by the LangGraph checkpointer.
 
 | Table | Holds |
 |---|---|
@@ -145,6 +147,17 @@ Concurrency: one connection per process, a cursor per request, writes serialized
 recorded, so an existing database file upgrades itself when the app changes.
 `products` and `customers` are views, so uploads and deletes don't rebuild anything.
 
+**Crash safety:** DuckDB 1.5 can't replay an `ALTER TABLE` from its write-ahead log
+when the table has a `DEFAULT nextval(...)` column - after a crash the file won't
+open. Custom columns are added with `ALTER TABLE`, so ids now come from `nextval()`
+in the inserts (migration 004 drops the defaults), and the database checkpoints
+after applying migrations. A test kills a process right after such an upload and
+reopens the file.
+
+**AI access:** the connection runs with `enable_external_access = false`, so no SQL
+- including SQL written by the assistant - can read files, attach databases or load
+extensions (uploads are parsed in Python, so the app never needs it).
+
 ---
 
 ## 4. ML ✅ (forecast, segments, anomalies)
@@ -152,8 +165,8 @@ recorded, so an existing database file upgrades itself when the app changes.
 Code: [`app/ml/`](../app/ml/). Each task is a function that reads with a cursor and
 returns a `TaskResult` (metrics, a plain-language message, result rows). The runner
 records every run in `ml_runs` (running → succeeded / failed), computes outside the
-write lock, then saves results in one transaction. The same function will back the
-AI agent's tools in week 4.
+write lock, then saves results in one transaction. The same functions back the
+AI assistant's tools.
 
 | Task | Needs | Method | Output tables |
 |---|---|---|---|
@@ -190,39 +203,96 @@ Still to come (week 5): churn prediction and "frequently bought together".
   keeps generated SQL correct for business terms.
 * Brute-force cosine in DuckDB is fast enough below ~100k chunks; no separate vector DB.
 
-## 6. Local LLM ⏳
+## 6. Model providers ✅ (Claude) · ⏳ (local)
 
-Ollama in Docker; a 7-14B instruct model with tool calling (filter the Ollama
-library by "tools"); `nomic-embed-text` for embeddings. `LLM_PROVIDER=ollama|cloud`
-switches providers through LangChain's `init_chat_model`. Local mode keeps all data
-on the machine.
+Code: [`app/agent/providers/`](../app/agent/providers/). The graph talks to a small
+`Provider` interface: `complete(system, messages, tools) -> ModelTurn` (answer text,
+tool calls, stop reason) with a callback for streamed text. Conversations are stored
+in a provider-neutral format (user / assistant / tool messages); each adapter
+converts to and from its API.
 
-## 7. Agent (LangGraph) ⏳
+* **Claude** (now, `BIZ_LLM_PROVIDER=anthropic`, needs `ANTHROPIC_API_KEY`): the
+  official `anthropic` SDK, streaming, model `claude-opus-5` by default
+  (`BIZ_LLM_MODEL`), prompt caching, server-side fallback to another model if the
+  first is overloaded. The assistant's raw content blocks are stored and replayed
+  unchanged on the next turn (the API requires that for its internal blocks);
+  tool calls that never got a result are dropped. Tool inputs stream as they are
+  written, so each one is validated against its schema before it runs; a refused
+  or cut-off turn never runs tools.
+* **Ollama** (week 6): the same interface over a local model; nothing else changes.
+* **Scripted** (tests and demos): replays a list of turns, so the graph, tools,
+  API and UI are tested end to end without a model.
+
+Why not LangChain's `init_chat_model`: the adapters need to keep model-internal
+blocks byte-for-byte and control streaming, validation and stop reasons per
+provider; a thin interface of our own is less code than working around a generic one.
+
+## 7. Agent (LangGraph) ✅
+
+Code: [`app/agent/graph.py`](../app/agent/graph.py).
 
 ```
-START → prepare_context (schema card from column_registry + UI filters + glossary hits)
-      → agent (LLM + tools) ⇄ tools (parallel)   [max 6 rounds]
-      → finalize (attach charts, tables, sources) → END
+START → agent (model turn: system prompt + conversation) → tool calls? ─ no ─► END
+            ▲                                                  │ yes
+            └──────────── tools (validate → run → results) ◄───┘
 ```
 
-Rules: every number comes from a tool; charts only via `visualize` built from SQL;
-name the missing column when a feature is locked; cite document sources.
-Memory: LangGraph SQLite checkpointer per session.
+* **System prompt** ([`prompts.py`](../app/agent/prompts.py)), rebuilt every turn
+  with a live **schema card** ([`context.py`](../app/agent/context.py)): the tables,
+  every sales column with its meaning and examples (custom columns included), the
+  data's date range and which optional columns are missing.
+* **Rules** it gives the model: every number comes from a tool (arithmetic through
+  `calculate` / `business_metric`); headline KPIs through `business_summary`;
+  at most one chart; name the column to add when a question needs one the data
+  lacks; "last month" means relative to the latest sale; answer first, briefly.
+* **Limits:** at most 8 tool rounds per question; after that tools are switched off
+  (`tool_choice: none`) and the model answers with what it has.
+* **Memory:** LangGraph checkpointer (SQLite) keyed by thread id, so follow-up
+  questions see the earlier exchanges.
+* **Streaming:** LangGraph's custom stream carries `text`, `restart` (discard the
+  current turn's text after a retry), `tool_start` and `tool_end` (with a short
+  summary and any chart or table) events to the API.
 
-## 8. Tools ⏳
+## 8. Tools ✅
 
-| Tool | Input → output | Safety |
-|---|---|---|
-| `describe_data` | table/column → types, descriptions, distinct values | read-only |
-| `sql_query` | SELECT → ≤ 200 rows + count | sqlglot: single SELECT; blocks ATTACH/COPY/INSTALL/PRAGMA; auto LIMIT; timeout |
-| `search_docs` | question → chunks + source | - |
-| `calculator` | expression → exact number | simpleeval, never `eval()` |
-| `business_metrics` | growth %, margin %, CAGR, AOV, break-even, ROI, CLV | fixed tested formulas |
-| `forecast` | level, name, horizon → forecast + range + backtest error | min-data check |
-| `run_ml` | segments / churn / anomalies / basket → summary + stored results | column + min-data check |
-| `visualize` | chart type + SQL → Plotly JSON | runs the SQL itself |
+Code: [`app/agent/tools.py`](../app/agent/tools.py). Each tool has a pydantic input
+model (unknown fields rejected); bad input goes back to the model as an error
+result to fix, never as a crash. Results are text for the model plus an optional
+artifact (chart or table data) for the UI.
 
-## 9. API (FastAPI) ✅ (ingestion and dashboard)
+| Tool | Input → output |
+|---|---|
+| `describe_data` | optional table → tables and meanings, or one table's columns and sample rows |
+| `run_sql` | one SELECT → up to 200 rows (the model sees 40) + total count; table artifact |
+| `business_summary` | optional start/end → the dashboard KPIs with changes vs the previous period |
+| `calculate` | arithmetic expression → exact result (simpleeval, never `eval`) |
+| `business_metric` | growth %, margin %, markup %, CAGR, AOV, break-even units, ROI, CLV, price after discount → value with its formula |
+| `make_chart` | line or bar, SQL, x, y, unit, title → chart artifact drawn by the UI in house style |
+| `forecast` | horizon, day/week, optional slice → forecast with 80% range and backtest vs baseline |
+| `customer_segments` | → segments with sizes, revenue share, meaning and action |
+| `unusual_days` | → unusual days and sale lines with the reason |
+| `search_docs` ⏳ | question → document chunks with sources (week 5) |
+
+The ML tools run the same code as the Insights page and store their runs the same way.
+
+**Safety layers for AI-written SQL** ([`sql_guard.py`](../app/agent/sql_guard.py)):
+
+1. Parsed with sqlglot: exactly one statement, and it must be a query; any
+   insert/update/delete/DDL/COPY/ATTACH/PRAGMA/SET node anywhere is rejected.
+2. Tables must be on an allowlist (sales data and ML result tables; not
+   `schema_migrations`, `format_profiles` or the raw rejected rows); schema-qualified names,
+   string "tables" (`FROM 'file.csv'`) and table functions other than `unnest`,
+   `generate_series` and `range` are rejected; functions like `read_*`, `glob`,
+   `getenv` are blocked by name.
+3. The SQL that runs is sqlglot's regenerated version of the checked tree.
+4. At most 200 rows are fetched; a query running over 10 s is interrupted.
+5. Underneath it all, the database itself has external access switched off.
+
+Data values reach the model only as tool results. Every tool is read-only and none
+reaches the network, so text planted in the data (a product named "ignore your
+instructions") can at worst produce a wrong answer, not change or leak data.
+
+## 9. API (FastAPI) ✅
 
 Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs at `/docs`.
 
@@ -242,7 +312,10 @@ Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs a
 | `POST /ml/forecast`, `/ml/segments`, `/ml/anomalies` | start a run (202, background) |
 | `GET /ml/runs`, `/ml/runs/{id}` | run history and status |
 | `GET /ml/forecast`, `/ml/segments`, `/ml/segments/customers`, `/ml/anomalies` | latest (or a given run's) results with the data behind them |
-| `POST /documents`, `POST /chat` ⏳ | weeks 4-5 |
+| `GET /chat/status` | which model answers and whether it is set up |
+| `POST /chat` | `{message, thread_id?}` → server-sent events: `thread`, `text`, `restart`, `tool_start`, `tool_end`, `done`, `error` |
+| `GET /chat/threads/{id}` | a conversation as question / steps / answer, for redisplay |
+| `POST /documents` ⏳ | week 5 |
 
 * **Two-step upload:** preview stores the file under `data/staging/<uuid>` (24 h
   expiry, 100 MB limit, CSV/TSV/TXT/XLSX/XLSM only) so the user can edit the
@@ -277,7 +350,10 @@ customer lists; unusual days on the orders or revenue line with dated markers, a
 unusual sale lines), Upload (mapping editor with dropdowns per field,
 custom-column table with keep / rename / describe, date and discount options, save
 as profile, report with rejected rows), Explore (sales rows, upload history with
-undo, column descriptions, saved formats).
+undo, column descriptions, saved formats), Ask AI (streaming answers; the steps it
+took - queries with their SQL and result tables, calculations, models - in a
+collapsible box above each answer; its charts drawn in house style; suggested
+first questions; setup help when no model is configured).
 
 Chart rules: one series hue (validated for contrast in light and dark mode), bars
 coloured by entity never by rank, "Other" in grey, values at bar tips, hairline
@@ -293,6 +369,6 @@ crore (`BIZ_CURRENCY` changes the symbol).
 | 1 | Data format, reader, mapper + profiles, cleaner, DuckDB loader, samples, synthetic data, CLI, tests | ✅ |
 | 2 | FastAPI endpoints, dashboard KPIs, Streamlit upload / dashboard / explore screens | ✅ |
 | 3 | ML: forecast, segments, anomalies (Insights page) + review fixes | ✅ |
-| 4 | Agent: sql_query, calculator, business_metrics, visualize, streaming chat | ⏳ |
-| 5 | RAG + glossary, churn, basket, ML as agent tools | ⏳ |
-| 6 | Ollama in Docker, provider switch, 40-question eval set, README polish, demo | ⏳ |
+| 4 | Agent: provider adapters (Claude), SQL guard, 9 tools, LangGraph graph with memory, streaming chat API, Ask AI page | ✅ |
+| 5 | RAG + glossary, churn prediction, basket analysis (with agent tools) | ⏳ |
+| 6 | Ollama provider in Docker, 40-question eval set, README polish, demo | ⏳ |

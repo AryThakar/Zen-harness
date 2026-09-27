@@ -79,10 +79,21 @@ def count(value: float | None) -> str:
     return "—" if value is None else _group(round(value))
 
 
+def number(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return _group(round(value)) if abs(value) >= 100 or value == round(value) else f"{value:.2f}".rstrip("0")
+
+
 def pct(value: float | None, signed: bool = False) -> str:
     if value is None:
         return "—"
     return f"{value:+.1f}%" if signed else f"{value:.1f}%"
+
+
+def formatter(unit: str):
+    """Value formatter for a chart unit: money, count, percent or number."""
+    return {"money": money, "count": count, "percent": pct}.get(unit, number)
 
 
 def day(d: str | date) -> str:
@@ -182,8 +193,9 @@ def bar_figure(items: list[dict], other: dict | None = None, value_key: str = "r
         marker={"color": colors, "cornerradius": 4},
         text=text, textposition="outside", cliponaxis=False,
         textfont={"color": t["text2"], "size": 12},
-        customdata=[[fmt(v), pct(r.get("share_pct"))] for v, r in zip(values, rows)],
-        hovertemplate="<b>%{customdata[0]}</b><br>%{y} · %{customdata[1]} of total<extra></extra>",
+        customdata=[[fmt(v), f" · {pct(r['share_pct'])} of total" if r.get("share_pct") is not None else ""]
+                    for v, r in zip(values, rows)],
+        hovertemplate="<b>%{customdata[0]}</b><br>%{y}%{customdata[1]}<extra></extra>",
     ))
     # Room at the right for the tip labels, which are drawn outside the bars.
     fig.update_xaxes(visible=False, range=[min(0, min(values, default=0)), top * 1.6 if top > 0 else 1])
@@ -269,3 +281,36 @@ def anomaly_figure(series: list[dict], days: list[dict], metric: str) -> go.Figu
     _layout(fig, t, 340)
     fig.update_layout(showlegend=True, legend=_legend(t), hovermode="closest", margin={"t": 36})
     return fig
+
+
+def line_figure(points: list[dict], fmt=money, x_title: str = "") -> go.Figure:
+    """A generic single-series line (x = dates or ordered values): 2px line, wash,
+    the last value labelled, a hover tooltip per point."""
+    t = TOKENS[mode()]
+    x = [p["x"] for p in points]
+    y = [p["y"] for p in points]
+    fig = go.Figure(go.Scatter(
+        x=x, y=y, mode="lines+markers" if len(points) <= 2 else "lines",
+        line={"color": t["series"], "width": 2}, marker={"size": 8, "color": t["series"]},
+        fill="tozeroy", fillcolor=t["series_wash"], connectgaps=False,
+        customdata=[[fmt(v), str(v_x)] for v, v_x in zip(y, x)],
+        hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>",
+    ))
+    last = next(((px, py) for px, py in zip(reversed(x), reversed(y)) if py is not None), None)
+    if last:
+        fig.add_trace(go.Scatter(
+            x=[last[0]], y=[last[1]], mode="markers+text", text=[fmt(last[1])], textposition="top center",
+            marker={"size": 8, "color": t["series"], "line": {"width": 2, "color": t["surface"]}},
+            textfont={"color": t["text"], "size": 12}, hoverinfo="skip", cliponaxis=False,
+        ))
+    values = [v for v in y if v is not None]
+    fig.update_xaxes(showgrid=False, linecolor=t["axis"], tickfont={"color": t["muted"]},
+                     title={"text": x_title, "font": {"color": t["muted"], "size": 12}},
+                     showspikes=True, spikemode="across", spikethickness=1, spikecolor=t["axis"], spikedash="solid")
+    fig.update_yaxes(gridcolor=t["grid"], zeroline=False, tickfont={"color": t["muted"]})
+    if values and min(values) >= 0:  # round ticks from zero; negative data keeps Plotly's own ticks
+        ticks = nice_ticks(max(values) * 1.08)
+        fig.update_yaxes(range=[0, ticks[-1]], tickvals=ticks,
+                         ticktext=[money(v, digits=1) if fmt is money else fmt(v) for v in ticks])
+    fig.update_layout(hovermode="x")
+    return _layout(fig, t, 320)

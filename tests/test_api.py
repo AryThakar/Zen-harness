@@ -4,6 +4,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.agent.providers import ScriptedProvider
 from app.db.connection import Database
 from app.main import create_app
 
@@ -12,7 +15,8 @@ from .conftest import SAMPLES
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(Database(), tmp_path / "staging")) as c:
+    app = create_app(Database(), tmp_path / "staging", provider=ScriptedProvider([]), checkpointer=InMemorySaver())
+    with TestClient(app) as c:
         yield c
 
 
@@ -90,7 +94,7 @@ def test_upload_errors(client, tmp_path):
 
 
 def test_too_large_files_are_refused(tmp_path):
-    app = create_app(Database(), tmp_path)
+    app = create_app(Database(), tmp_path, provider=ScriptedProvider([]), checkpointer=InMemorySaver())
     with TestClient(app) as c:
         app.state.staging.max_bytes = 10
         r = c.post("/uploads/preview", files={"file": ("big.csv", b"Date,Item\n2025-01-01,Pen\n")})

@@ -27,6 +27,10 @@ class Database:
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(path)
+        # The app never reads files or loads extensions through DuckDB (uploads are
+        # parsed in Python), so turn that off: AI-written SQL can't reach the disk
+        # or the network even if a query got past the SQL checks.
+        self._conn.execute("SET enable_external_access = false")
         self._write_lock = threading.RLock()
         self.migrate()
         with self.transaction() as cur:
