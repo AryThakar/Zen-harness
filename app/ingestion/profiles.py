@@ -83,7 +83,7 @@ def save_profile(cur: duckdb.DuckDBPyConnection, name: str, mapping: Mapping) ->
         raise ProfileError(f"'{name}' is a built-in profile; choose another name.")
     cur.execute(
         """
-        INSERT INTO format_profiles (name, mapping) VALUES (?, ?)
+        INSERT INTO format_profiles (profile_id, name, mapping) VALUES (nextval('profile_id_seq'), ?, ?)
         ON CONFLICT (name) DO UPDATE SET mapping = excluded.mapping
         """,
         [name, json.dumps(mapping.to_dict())],
@@ -94,7 +94,8 @@ def seed_builtin_profiles(cur: duckdb.DuckDBPyConnection) -> None:
     for p in BUILTIN_PROFILES:
         cur.execute(
             """
-            INSERT INTO format_profiles (name, mapping, builtin) VALUES (?, ?, true)
+            INSERT INTO format_profiles (profile_id, name, mapping, builtin)
+            VALUES (nextval('profile_id_seq'), ?, ?, true)
             ON CONFLICT (name) DO UPDATE SET mapping = excluded.mapping
             """,
             [p.name, json.dumps(p.mapping.to_dict())],

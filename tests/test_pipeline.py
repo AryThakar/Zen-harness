@@ -231,3 +231,35 @@ def test_week_one_database_is_upgraded(tmp_path):
     assert query(db, "SELECT units_sold FROM products") == [(3.0,)]
     assert db.migrate() == []  # nothing left to apply
     db.close()
+
+
+def test_database_opens_after_a_crash_mid_session(tmp_path, write_file):
+    """A process killed right after an upload that added custom columns (nothing
+    checkpointed, everything only in DuckDB's write-ahead log) leaves a file that
+    opens with the data intact."""
+    import subprocess
+    import sys
+
+    path = tmp_path / "crash.duckdb"
+    upload = write_file("Date,Item,Qty,Price,Salesperson\n2025-03-01,Pen,1,10,Asha\n")
+    script = f"""
+import os, sys
+sys.path.insert(0, {str(Path(pipeline.__file__).parents[2])!r})
+from app.db.connection import Database
+from app.ingestion.pipeline import ingest_file, preview_file
+from app.ingestion.profiles import save_profile
+db = Database({str(path)!r})
+mapping = preview_file(db, {str(upload)!r}).suggestion.mapping
+ingest_file(db, {str(upload)!r}, mapping)
+with db.transaction() as cur:
+    save_profile(cur, "Till export", mapping)
+from app.ml.runner import start
+start(db, 'segments', {{}})
+os._exit(0)  # killed: no checkpoint, no close
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+    db = Database(path)
+    assert query(db, "SELECT product, salesperson FROM sales") == [("Pen", "Asha")]
+    assert query(db, "SELECT count(*) FROM format_profiles WHERE name = 'Till export'") == [(1,)]
+    assert query(db, "SELECT task, status FROM ml_runs") == [("segments", "running")]
+    db.close()

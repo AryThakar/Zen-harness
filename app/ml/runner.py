@@ -39,7 +39,8 @@ def start(db: Database, task: str, params: dict) -> tuple[int, bool]:
         if running:
             return running[0], False
         run_id = cur.execute(
-            "INSERT INTO ml_runs (task, status, params) VALUES (?, 'running', ?) RETURNING run_id",
+            "INSERT INTO ml_runs (run_id, task, status, params) VALUES (nextval('ml_run_id_seq'), ?, 'running', ?) "
+            "RETURNING run_id",
             [task, encoded],
         ).fetchone()[0]
         return run_id, True

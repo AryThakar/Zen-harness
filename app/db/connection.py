@@ -51,6 +51,11 @@ class Database:
                 cur.execute(path.read_text())
                 cur.execute("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", [version, path.stem])
             applied.append(path.stem)
+        if applied:
+            # Write the new schema into the database file now rather than leaving it
+            # in the write-ahead log: DuckDB can't replay some schema changes from the
+            # log after a crash (see 004_explicit_ids.sql).
+            self._conn.execute("CHECKPOINT")
         return applied
 
     def cursor(self) -> duckdb.DuckDBPyConnection:

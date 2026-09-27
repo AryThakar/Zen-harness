@@ -139,8 +139,8 @@ def load(
     try:
         inserted = cur.execute(
             f"""
-            INSERT INTO sales ({target})
-            SELECT {select} FROM staged_sales s
+            INSERT INTO sales (sale_id, {target})
+            SELECT nextval('sale_id_seq'), {select} FROM staged_sales s
             WHERE NOT EXISTS (SELECT 1 FROM sales t WHERE t.row_hash = s.row_hash)
             """
         ).fetchone()[0]
