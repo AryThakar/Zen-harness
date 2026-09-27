@@ -3,15 +3,25 @@
 Upload your sales export, ask questions in plain English, and get answers,
 forecasts and charts - running on your own machine.
 
-**Stack:** Python · FastAPI · DuckDB · pandas · Streamlit · Plotly · scikit-learn · LangGraph · Ollama (local LLM) · RAG
+**Stack:** Python · FastAPI · DuckDB · pandas · scikit-learn · statsforecast · Streamlit · Plotly · LangGraph · Ollama (local LLM) · RAG
 
-> Status: **week 2 of 6 done** - data pipeline, REST API, dashboard and upload UI.
+> Status: **week 3 of 6 done** - data pipeline, REST API, dashboard, upload UI and ML insights.
 > The design for everything else is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ![Dashboard](docs/images/dashboard.png)
 
 ## What works today
 
+* **Sales forecast** - exponential smoothing and Theta models are backtested against
+  "repeat the previous period" on your own history; the winner forecasts the next
+  days or weeks with an 80% range, and the screen shows how much better than the
+  baseline it was (on the demo data: 40% more accurate).
+* **Customer segments** - KMeans on recency, frequency and spend finds Champions,
+  Loyal, At risk, Occasional and Lost customers, with what each group means, what to
+  do about it, and the customer lists.
+* **Unusual days and sales** - flags days when orders or revenue were far from normal
+  for that weekday and season (it finds the demo data's planted flash sale and
+  outage), and sale lines whose price, quantity or discount is odd for the product.
 * **Dashboard** - revenue, orders, average order value, profit, margin, customers,
   new customers and return rate for any period, each compared with the period
   before (only when the data fully covers it, so a half-empty year never shows as
@@ -31,6 +41,10 @@ forecasts and charts - running on your own machine.
   ready for the AI agent in week 4.
 * **Demo data** - one click loads 18 months of realistic synthetic sales with trends,
   seasonality, customer churn, basket patterns and anomalies planted for the ML.
+
+![Forecast](docs/images/insights-forecast.png)
+
+![Unusual days](docs/images/insights-anomalies.png)
 
 ![Upload mapping](docs/images/upload-mapping.png)
 
@@ -69,6 +83,8 @@ python -m app.ingestion.cli data/samples/retail_pos_messy.csv
 | `GET /sales` | Browse and filter sales rows |
 | `GET /schema` · `PATCH /schema/{column}` | Column meanings (read by the AI later) |
 | `GET /profiles` · `DELETE /profiles/{name}` | Saved column mappings |
+| `POST /ml/forecast` · `/ml/segments` · `/ml/anomalies` | Run a model in the background |
+| `GET /ml/runs/{id}` · `GET /ml/forecast` · `/ml/segments` · `/ml/anomalies` | Run status and results |
 | `GET /health` | Status |
 
 ## Project layout
@@ -78,17 +94,18 @@ app/
   main.py              FastAPI app
   api/                 routers (uploads, data, dashboard), request/response models, staging
   analytics/           KPI, trend and breakdown queries (shared by API and, later, the agent)
+  ml/                  forecast, customer segments, anomaly detection, run bookkeeping
   ingestion/           standard format, reader, parsers, mapper, cleaner, loader, CLI
-  db/                  DuckDB connection + schema.sql
+  db/                  DuckDB connection, numbered migrations, column registry
   datagen.py           synthetic sales data generator
 frontend/
   app.py               Streamlit entry point
   client.py            HTTP client for the API
   charts.py            Plotly styling and number formatting (₹ lakh / crore)
-  views/               dashboard, upload, explore pages
+  views/               dashboard, insights, upload, explore pages
 data/samples/          small example exports
 docs/                  architecture and screenshots
-tests/                 pytest suite (pipeline, analytics, API, UI smoke test)
+tests/                 pytest suite (pipeline, analytics, ML, API, UI smoke test)
 ```
 
 ## Roadmap
@@ -97,7 +114,7 @@ tests/                 pytest suite (pipeline, analytics, API, UI smoke test)
 |---|---|---|
 | 1 | Data format, cleaning pipeline, DuckDB, samples, synthetic data | ✅ |
 | 2 | FastAPI endpoints, dashboard, Streamlit upload and explore screens | ✅ |
-| 3 | ML: sales forecast, customer segments, anomaly detection | |
+| 3 | ML: sales forecast, customer segments, anomaly detection | ✅ |
 | 4 | LangGraph agent with SQL, calculator, metrics and chart tools | |
 | 5 | RAG over business documents, churn prediction, basket analysis | |
 | 6 | Local LLM with Ollama in Docker, evaluation set, demo | |

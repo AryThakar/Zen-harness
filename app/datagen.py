@@ -84,6 +84,23 @@ CUSTOMER_TYPES = (  # name, share, purchase weight, chance of churning
 )
 
 
+def planted_events(months: int = 18, end: date | None = None) -> dict[str, pd.Timestamp]:
+    """The days on which the generator plants its events, for tests and demos."""
+    days = _days(months, end)
+    n = len(days)
+    return {
+        "flash_sale": days[int(n * 0.4)],   # 3x the usual orders, 20% off
+        "outage": days[int(n * 0.7)],       # 15% of the usual orders
+        "price_rise": days[int(n * 0.6)],   # Electronics +8% from this day
+    }
+
+
+def _days(months: int, end: date | None) -> pd.DatetimeIndex:
+    end = end or date.today() - timedelta(days=1)
+    start = (pd.Timestamp(end) - pd.DateOffset(months=months)).date() + timedelta(days=1)
+    return pd.date_range(start, end, freq="D")
+
+
 def generate(
     months: int = 18,
     end: date | None = None,
@@ -93,13 +110,9 @@ def generate(
     """Sales lines in the canonical format plus a ``payment_mode`` custom column."""
     rng = np.random.default_rng(seed)
     end = end or date.today() - timedelta(days=1)
-    start = (pd.Timestamp(end) - pd.DateOffset(months=months)).date() + timedelta(days=1)
-    days = pd.date_range(start, end, freq="D")
-    n_days = len(days)
-
-    spike_day = days[int(n_days * 0.4)]
-    outage_day = days[int(n_days * 0.7)]
-    price_rise_day = days[int(n_days * 0.6)]
+    days = _days(months, end)
+    events = planted_events(months, end)
+    spike_day, outage_day, price_rise_day = events["flash_sale"], events["outage"], events["price_rise"]
 
     # About 3 orders per customer over 18 months on average; loyal ones ~10.
     customers = _make_customers(rng, days, n=max(300, int(orders_per_day * 150)))

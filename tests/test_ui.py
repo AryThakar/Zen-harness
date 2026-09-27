@@ -68,6 +68,19 @@ def test_pages_render_empty_then_with_demo_data(api):
     run(at)
     assert any("no % changes" in c.value for c in at.caption)  # nothing before the first day
 
+    at.sidebar.radio(key="page").set_value("Insights")
+    run(at)
+    assert at.header[0].value == "Insights"
+    assert any("No forecast yet" in i.value for i in at.info)
+    next(b for b in at.button if b.label == "Run forecast").click()
+    run(at)
+    assert [m.label for m in at.metric][:4] == ["Expected revenue", "Backtest error", "Baseline error", "Range held"]
+    next(b for b in at.button if b.label == "Find segments").click()
+    run(at)
+    next(b for b in at.button if b.label == "Check for unusual days").click()
+    run(at)
+    assert not at.error
+
     at.sidebar.radio(key="page").set_value("Upload data")
     run(at)
     assert at.header[0].value == "Upload data"

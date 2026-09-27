@@ -21,11 +21,13 @@ FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 TOKENS = {
     "light": {
         "series": "#2a78d6", "series_wash": "rgba(42,120,214,0.10)", "other": "#898781",
+        "accent": "#eb6834",
         "text": "#0b0b0b", "text2": "#52514e", "muted": "#898781",
         "grid": "#e1e0d9", "axis": "#c3c2b7", "surface": "#fcfcfb",
     },
     "dark": {
-        "series": "#3987e5", "series_wash": "rgba(57,135,229,0.10)", "other": "#898781",
+        "series": "#3987e5", "series_wash": "rgba(57,135,229,0.16)", "other": "#898781",
+        "accent": "#d95926",
         "text": "#ffffff", "text2": "#c3c2b7", "muted": "#898781",
         "grid": "#2c2c2a", "axis": "#383835", "surface": "#1a1a19",
     },
@@ -159,7 +161,7 @@ def trend_figure(points: list[dict], metric: str, grain: str) -> go.Figure:
 
 
 def bar_figure(items: list[dict], other: dict | None = None, value_key: str = "revenue",
-               sort: bool = True) -> go.Figure:
+               sort: bool = True, fmt=None) -> go.Figure:
     """Horizontal bars in one hue (nominal categories never get a value ramp),
     'Other' in grey, value and share at the bar tip."""
     t = TOKENS[mode()]
@@ -169,8 +171,8 @@ def bar_figure(items: list[dict], other: dict | None = None, value_key: str = "r
     labels = [r["label"] for r in rows]
     values = [r[value_key] or 0 for r in rows]
     colors = [t["other"] if other is not None and r is other else t["series"] for r in rows]
-    fmt = count if value_key in ("orders", "units") else money
-    short = count if value_key in ("orders", "units") else (lambda v: money(v, digits=1))
+    fmt = fmt or (count if value_key in ("orders", "units") else money)
+    short = fmt if fmt is not money else (lambda v: money(v, digits=1))
     text = [f"{short(v)} · {r['share_pct']:.0f}%" if r.get("share_pct") is not None else short(v)
             for v, r in zip(values, rows)]
     top = max(values, default=0)
@@ -189,3 +191,81 @@ def bar_figure(items: list[dict], other: dict | None = None, value_key: str = "r
                      tickfont={"color": t["text"]}, automargin=True)
     fig.update_layout(bargap=0.35)
     return _layout(fig, t, 24 + 34 * max(len(rows), 1))
+
+
+def _legend(t: dict) -> dict:
+    return {"orientation": "h", "x": 0, "y": 1.08, "xanchor": "left", "yanchor": "bottom",
+            "font": {"color": t["text2"]}, "bgcolor": "rgba(0,0,0,0)"}
+
+
+def forecast_figure(history: list[dict], points: list[dict], grain: str) -> go.Figure:
+    """Actuals (solid), forecast (dashed, same hue - it's the same measure) and its
+    80% range as a wash. One axis; a legend because there are two series."""
+    t = TOKENS[mode()]
+    word = "Week of" if grain == "week" else "Day"
+    fig = go.Figure()
+    xs = [p["bucket"] for p in points]
+    fig.add_trace(go.Scatter(
+        x=xs + xs[::-1], y=[p["upper"] for p in points] + [p["lower"] for p in points][::-1],
+        fill="toself", fillcolor=t["series_wash"], line={"width": 0}, hoverinfo="skip",
+        name="80% range", showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[h["bucket"] for h in history], y=[h["actual"] for h in history], mode="lines",
+        line={"color": t["series"], "width": 2}, name="Actual",
+        customdata=[[money(h["actual"]), day(h["bucket"])] for h in history],
+        hovertemplate=f"<b>%{{customdata[0]}}</b> actual<br>{word} %{{customdata[1]}}<extra></extra>",
+    ))
+    # Start the dashed line at the last actual point so the two read as one story.
+    join = [{"bucket": history[-1]["bucket"], "predicted": history[-1]["actual"]}] if history else []
+    fig.add_trace(go.Scatter(
+        x=[p["bucket"] for p in join + points], y=[p["predicted"] for p in join + points], mode="lines",
+        line={"color": t["series"], "width": 2, "dash": "dash"}, name="Forecast",
+        customdata=[[money(p["predicted"]), day(p["bucket"]),
+                     f"{money(p['lower'])} – {money(p['upper'])}" if "lower" in p else "last actual"]
+                    for p in join + points],
+        hovertemplate=f"<b>%{{customdata[0]}}</b> forecast<br>{word} %{{customdata[1]}}"
+                      "<br>80% range %{customdata[2]}<extra></extra>",
+    ))
+    top = max([h["actual"] for h in history] + [p["upper"] for p in points] + [0])
+    ticks = nice_ticks(top)
+    fig.update_xaxes(showgrid=False, linecolor=t["axis"], tickfont={"color": t["muted"]})
+    fig.update_yaxes(range=[0, ticks[-1]], tickvals=ticks, ticktext=[money(v, digits=1) for v in ticks],
+                     gridcolor=t["grid"], zeroline=False, tickfont={"color": t["muted"]})
+    _layout(fig, t, 360)
+    fig.update_layout(showlegend=True, legend=_legend(t), hovermode="closest", margin={"t": 36})
+    return fig
+
+
+def anomaly_figure(series: list[dict], days: list[dict], metric: str) -> go.Figure:
+    """The daily series with unusual days marked in the accent hue and labelled by date."""
+    t = TOKENS[mode()]
+    fmt = count if metric == "orders" else money
+    expected_key = "expected_orders" if metric == "orders" else "expected_revenue"
+    fig = go.Figure(go.Scatter(
+        x=[s["day"] for s in series], y=[s[metric] for s in series], mode="lines",
+        line={"color": t["series"], "width": 1.5}, name=f"Daily {metric}",
+        customdata=[[fmt(s[metric]), day(s["day"])] for s in series],
+        hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>",
+    ))
+    if days:
+        fig.add_trace(go.Scatter(
+            x=[d["day"] for d in days], y=[d[metric] for d in days], mode="markers+text",
+            marker={"size": 10, "color": t["accent"], "line": {"width": 2, "color": t["surface"]}},
+            text=[date.fromisoformat(d["day"]).strftime("%-d %b") for d in days],
+            textposition=["top center" if d["direction"] == "spike" else "bottom center" for d in days],
+            textfont={"color": t["text2"], "size": 11}, cliponaxis=False, name="Unusual day",
+            customdata=[[fmt(d[metric]), fmt(d[expected_key]), day(d["day"]), d["direction"]] for d in days],
+            hovertemplate="<b>%{customdata[0]}</b> (normal ≈ %{customdata[1]})<br>%{customdata[2]} · "
+                          "%{customdata[3]}<extra></extra>",
+        ))
+    top = max([s[metric] for s in series] + [0])
+    ticks = nice_ticks(top * 1.08)
+    # Room below zero for the date labels under drops, so they don't sit on the x-axis.
+    bottom = -0.12 * ticks[-1] if any(d["direction"] == "drop" for d in days) else 0
+    fig.update_xaxes(showgrid=False, linecolor=t["axis"], tickfont={"color": t["muted"]})
+    fig.update_yaxes(range=[bottom, ticks[-1]], tickvals=ticks, ticktext=[fmt(v) if metric == "orders" else money(v, digits=1) for v in ticks],
+                     gridcolor=t["grid"], zeroline=False, tickfont={"color": t["muted"]})
+    _layout(fig, t, 340)
+    fig.update_layout(showlegend=True, legend=_legend(t), hovermode="closest", margin={"t": 36})
+    return fig

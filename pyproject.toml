@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-business-analyst"
-version = "0.2.0"
+version = "0.3.0"
 description = "Upload business sales data, ask questions in plain English, get answers, forecasts and charts."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,8 @@ dependencies = [
     "pandas>=2.2",
     "python-multipart>=0.0.9",
     "rapidfuzz>=3.0",
+    "scikit-learn>=1.4",
+    "statsforecast>=2.0",
     "uvicorn>=0.30",
 ]
 

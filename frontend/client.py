@@ -14,6 +14,10 @@ TIMEOUT = 300  # big uploads can take a while to clean
 class ApiError(Exception):
     """A request failed; the message is safe to show to the user."""
 
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
 
 def _call(method: str, path: str, **kwargs) -> Any:
     try:
@@ -27,7 +31,7 @@ def _call(method: str, path: str, **kwargs) -> Any:
             detail = r.text
         if isinstance(detail, list):  # FastAPI validation errors
             detail = "; ".join(f"{'.'.join(map(str, d.get('loc', [])))}: {d.get('msg')}" for d in detail)
-        raise ApiError(str(detail))
+        raise ApiError(str(detail), r.status_code)
     return r.json() if r.content else None
 
 
@@ -111,3 +115,25 @@ def profiles() -> list[dict]:
 
 def delete_profile(name: str) -> None:
     _call("DELETE", f"/profiles/{requests.utils.quote(name, safe='')}")
+
+
+def start_ml(task: str, body: dict | None = None) -> dict:
+    return _call("POST", f"/ml/{task}", json=body) if body is not None else _call("POST", f"/ml/{task}")
+
+
+def ml_run(run_id: int) -> dict:
+    return _call("GET", f"/ml/runs/{run_id}")
+
+
+def ml_result(task: str) -> dict | None:
+    """The latest successful result of a task, or None if there is none yet."""
+    try:
+        return _call("GET", f"/ml/{task}")
+    except ApiError as exc:
+        if exc.status == 404:
+            return None
+        raise
+
+
+def segment_customers(segment: str, limit: int = 50) -> dict:
+    return _call("GET", "/ml/segments/customers", params={"segment": segment, "limit": limit})

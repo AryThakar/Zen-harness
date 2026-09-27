@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.ingestion.mapper import Mapping
 
@@ -228,3 +228,115 @@ class HealthOut(BaseModel):
     status: Literal["ok"]
     sales_rows: int
     uploads: int
+
+
+# --- ML ------------------------------------------------------------------------
+
+class ForecastIn(BaseModel):
+    horizon: int = Field(30, ge=1, le=180, description="days or weeks ahead")
+    grain: Literal["day", "week"] = "day"
+    by: Literal["category", "product", "location", "channel"] | None = Field(
+        None, description="forecast one slice, e.g. by=category, value=Electronics")
+    value: str | None = None
+
+    @model_validator(mode="after")
+    def _by_and_value_together(self) -> ForecastIn:
+        if (self.by is None) != (self.value is None):
+            raise ValueError("give both 'by' and 'value', or neither")
+        return self
+
+
+class RunOut(BaseModel):
+    run_id: int
+    task: str
+    status: Literal["running", "succeeded", "failed"]
+    params: dict[str, Any]
+    metrics: dict[str, Any] | None
+    message: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class ForecastPointOut(BaseModel):
+    bucket: date
+    predicted: float
+    lower: float | None
+    upper: float | None
+
+
+class ActualPointOut(BaseModel):
+    bucket: date
+    actual: float
+
+
+class ForecastOut(BaseModel):
+    run: RunOut
+    history: list[ActualPointOut]
+    points: list[ForecastPointOut]
+
+
+class SegmentOut(BaseModel):
+    segment: str
+    customers: int
+    share_pct: float
+    revenue: float
+    revenue_share_pct: float | None
+    median_recency_days: float
+    median_orders: float
+    median_revenue: float
+    meaning: str
+    action: str
+
+
+class SegmentsOut(BaseModel):
+    run: RunOut
+    segments: list[SegmentOut]
+
+
+class SegmentCustomerOut(BaseModel):
+    customer_id: str
+    segment: str
+    recency_days: int
+    orders: int
+    revenue: float
+
+
+class SegmentCustomersPage(BaseModel):
+    total: int
+    rows: list[SegmentCustomerOut]
+
+
+class AnomalyDayOut(BaseModel):
+    day: date
+    revenue: float
+    expected_revenue: float
+    orders: int
+    expected_orders: float
+    signal: Literal["orders", "revenue", "both"]
+    score: float
+    direction: Literal["spike", "drop"]
+
+
+class AnomalyLineOut(BaseModel):
+    sale_id: int
+    order_id: str
+    order_date: datetime
+    product: str
+    quantity: float
+    unit_price: float
+    discount: float
+    score: float
+    reason: str
+
+
+class DailyPointOut(BaseModel):
+    day: date
+    revenue: float
+    orders: int
+
+
+class AnomaliesOut(BaseModel):
+    run: RunOut
+    days: list[AnomalyDayOut]
+    lines: list[AnomalyLineOut]
+    series: list[DailyPointOut]

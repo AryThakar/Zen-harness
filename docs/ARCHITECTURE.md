@@ -134,7 +134,8 @@ One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: [`app/db/schema.sql`](
 | `format_profiles` | saved and built-in mappings |
 | `column_registry` | every sales column: type, kind (required/optional/derived/custom), description; example values are computed from a repeatable 20k-row sample when read |
 | `schema_migrations` | which numbered files in `app/db/migrations/` have been applied |
-| `ml_runs`, `ml_results` ⏳ | model runs (task, params, metrics, artifact path) and per-row outputs |
+| `ml_runs` | every model run: task, params, status, metrics, message |
+| `forecast_points`, `customer_segments`, `anomaly_days`, `anomaly_lines` | model results per run, plus `latest_*` views |
 | `documents`, `doc_chunks`, `glossary` ⏳ | RAG documents, chunks with `FLOAT[768]` embeddings, metric definitions |
 
 ML outputs are written back to DuckDB so the agent can query them with SQL.
@@ -146,27 +147,36 @@ recorded, so an existing database file upgrades itself when the app changes.
 
 ---
 
-## 4. ML ⏳
+## 4. ML ✅ (forecast, segments, anomalies)
 
-The same function runs from a UI button, an agent tool, or automatically after upload.
+Code: [`app/ml/`](../app/ml/). Each task is a function that reads with a cursor and
+returns a `TaskResult` (metrics, a plain-language message, result rows). The runner
+records every run in `ml_runs` (running → succeeded / failed), computes outside the
+write lock, then saves results in one transaction. The same function will back the
+AI agent's tools in week 4.
 
-| Model | Needs | Method | Output | Minimum data |
-|---|---|---|---|---|
-| Sales forecast | order_date, revenue | statsforecast AutoETS vs seasonal-naive baseline, walk-forward backtest | next 30 days / 12 weeks with range and MAE | ~3 months |
-| Customer segments | customer_id | RFM → scale → KMeans (k by silhouette) → Champions / Loyal / At risk / Lost / New | segment per customer | ~50 customers |
-| Churn risk | customer_id | label = no purchase in next 90 days; RFM + trend features; Logistic Regression vs Random Forest; time-based split | churn probability per customer | ~6 months, ~200 customers |
-| Anomalies | order_date | daily revenue robust z-score; row-level IsolationForest | flagged days and rows | ~2 months |
-| Bought together | order_id | FP-Growth association rules | pairs with lift and confidence | ~500 multi-item orders |
+| Task | Needs | Method | Output tables |
+|---|---|---|---|
+| **Forecast** | ≥ 3× the horizon and ≥ 8 weeks of history | statsforecast: exponential smoothing (AutoETS) and Theta vs a "repeat the previous period" baseline (seasonal naive), walk-forward backtest on up to 3 past periods, best by WAPE; the baseline is used if nothing beats it. Daily (weekly seasonality) or weekly; all sales or one category / product / location / channel | `forecast_points` (predicted + 80% range) |
+| **Customer segments** | ≥ 50 customers | RFM (recency, orders, net revenue; log scale for the skewed two) → StandardScaler → KMeans for k = 3-6; the most groups whose silhouette is within 10% of the best (silhouette alone nearly always picks 3, too coarse to act on). Groups named from their median customer's percentiles: Champions, Loyal, At risk, New, Occasional, Lost - each with a meaning and a suggested action | `customer_segments` |
+| **Unusual days** | ≥ 28 days | For orders and for revenue: expected = weekday profile × rolling 29-day median level; robust z-score (median/MAD) of the log difference; flag \|z\| ≥ 3.5. Both signals because revenue is noisy (one laptop doubles a day) while order counts are steady - a flash sale shows in orders first | `anomaly_days` |
+| **Unusual lines** | ≥ 200 lines | IsolationForest on price, quantity and discount relative to each product's median, reported only when something is actually off (price ×1.5, quantity ×3, discount > 30%) with a plain reason | `anomaly_lines` |
 
-Rules: check columns and data size first and say what is missing; always report
-error against a simple baseline; save models (joblib) and metrics.
+**Honesty rules:** every model reports its backtest error next to the baseline's and
+how often its range held; too little data gives a message saying what's missing, not
+a weak result; a failed run stores why.
 
-The synthetic generator ([`app/datagen.py`](../app/datagen.py)) plants a pattern
-for each model: trend and festive seasonality, loyal/regular/occasional customers
-who sometimes stop buying, phone → case + screen guard baskets, a flash-sale spike
-and an outage day, and an 8% Electronics price rise.
+**Checked on the synthetic data:** ETS was 40% more accurate than the baseline (WAPE
+26% vs 43%) and its 80% range held 83% of the time; the planted flash sale (orders
+3.9× normal) and outage (orders -81%) are both found; planted price and quantity
+typos are flagged; Champions are 18% of customers bringing 55% of revenue.
 
----
+**Runs:** `POST /ml/{task}` returns 202 and runs in the background; the UI polls
+`GET /ml/runs/{id}`. An identical run that is still going is reused (double clicks),
+and runs cut off by a restart are marked failed at startup. Views `latest_forecast`,
+`latest_customer_segments` and `latest_anomaly_days` hold the newest results for SQL.
+
+Still to come (week 5): churn prediction and "frequently bought together".
 
 ## 5. RAG ⏳
 
@@ -229,7 +239,10 @@ Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs a
 | `GET /schema`, `PATCH /schema/{column}` | column registry; edit descriptions |
 | `GET /profiles`, `DELETE /profiles/{name}` | saved mappings (built-ins protected) |
 | `GET /health` | row and upload counts |
-| `POST /ml/{task}`, `POST /documents`, `POST /chat` ⏳ | weeks 3-5 |
+| `POST /ml/forecast`, `/ml/segments`, `/ml/anomalies` | start a run (202, background) |
+| `GET /ml/runs`, `/ml/runs/{id}` | run history and status |
+| `GET /ml/forecast`, `/ml/segments`, `/ml/segments/customers`, `/ml/anomalies` | latest (or a given run's) results with the data behind them |
+| `POST /documents`, `POST /chat` ⏳ | weeks 4-5 |
 
 * **Two-step upload:** preview stores the file under `data/staging/<uuid>` (24 h
   expiry, 100 MB limit, CSV/TSV/TXT/XLSX/XLSM only) so the user can edit the
@@ -258,7 +271,10 @@ functions over a cursor, so the agent's tools can reuse them.
 
 UI: Streamlit ([`frontend/`](../frontend/)) talking only to the API over HTTP.
 Pages: Dashboard (period presets, 8 KPI tiles, trend with Revenue / Orders / Profit
-switch, four breakdown charts), Upload (mapping editor with dropdowns per field,
+switch, four breakdown charts), Insights (forecast with actual vs dashed forecast and
+80% band plus error vs baseline; segment sizes, revenue share, meaning and action,
+customer lists; unusual days on the orders or revenue line with dated markers, and
+unusual sale lines), Upload (mapping editor with dropdowns per field,
 custom-column table with keep / rename / describe, date and discount options, save
 as profile, report with rejected rows), Explore (sales rows, upload history with
 undo, column descriptions, saved formats).
@@ -276,7 +292,7 @@ crore (`BIZ_CURRENCY` changes the symbol).
 |---|---|---|
 | 1 | Data format, reader, mapper + profiles, cleaner, DuckDB loader, samples, synthetic data, CLI, tests | ✅ |
 | 2 | FastAPI endpoints, dashboard KPIs, Streamlit upload / dashboard / explore screens | ✅ |
-| 3 | ML: forecast, segments, anomalies (UI buttons) | ⏳ |
+| 3 | ML: forecast, segments, anomalies (Insights page) + review fixes | ✅ |
 | 4 | Agent: sql_query, calculator, business_metrics, visualize, streaming chat | ⏳ |
 | 5 | RAG + glossary, churn, basket, ML as agent tools | ⏳ |
 | 6 | Ollama in Docker, provider switch, 40-question eval set, README polish, demo | ⏳ |

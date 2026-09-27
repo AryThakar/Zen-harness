@@ -239,3 +239,40 @@ def test_range_and_dimensions(client):
     assert client.get("/dashboard/range").json() == {"has_data": True, "start": "2024-01-28", "end": "2024-09-07"}
     dims = client.get("/dashboard/dimensions").json()
     assert "category" in dims and "segment" in dims and "revenue" not in dims
+
+
+def test_ml_runs_and_results(client):
+    assert client.get("/ml/forecast").status_code == 404  # nothing yet
+    client.post("/uploads/demo", json={"months": 8, "orders_per_day": 25})
+
+    run = client.post("/ml/forecast", json={"horizon": 14}).json()
+    assert client.get(f"/ml/runs/{run['run_id']}").json()["status"] == "succeeded"  # background task done
+    forecast = client.get("/ml/forecast").json()
+    assert len(forecast["points"]) == 14 and len(forecast["history"]) == 90
+    assert forecast["run"]["metrics"]["model"]
+
+    client.post("/ml/segments")
+    segs = client.get("/ml/segments").json()["segments"]
+    assert sum(s["share_pct"] for s in segs) == pytest.approx(100)
+    assert all(s["action"] for s in segs)
+    first = segs[0]["segment"]
+    page = client.get("/ml/segments/customers", params={"segment": first, "limit": 3}).json()
+    assert page["total"] == segs[0]["customers"] and len(page["rows"]) == 3
+
+    client.post("/ml/anomalies")
+    result = client.get("/ml/anomalies").json()
+    assert result["days"] and len(result["series"]) > 200
+
+    runs = client.get("/ml/runs").json()
+    assert [r["task"] for r in runs[:3]] == ["anomalies", "segments", "forecast"]
+
+
+def test_ml_errors(client):
+    assert client.post("/ml/forecast", json={"by": "category"}).status_code == 422  # value missing
+    assert client.post("/ml/forecast", json={"horizon": 0}).status_code == 422
+    assert client.get("/ml/runs/999").status_code == 404
+    failed = client.post("/ml/segments").json()  # no data at all
+    detail = client.get(f"/ml/runs/{failed['run_id']}").json()
+    assert detail["status"] == "failed" and "at least 50 customers" in detail["message"]
+    r = client.get("/ml/segments", params={"run_id": failed["run_id"]})
+    assert r.status_code == 409 and "failed" in r.json()["detail"]
