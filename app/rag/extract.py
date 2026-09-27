@@ -97,6 +97,7 @@ def _docx(data: bytes, stem: str) -> Extracted:
     except (PackageNotFoundError, zipfile.BadZipFile, ValueError, KeyError) as exc:
         raise DocumentError("The Word file couldn't be read; save it as .docx and try again.") from exc
     blocks: list[Block] = []
+    headings: list[Block] = []  # used only if the document has nothing else
     section = None
     body = document.element.body
     paragraphs = {p._element: p for p in document.paragraphs}
@@ -109,7 +110,9 @@ def _docx(data: bytes, stem: str) -> Extracted:
                 continue
             style = (p.style.name or "").lower() if p.style is not None else ""
             if style.startswith("heading") or style == "title":
-                section = text
+                section = text  # kept as the passages' section, not repeated in their text
+                headings.append(Block(text, section=text))
+                continue
             blocks.append(Block(text, section=section))
         elif child in tables:
             for row in tables[child].rows:
@@ -121,18 +124,20 @@ def _docx(data: bytes, stem: str) -> Extracted:
                 if cells:
                     blocks.append(Block(" | ".join(cells), section=section))
     title = _clean(document.core_properties.title or "") or stem
-    return Extracted("docx", title, blocks)
+    return Extracted("docx", title, blocks or headings)
 
 
 def _text(text: str, stem: str, markdown: bool) -> Extracted:
-    blocks, section, title = [], None, None
+    blocks, headings, section, title = [], [], None, None
     for para in _paragraphs(text):
         heading = re.match(r"^#{1,6}\s+(.*)", para) if markdown else None
-        if heading:
-            para = section = heading.group(1).strip()
+        if heading:  # kept as the passages' section, not repeated in their text
+            section = heading.group(1).strip()
             title = title or section
+            headings.append(Block(section, section=section))
+            continue
         blocks.append(Block(para, section=section))
-    return Extracted("md" if markdown else "txt", title or stem, blocks)
+    return Extracted("md" if markdown else "txt", title or stem, blocks or headings)
 
 
 # --- helpers ---------------------------------------------------------------------
