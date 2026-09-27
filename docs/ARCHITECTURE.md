@@ -73,12 +73,12 @@ Code: [`app/ingestion/`](../app/ingestion/).
 
 | # | Step | Module | What happens |
 |---|---|---|---|
-| 1 | Read | `reader` | CSV (UTF-8 → Windows-1252 → detected encoding; `,` `;` tab `\|` delimiter) or Excel. Finds the real header row under title lines. Keeps file row numbers for error reports. Rows with extra fields are set aside |
+| 1 | Read | `reader` | CSV (UTF-8 → Windows-1252 → detected encoding, UTF-16 by its byte-order mark; `,` `;` tab `\|` delimiter, chosen by how many lines it splits evenly so decimal commas don't fool it) or Excel. Finds the real header row under title lines. Keeps file row numbers for error reports. Rows with extra fields are set aside |
 | 2 | Normalize names | `reader` | `Unit Price (₹)` → `unit_price`, duplicates made unique |
 | 3 | Map columns | `mapper` | saved/built-in format profile → alias list → fuzzy match (rapidfuzz ≥ 88). Leftovers become custom columns. A `%` in the original discount header marks it as a percentage |
 | 4 | Fill order-level gaps | `cleaner` | exports that print the date/customer only on an order's first line get them copied to the other lines |
 | 5 | Convert types | `parsing` | dates (ISO always year-first; day/month order detected from values > 12, else the configured default; Excel serials; timezone offset after a time of day dropped; outside 1900-2100 = bad), numbers (`₹1,23,456.50`, `Rs. 500`, `(500)`, `3,50`, `1.234,50`), IDs (`17850.0` → `17850`), consistent spelling of names |
-| 6 | Derive | `cleaner` | quantity 1 for amount-only files, unit price from totals, unit cost from line cost/profit, money discount from rates |
+| 6 | Derive | `cleaner` | quantity 1 for amount-only files (-1 for a negative amount: a refund), unit price from totals, unit cost from line cost/profit, money discount from rates |
 | 7 | Validate | `cleaner` | each failed rule adds a reason code: `missing order_date`, `bad order_date`, `order_date in the future`, `missing product`, `quantity is 0`, `negative unit_price`, `bad discount`, `discount larger than line value`, `negative unit_cost`, ... `Total` footers get `summary row` |
 | 8 | Compute | `cleaner` | `revenue`, `cost`, `profit`, `is_return`, `year`, `month`, `week`, `weekday` |
 | 9 | De-duplicate | `loader` | content hash + occurrence counter (see below) |
@@ -100,6 +100,10 @@ rows (two customers buying the same item), while re-uploading a file or an
 overlapping export skips rows already stored. Product attributes (category, cost)
 and custom columns are left out so correcting them in a later export doesn't turn
 old sales into new ones.
+
+**Order numbers that restart:** if many order numbers appear on more than one day
+(bill numbers that restart daily or yearly), the upload warns that those orders would
+be counted as one and suggests combining the number with the date or store.
 
 **Consistent names across uploads:** a product, category, location or channel that
 differs only in case from a stored value takes the stored spelling.
@@ -301,7 +305,9 @@ The ML tools run the same code as the Insights page and store their runs the sam
 
 1. Parsed with sqlglot: exactly one statement, and it must be a query; any
    insert/update/delete/DDL/COPY/ATTACH/PRAGMA/SET node anywhere is rejected.
-2. Tables must be on an allowlist (sales data and ML result tables; not
+2. Table references are resolved by scope the way SQL does (a CTE can refer to a
+   later CTE's name, which then means the real table), and a CTE may not take the
+   name of a table outside the allowlist. Tables must be on an allowlist (sales data and ML result tables; not
    `schema_migrations`, `format_profiles` or the raw rejected rows); schema-qualified names,
    string "tables" (`FROM 'file.csv'`) and table functions other than `unnest`,
    `generate_series` and `range` are rejected; functions like `read_*`, `glob`,

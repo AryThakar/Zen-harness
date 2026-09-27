@@ -15,17 +15,25 @@ SAMPLE_ROWS = 20_000  # example values come from a fixed random sample, so reads
 SAMPLE_VALUES = 5
 
 
+def builtin_columns() -> dict[str, tuple[str, str, str]]:
+    """Canonical and derived columns: name -> (type, kind, default description)."""
+    columns = {f.name: (SQL_TYPES[f.dtype], f.kind, f.description) for f in FIELDS if f.name in SALES_COLUMNS}
+    columns.update({name: (sql_type, "derived", desc) for name, (sql_type, desc) in DERIVED_COLUMNS.items()})
+    return columns
+
+
 def seed(cur: duckdb.DuckDBPyConnection) -> None:
-    """Register the canonical and derived columns (idempotent)."""
-    rows = [(f.name, SQL_TYPES[f.dtype], f.kind, f.description) for f in FIELDS if f.name in SALES_COLUMNS]
-    rows += [(name, sql_type, "derived", desc) for name, (sql_type, desc) in DERIVED_COLUMNS.items()]
+    """Register the canonical and derived columns (idempotent). Default descriptions
+    follow the code, except where the user has written their own."""
     cur.executemany(
         """
         INSERT INTO column_registry (column_name, data_type, kind, description) VALUES (?, ?, ?, ?)
         ON CONFLICT (column_name) DO UPDATE SET
-            data_type = excluded.data_type, kind = excluded.kind, description = excluded.description
+            data_type = excluded.data_type, kind = excluded.kind,
+            description = CASE WHEN column_registry.edited THEN column_registry.description
+                               ELSE excluded.description END
         """,
-        rows,
+        [(name, *info) for name, info in builtin_columns().items()],
     )
 
 
@@ -78,10 +86,15 @@ def samples(cur: duckdb.DuckDBPyConnection, column: str) -> list:
 
 
 def set_description(cur: duckdb.DuckDBPyConnection, column: str, description: str | None) -> dict | None:
+    """The user's description of a column; clearing a built-in column's restores its default."""
+    default = builtin_columns().get(column)
+    edited = description is not None or default is None
+    if description is None and default is not None:
+        description = default[2]
     row = cur.execute(
-        "UPDATE column_registry SET description = ? WHERE column_name = ? "
+        "UPDATE column_registry SET description = ?, edited = ? WHERE column_name = ? "
         "RETURNING column_name, data_type, kind, description",
-        [description, column],
+        [description, edited, column],
     ).fetchone()
     if row is None:
         return None

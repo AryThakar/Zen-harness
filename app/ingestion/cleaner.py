@@ -7,7 +7,8 @@ Money rules
 -----------
 * With unit_price:   revenue = quantity x unit_price - discount
 * With only amount:  amount is the final line value (after discount); quantity
-                     defaults to 1 and unit_price is derived so the rule above holds.
+                     defaults to 1 (-1 for a negative amount: a refund or credit
+                     note) and unit_price is derived so the rule above holds.
 * discount is stored in money with the same sign as the line, so for returns
   (negative quantity) it reduces the refund.
 * unit_cost comes from unit_cost, else line_cost / quantity,
@@ -145,6 +146,9 @@ def clean(
     else:
         amount, bad, _ = number("amount")
         checks.add("missing amount", amount.isna() & ~bad)
+        if "quantity" not in fields:  # a negative amount is a refund of one unit, not a negative price
+            qty = qty.where(~(amount < 0), -1.0)
+            safe_qty = qty.where(qty != 0)
         checks.add("bad discount", rate >= 1)
         sign = np.sign(amount)
         gross = amount.where(rate.isna(), amount / (1 - rate.where(rate < 1)))
@@ -202,6 +206,9 @@ def clean(
     out["week"] = dates.dt.isocalendar().week.astype("Int64")
     out["weekday"] = dates.dt.day_name()
 
+    if "order_id" in fields:
+        _warn_repeated_order_ids(out["order_id"], dates, qty > 0, warnings)
+
     # --- custom columns ---------------------------------------------------
     known = custom_types or {}
     types: dict[str, str] = {}
@@ -228,6 +235,27 @@ def clean(
         custom_types=types,
         warnings=warnings,
     )
+
+
+REPEATED_ORDER_SHARE = 0.05
+
+
+def _warn_repeated_order_ids(order_ids: pd.Series, dates: pd.Series, sale: pd.Series, warnings: list[str]) -> None:
+    """Warn when many order numbers appear on more than one day: systems that restart
+    bill numbers (daily, yearly, per store) would have separate orders counted as one."""
+    lines = pd.DataFrame({"order": order_ids, "day": dates.dt.date})[sale & order_ids.notna() & dates.notna()]
+    if lines.empty:
+        return
+    days = lines.groupby("order")["day"].nunique()
+    repeated = days[days > 1]
+    if len(repeated) >= 10 and len(repeated) >= REPEATED_ORDER_SHARE * len(days):
+        example = repeated.index[0]
+        on = sorted(lines.loc[lines["order"] == example, "day"].unique())[:2]
+        warnings.append(
+            f"{len(repeated):,} order numbers appear on more than one day (e.g. {example} on "
+            f"{on[0]} and {on[1]}). If your system restarts bill numbers, those orders are counted as one - "
+            "combine the number with the date or store in the file to keep them apart."
+        )
 
 
 def _fill_order_level(df: pd.DataFrame, fields: dict[str, str], warnings: list[str]) -> pd.DataFrame:

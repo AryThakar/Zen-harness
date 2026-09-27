@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import client
+from tables import rejected_frame
 
 PAGE_SIZE = 100
 
@@ -40,7 +41,12 @@ def _sales() -> None:
         return
     pages = (total - 1) // PAGE_SIZE + 1
     page = st.number_input(f"Page (of {pages:,})", min_value=1, max_value=pages, value=1, key="sales_page")
-    data = client.sales(q=q, returns=returns, sort=sort, desc=True, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+    try:
+        data = client.sales(q=q, returns=returns, sort=sort, desc=True, limit=PAGE_SIZE,
+                            offset=(page - 1) * PAGE_SIZE)
+    except client.ApiError as exc:
+        st.error(str(exc))
+        return
     st.caption(f"{total:,} rows")
     df = pd.DataFrame(data["rows"], columns=data["columns"])
     if "order_date" in df:
@@ -67,14 +73,17 @@ def _uploads() -> None:
     ids = [u["upload_id"] for u in uploads]
     names = {u["upload_id"]: f"#{u['upload_id']} – {u['filename']}" for u in uploads}
     chosen = st.selectbox("Details for", ids, format_func=names.get, key="upload_choice")
-    detail = client.upload_detail(chosen)
+    try:
+        detail = client.upload_detail(chosen)
+        page = client.rejected(chosen, limit=500) if detail["rejected_reasons"] else None
+    except client.ApiError as exc:
+        st.error(str(exc))
+        return
     for w in detail["warnings"]:
         st.info(w)
-    if detail["rejected_reasons"]:
+    if page:
         st.markdown("**Rejected:** " + ", ".join(f"{r} ({n})" for r, n in detail["rejected_reasons"].items()))
-        page = client.rejected(chosen, limit=500)
-        rows = [{"Row": r["row_number"], "Reason": r["reasons"], **r["raw"]} for r in page["rows"]]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.dataframe(rejected_frame(page["rows"]), hide_index=True, width="stretch")
     with st.expander("Column mapping used"):
         st.json(detail["mapping"])
 
@@ -128,5 +137,9 @@ def _profiles() -> None:
         cols = st.columns([5, 1])
         cols[0].markdown(f"**{p['name']}**{' · built-in' if p['builtin'] else ''}  \n{fields}")
         if not p["builtin"] and cols[1].button("Delete", key=f"del_profile_{p['name']}"):
-            client.delete_profile(p["name"])
+            try:
+                client.delete_profile(p["name"])
+            except client.ApiError as exc:
+                st.error(str(exc))
+                return
             st.rerun()

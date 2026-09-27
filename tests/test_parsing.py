@@ -21,6 +21,8 @@ from app.ingestion.parsing import (
         ("1,234", 1234.0),
         ("0.15", 0.15),
         (".5", 0.5),
+        ("1.2E+05", 120000.0),  # Excel's way of writing big numbers
+        ("3e2", 300.0),
     ],
 )
 def test_parse_numbers_reads_messy_amounts(text, value):
@@ -29,7 +31,7 @@ def test_parse_numbers_reads_messy_amounts(text, value):
     assert not bad[0]
 
 
-@pytest.mark.parametrize("text", ["abc", "SKU-884", "12 pcs", "1-2"])
+@pytest.mark.parametrize("text", ["abc", "SKU-884", "12 pcs", "1-2", "(500", "500)"])
 def test_parse_numbers_flags_garbage_instead_of_guessing(text):
     values, bad, _ = parse_numbers(pd.Series([text]))
     assert pd.isna(values[0])

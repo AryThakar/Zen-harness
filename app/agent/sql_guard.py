@@ -5,6 +5,9 @@ Defence in depth:
    single read-only query over an allowlist of tables - no DDL/DML, no
    commands, no file-reading or table functions, no schema-qualified names -
    then runs the re-generated SQL, so what executes is exactly what was checked.
+   Table references are resolved the way SQL does (a CTE may refer to a later
+   CTE's name, which then means the real table), and a CTE may not take the name
+   of a table outside the allowlist, so naming tricks can't reach other tables.
 2. The database connection has external access disabled (see Database), so even
    a query that slipped through could not read files, attach databases or load
    extensions.
@@ -19,6 +22,7 @@ from dataclasses import dataclass
 import duckdb
 import sqlglot
 from sqlglot import exp
+from sqlglot.optimizer.scope import traverse_scope
 
 ALLOWED_TABLES = {
     "sales", "products", "customers", "uploads", "column_registry",
@@ -49,8 +53,9 @@ class QueryResult:
     truncated: bool
 
 
-def check(sql: str) -> str:
-    """Validate ``sql``; return the normalized query to run."""
+def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
+    """Validate ``sql``; return the normalized query to run. ``existing`` names the
+    database's tables and views, so a CTE can't be named after a hidden one."""
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None]
     except sqlglot.errors.ParseError as exc:
@@ -65,6 +70,9 @@ def check(sql: str) -> str:
         raise SqlRejected(f"'{forbidden.key.upper()}' is not allowed; only SELECT queries.")
 
     cte_names = {cte.alias_or_name.lower() for cte in statement.find_all(exp.CTE)}
+    hiding = sorted((cte_names & {name.lower() for name in existing}) - ALLOWED_TABLES)
+    if hiding:
+        raise SqlRejected(f"Rename the CTE '{hiding[0]}': it has the name of a table that isn't available.")
     for table in statement.find_all(exp.Table):
         if isinstance(table.this, exp.Func):
             name = _function_name(table.this)
@@ -78,6 +86,17 @@ def check(sql: str) -> str:
             raise SqlRejected(
                 f"Table '{table.name}' is not available. Tables: {', '.join(sorted(ALLOWED_TABLES))}."
             )
+    # Resolve references by scope: 'schema_migrations' inside a CTE defined before
+    # a CTE of that name means the real table, whatever the names say.
+    try:
+        scopes = traverse_scope(statement)
+    except Exception as exc:  # fail closed on anything the resolver can't follow
+        raise SqlRejected(f"Could not analyse the query ({exc}); write it more simply.") from exc
+    for scope in scopes:
+        for source in scope.sources.values():
+            if isinstance(source, exp.Table) and not isinstance(source.this, exp.Func):
+                if source.name.lower() not in ALLOWED_TABLES:
+                    raise SqlRejected(f"Table '{source.name}' is not available.")
     for func in statement.find_all(exp.Func):
         name = _function_name(func)
         if name.startswith(BLOCKED_FUNCTION_PREFIXES):
@@ -88,7 +107,9 @@ def check(sql: str) -> str:
 def run(cur: duckdb.DuckDBPyConnection, sql: str, max_rows: int = MAX_ROWS,
         timeout: float = TIMEOUT_SECONDS) -> QueryResult:
     """Check and run a query, returning at most ``max_rows`` rows."""
-    safe_sql = check(sql)
+    existing = frozenset(name for (name,) in cur.execute(
+        "SELECT table_name FROM duckdb_tables() UNION SELECT view_name FROM duckdb_views()").fetchall())
+    safe_sql = check(sql, existing)
     timer = threading.Timer(timeout, cur.interrupt)
     timer.start()
     try:

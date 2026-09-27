@@ -34,7 +34,14 @@ class ClaudeProvider:
         self.model = model
         self.effort = effort
         self._base_url = base_url
-        self._client = client
+        self._client = client  # injected (tests); otherwise made on first use and reused
+        self._lazy_client: anthropic.Anthropic | None = None
+
+    def _default_client(self) -> anthropic.Anthropic:
+        """One client per provider, so turns reuse its HTTP connections."""
+        if self._lazy_client is None:
+            self._lazy_client = anthropic.Anthropic(base_url=self._base_url)
+        return self._lazy_client
 
     def ready(self) -> tuple[bool, str]:
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or self._client:
@@ -61,7 +68,7 @@ class ClaudeProvider:
         if self.effort:
             params["output_config"] = {"effort": self.effort}
 
-        client = self._client or anthropic.Anthropic(base_url=self._base_url)
+        client = self._client or self._default_client()
         for attempt in range(MAX_JSON_RETRIES + 1):
             try:
                 with client.beta.messages.stream(**params) as stream:

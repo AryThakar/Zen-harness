@@ -15,7 +15,7 @@ import pandas as pd
 NULL_TOKENS = {"", "na", "n/a", "nan", "null", "none", "nil", "-", "--"}
 
 _CURRENCY = r"(?i)(?:rs\.?|inr|usd|eur|gbp|aud|cad|[₹$€£¥])"
-_NUMBER = r"\(?[-+]?(?:\d+\.?\d*|\.\d+)\)?%?"
+_NUMBER = r"\(?[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\)?%?"  # Excel writes big numbers as 1.2E+05
 # Decimal comma: '1.234,50' or '3,50'. A comma followed by only 1-2 digits
 # can't be a thousands separator in any convention (1,234 / 1,23,456).
 # Checked after currency symbols and spaces are removed ('€3,50', 'Rs. 12,5').
@@ -55,7 +55,7 @@ def parse_numbers(s: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
     """
     t = as_text(s)
     # Fast path: most values in numeric columns are already plain numbers.
-    plain = t.str.fullmatch(r"[-+]?(?:\d+\.?\d*|\.\d+)")
+    plain = t.str.fullmatch(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
     if plain.all():
         values = pd.to_numeric(t).astype(float)
         none = pd.Series(False, index=t.index)
@@ -77,7 +77,7 @@ def parse_numbers(s: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
     )
     t = t.str.replace(",", "", regex=False)
 
-    ok = t.str.fullmatch(_NUMBER) & ~missing
+    ok = t.str.fullmatch(_NUMBER) & ~missing & (t.str.count(r"\(") == t.str.count(r"\)"))  # '(500' is a typo
     pct = ok & t.str.endswith("%")
     negative = ok & t.str.match(r"^\(.*\)%?$")
     digits = t.str.replace(r"[()%+]", "", regex=True)

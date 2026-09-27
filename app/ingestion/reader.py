@@ -97,9 +97,12 @@ def find_header_row(rows: list[list[str]]) -> int:
 
 
 def _decode(data: bytes) -> tuple[str, str]:
-    """UTF-8, then Windows-1252 (what Excel on Windows writes), then a detector's guess."""
+    """UTF-8, then Windows-1252 (what Excel on Windows writes), then a detector's guess.
+    UTF-16 (Excel's "Unicode Text" export) is recognised by its byte-order mark."""
     if data.startswith(b"\xef\xbb\xbf"):
         return data.decode("utf-8-sig"), "utf-8-sig"
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16"), "utf-16"
     for encoding in ("utf-8", "cp1252"):
         try:
             return data.decode(encoding), encoding
@@ -111,15 +114,18 @@ def _decode(data: bytes) -> tuple[str, str]:
 
 
 def _sniff_delimiter(lines: list[str]) -> str:
-    """The delimiter that gives the most consistent, widest rows."""
-    best, best_width = ",", 0
+    """The delimiter that splits the most lines into the same number of fields
+    (then the most fields). Counting lines, not just widths, matters for decimal
+    commas: in '1,5;2,5;3,5' both ',' and ';' give 4 fields, but only ';' also
+    splits the header."""
+    best, best_score = ",", (0, 0)
     for delim in DELIMITERS:
         widths = [len(r) for r in csv.reader(lines, delimiter=delim) if len(r) > 1]
         if not widths:
             continue
-        width, _ = Counter(widths).most_common(1)[0]
-        if width > best_width:
-            best, best_width = delim, width
+        width, lines_with_width = Counter(widths).most_common(1)[0]
+        if (lines_with_width, width) > best_score:
+            best, best_score = delim, (lines_with_width, width)
     return best
 
 
@@ -140,12 +146,28 @@ def _read_csv(path: Path) -> RawTable:
             io.StringIO(text), sep=delimiter, skiprows=header_idx, header=0, dtype=str,
             keep_default_na=False, skip_blank_lines=False, index_col=False,
         )
-        # With blank lines kept, data row i sits on file line header + 2 + i.
-        df.index = range(header_idx + 2, header_idx + 2 + len(df))
+        # With blank lines kept, data row i sits on file line header + 2 + i -
+        # unless a quoted value spans lines; then count lines the slow way.
+        if '"' in text and df.apply(lambda col: col.str.contains("\n", regex=False)).to_numpy().any():
+            df.index = _record_lines(text, delimiter, header_idx)[:len(df)]
+        else:
+            df.index = range(header_idx + 2, header_idx + 2 + len(df))
     except pd.errors.ParserError:
         df, bad_lines = _read_csv_tolerant(lines, delimiter, header_idx)
 
     return _finish(df, header_idx + 1, bad_lines, encoding=encoding, delimiter=delimiter)
+
+
+def _record_lines(text: str, delimiter: str, header_idx: int) -> list[int]:
+    """File line number on which each data record starts (records may span lines)."""
+    lines = text.splitlines(keepends=True)[header_idx:]
+    reader = csv.reader(lines, delimiter=delimiter)
+    next(reader, None)  # the header
+    starts, line = [], reader.line_num
+    for _ in reader:
+        starts.append(header_idx + line + 1)
+        line = reader.line_num
+    return starts
 
 
 def _read_csv_tolerant(

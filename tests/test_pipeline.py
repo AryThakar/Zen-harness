@@ -263,3 +263,18 @@ os._exit(0)  # killed: no checkpoint, no close
     assert query(db, "SELECT count(*) FROM format_profiles WHERE name = 'Till export'") == [(1,)]
     assert query(db, "SELECT task, status FROM ml_runs") == [("segments", "running")]
     db.close()
+
+
+def test_column_descriptions_written_by_the_user_survive_restarts(tmp_path):
+    path = tmp_path / "shop.duckdb"
+    db = Database(path)
+    with db.transaction() as cur:
+        registry.set_description(cur, "product", "Our SKU name")
+    db.close()
+
+    db = Database(path)  # restarting refreshes the built-in descriptions...
+    assert query(db, "SELECT description FROM column_registry WHERE column_name = 'product'") == [("Our SKU name",)]
+    with db.transaction() as cur:  # ...and clearing one brings its default back
+        cleared = registry.set_description(cur, "product", None)
+    assert cleared["description"] == "Product or service sold (name or SKU)."
+    db.close()

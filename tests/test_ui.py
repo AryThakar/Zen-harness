@@ -115,6 +115,11 @@ def test_pages_render_empty_then_with_demo_data(api):
     run(at)
     assert at.header[0].value == "Explore data"
     assert [t.label for t in at.tabs] == ["Sales rows", "Uploads", "Columns", "Saved formats"]
+    at.number_input(key="sales_page").set_value(5)
+    run(at)
+    at.text_input(key="sales_q").set_value("ORD-000001")  # far fewer pages: the page box starts over
+    run(at)
+    assert at.number_input(key="sales_page").value == 1
 
 
 def test_ask_ai_streams_steps_charts_and_remembers(api):
@@ -157,3 +162,11 @@ def test_ask_ai_streams_steps_charts_and_remembers(api):
     next(b for b in at.button if b.label == "New conversation").click()
     run(at)
     assert not at.chat_message and any(b.label.startswith("Forecast revenue") for b in at.button)
+
+
+def test_rejected_rows_keep_file_columns_named_like_ours():
+    sys.path.insert(0, str(Path(APP).parent))
+    from tables import REASON, ROW, rejected_frame
+
+    frame = rejected_frame([{"row_number": 7, "reasons": "bad qty", "raw": {"File row": "A1", "Qty": "x"}}])
+    assert frame.to_dict("records") == [{ROW: 7, REASON: "bad qty", "File row (file)": "A1", "Qty": "x"}]

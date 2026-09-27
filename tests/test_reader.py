@@ -70,3 +70,24 @@ def test_names_are_normalized_and_unique():
     assert normalize_name("Unit Price (₹)") == "unit_price"
     assert normalize_name("Customer ID") == "customer_id"
     assert unique_names(["Amount", "amount", "", "Amount"]) == ["amount", "amount_2", "column_3", "amount_3"]
+
+
+def test_utf16_unicode_text_exports_are_read(tmp_path):
+    path = tmp_path / "unicode.txt"  # Excel's "Unicode Text": UTF-16 with a byte-order mark, tab-separated
+    path.write_bytes("Date\tItem\tQty\tPrice\n2025-01-01\tChai ₹\t1\t10\n".encode("utf-16"))
+    raw = read_file(path)
+    assert (raw.encoding, raw.delimiter) == ("utf-16", "\t")
+    assert raw.df.iloc[0]["item"] == "Chai ₹"
+
+
+def test_decimal_commas_dont_fool_the_delimiter_guess(write_file):
+    path = write_file("Date;Item;Qty;Price\n01/01/2025;1,5;2,5;3,5\n02/01/2025;1,5;2,5;3,5\n")
+    raw = read_file(path)
+    assert raw.delimiter == ";" and list(raw.df.columns) == ["date", "item", "qty", "price"]
+
+
+def test_row_numbers_stay_right_after_a_value_spanning_lines(write_file):
+    path = write_file('Date,Item,Qty,Price\n2025-01-01,"Pen\nblue",1,10\n2025-01-02,Ink,x,5\n')
+    raw = read_file(path)
+    assert raw.df.index.tolist() == [2, 4]  # the second record starts on line 4
+    assert raw.df.iloc[0]["item"] == "Pen\nblue"

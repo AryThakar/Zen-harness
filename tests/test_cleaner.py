@@ -157,3 +157,22 @@ def test_percent_columns_are_read_one_way():
 def test_dash_dates_load():
     result = run([line(date="13-03-2025"), line(date="03-04-2025")])
     assert result.sales["order_date"].tolist() == [pd.Timestamp("2025-03-13"), pd.Timestamp("2025-04-03")]
+
+
+def test_negative_amounts_without_quantity_are_refunds():
+    result = run([{"date": "2025-03-01", "item": "Haircut", "amount": "500"},
+                  {"date": "2025-03-02", "item": "Haircut", "amount": "-500"}],
+                 {"order_date": "date", "product": "item", "amount": "amount"})
+    assert result.rejected.empty
+    assert result.sales["quantity"].tolist() == [1.0, -1.0]
+    assert result.sales["unit_price"].tolist() == [500.0, 500.0]
+    assert result.sales["revenue"].tolist() == [500.0, -500.0]
+    assert result.sales["is_return"].tolist() == [False, True]
+
+
+def test_order_numbers_reused_on_other_days_are_flagged():
+    rows = [line(date=f"2025-03-0{d}", bill=f"B{n}") for d in (1, 2) for n in range(12)]
+    result = run(rows, {**BASE, "order_id": "bill"})
+    assert any("12 order numbers appear on more than one day" in w for w in result.warnings)
+    unique = run([line(bill=f"B{n}") for n in range(12)], {**BASE, "order_id": "bill"})
+    assert not any("appear on more than one day" in w for w in unique.warnings)

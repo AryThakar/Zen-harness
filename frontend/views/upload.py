@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import client
+from tables import rejected_frame
 
 NOT_IN_FILE = ""
 KIND_TITLES = {
@@ -209,8 +210,7 @@ def _show_report(report: dict) -> None:
         except client.ApiError as exc:
             st.error(str(exc))
             return
-        rows = [{"Row": r["row_number"], "Reason": r["reasons"], **r["raw"]} for r in page["rows"]]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        if page["total"] > len(rows):
-            st.caption(f"Showing {len(rows)} of {page['total']}. All are in Explore data → Uploads.")
+        st.dataframe(rejected_frame(page["rows"]), hide_index=True, width="stretch")
+        if page["total"] > len(page["rows"]):
+            st.caption(f"Showing {len(page['rows'])} of {page['total']}. All are in Explore data → Uploads.")
 

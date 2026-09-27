@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agent import sql_guard
-from app.agent.graph import MAX_TOOL_ROUNDS, build_graph, new_question
+from app.agent.graph import MAX_TOOL_ROUNDS, build_graph, new_question, recent
 from app.agent.providers import ModelTurn, ProviderError, ScriptedProvider
 from app.agent.providers.claude import ClaudeProvider, parse_message, to_anthropic_messages
 from app.agent.providers.scripted import call
@@ -65,6 +65,25 @@ def test_guard_accepts_read_only_queries(sql):
 def test_guard_rejects_everything_else(sql, reason):
     with pytest.raises(sql_guard.SqlRejected, match=reason):
         sql_guard.check(sql)
+
+
+@pytest.mark.parametrize("sql", [
+    # A CTE may refer to a later CTE's name - which then means the real table.
+    "WITH a AS (SELECT * FROM schema_migrations), schema_migrations AS (SELECT 1 AS x) SELECT * FROM a",
+    "WITH schema_migrations AS (SELECT * FROM schema_migrations) SELECT * FROM schema_migrations",
+    "WITH schema_migrations AS (SELECT 1) SELECT * FROM (PIVOT schema_migrations ON x USING count(*))",
+    "SELECT * FROM (PIVOT format_profiles ON name USING count(*))",
+    "WITH a AS (SELECT * FROM doc_chunks), doc_chunks AS (SELECT 1) SELECT * FROM a",
+])
+def test_guard_is_not_fooled_by_names(db, sql):
+    with pytest.raises(sql_guard.SqlRejected, match="not available|Rename the CTE"):
+        sql_guard.run(db.cursor(), sql)
+
+
+def test_guard_resolves_references_even_without_the_table_list():
+    with pytest.raises(sql_guard.SqlRejected, match="schema_migrations"):
+        sql_guard.check("WITH a AS (SELECT * FROM schema_migrations), schema_migrations AS (SELECT 1) SELECT * FROM a")
+    assert sql_guard.check("WITH sales AS (SELECT 1 AS x) SELECT * FROM sales")  # shadowing an allowed name is fine
 
 
 def test_database_itself_refuses_file_access(db):
@@ -294,6 +313,23 @@ def test_claude_request_settings_and_json_retry():
     assert params["tools"][0]["eager_input_streaming"] is True
     assert params["tool_choice"] == {"type": "none"}
     assert "thinking" not in params and "temperature" not in params
+
+
+def test_claude_client_is_reused_between_turns(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    provider = ClaudeProvider("claude-opus-5")
+    assert provider._default_client() is provider._default_client()
+
+
+def test_only_recent_exchanges_are_sent():
+    history = []
+    for n in range(15):
+        history += [{"role": "user", "content": f"q{n}"},
+                    assistant([], [{"id": f"t{n}", "name": "calculate", "input": {}}]), tool_result(f"t{n}"),
+                    {"role": "assistant", "text": f"a{n}", "tool_calls": [], "raw": None, "provider": "x"}]
+    window = recent(history, exchanges=3)
+    assert window[0] == {"role": "user", "content": "q12"} and len(window) == 12
+    assert recent(history[:8], exchanges=3) == history[:8]
 
 
 def test_claude_needs_a_key(monkeypatch):

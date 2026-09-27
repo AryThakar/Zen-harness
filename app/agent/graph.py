@@ -8,7 +8,9 @@
   the results; charts and tables travel as artifacts for the UI.
 - A question gets at most MAX_TOOL_ROUNDS tool rounds; after that the model must
   answer with what it has (tools stay declared but can't be called).
-- A checkpointer keeps each conversation (thread) between requests.
+- A checkpointer keeps each conversation (thread) between requests; the model
+  sees the last MAX_EXCHANGES questions of it, cut at question boundaries so tool
+  calls stay with their results.
 
 Progress is streamed with LangGraph's custom stream: events
 {"type": "text"|"restart"|"tool_start"|"tool_end", ...}.
@@ -32,6 +34,7 @@ from .providers.base import Provider
 from .tools import TOOL_SPECS, ToolContext, execute
 
 MAX_TOOL_ROUNDS = 8
+MAX_EXCHANGES = 12  # questions (with their tool steps and answers) sent to the model
 SUMMARY_CHARS = 500
 
 
@@ -52,7 +55,7 @@ def build_graph(db: Database, provider: Provider, checkpointer=None, currency: s
         finally:
             cur.close()
         turn = provider.complete(
-            system, state["messages"], TOOL_SPECS,
+            system, recent(state["messages"]), TOOL_SPECS,
             allow_tools=state["rounds"] < MAX_TOOL_ROUNDS,
             on_event=lambda kind, text: writer({"type": kind, "text": text}),
         )
@@ -95,3 +98,9 @@ def summary(content: str) -> str:
         return content
     cut = content.rfind("\n", 0, SUMMARY_CHARS)
     return content[: cut if cut > 0 else SUMMARY_CHARS].rstrip() + "\n…"
+
+
+def recent(messages: list[dict], exchanges: int = MAX_EXCHANGES) -> list[dict]:
+    """The messages from the start of the last ``exchanges`` user questions."""
+    starts = [i for i, m in enumerate(messages) if m["role"] == "user"]
+    return messages[starts[-exchanges]:] if len(starts) > exchanges else messages
