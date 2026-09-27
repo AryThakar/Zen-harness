@@ -6,13 +6,15 @@ import pandas as pd
 import streamlit as st
 
 import client
+import theme
 from tables import rejected_frame
 
 PAGE_SIZE = 100
 
 
 def render() -> None:
-    st.header("Explore data")
+    theme.page_header("Explore data", "Every stored sales row, the uploads they came from, what each column means "
+                      "and your saved file formats.", eyebrow="Data")
     sales_tab, uploads_tab, columns_tab, profiles_tab = st.tabs(["Sales rows", "Uploads", "Columns", "Saved formats"])
     with sales_tab:
         _sales()

@@ -389,7 +389,14 @@ took - queries with their SQL and result tables, calculations, models - in a
 collapsible box above each answer; its charts drawn in house style; suggested
 first questions; setup help when no model is configured).
 
-Chart rules: one series hue (validated for contrast in light and dark mode), bars
+Design system ([`theme.py`](../frontend/theme.py), [`.streamlit/config.toml`](../.streamlit/config.toml)):
+native per-mode theme colors and self-hosted fonts (Plus Jakarta Sans, JetBrains Mono)
+from the config; on top, CSS for an ambient gradient backdrop, frosted-glass cards with a
+gradient hairline edge (keyed containers, since Streamlit exposes a container's key as a
+class), soft layered shadows, a navigation rail with icons, pill tabs, gradient primary
+buttons, chat bubbles and delta chips. Light and dark are stepped separately.
+
+Chart rules: one series hue, the brand indigo (validated for contrast and color-blind separation against the card surface of each mode), bars
 coloured by entity never by rank, "Other" in grey, values at bar tips, hairline
 grid, one y-axis per chart, a table view under every chart, amounts in ₹ lakh /
 crore (`BIZ_CURRENCY` changes the symbol).

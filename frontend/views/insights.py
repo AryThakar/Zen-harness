@@ -10,6 +10,7 @@ import streamlit as st
 
 import charts
 import client
+import theme
 
 POLL_SECONDS = 0.5
 MAX_WAIT_SECONDS = 300
@@ -17,8 +18,8 @@ HORIZONS = {"day": [14, 30, 60, 90], "week": [8, 12, 26]}
 
 
 def render() -> None:
-    st.header("Insights")
-    st.caption("Machine-learning models run on your own sales. Each result says how far it can be trusted.")
+    theme.page_header("Insights", "Machine-learning models run on your own sales. Each result says how far it "
+                      "can be trusted.", eyebrow="Models")
     tabs = st.tabs(["Forecast", "Customer segments", "Churn risk", "Bought together", "Unusual days"])
     with tabs[0]:
         _forecast()
@@ -113,10 +114,12 @@ def _forecast() -> None:
         verdict = (f"Model: {m['model_label']}, {m['improvement_pct']:.0f}% more accurate than repeating the "
                    f"previous period, tested on {m['backtest_windows']} past periods.")
     st.caption(f"{verdict} Based on {m['history']} {unit} of history ({_when(run)}).")
-    st.plotly_chart(charts.forecast_figure(result["history"], result["points"], m["grain"]), width="stretch",
-                    config={"displayModeBar": False}, key="forecast_chart")
-    with st.expander("Show as table"):
-        st.dataframe(pd.DataFrame(result["points"]), hide_index=True, width="stretch")
+    with theme.card("forecast"):
+        st.subheader("Actual and forecast revenue")
+        st.plotly_chart(charts.forecast_figure(result["history"], result["points"], m["grain"]), width="stretch",
+                        config={"displayModeBar": False}, key="forecast_chart")
+        with st.expander("Show as table"):
+            st.dataframe(pd.DataFrame(result["points"]), hide_index=True, width="stretch")
 
 
 # --- segments ------------------------------------------------------------------
@@ -133,39 +136,41 @@ def _segments() -> None:
     st.caption(f"{run['message']} ({_when(run)})")
 
     left, right = st.columns(2)
-    with left:
+    with left, theme.card("seg_customers"):
         st.subheader("Customers per segment")
         items = [{"label": s["segment"], "customers": s["customers"], "share_pct": s["share_pct"]} for s in segments]
         st.plotly_chart(charts.bar_figure(items, value_key="customers", fmt=charts.count), width="stretch",
                         config={"displayModeBar": False}, key="seg_customers")
-    with right:
+    with right, theme.card("seg_revenue"):
         st.subheader("Share of revenue")
         items = [{"label": s["segment"], "revenue": s["revenue"], "share_pct": s["revenue_share_pct"]} for s in segments]
         st.plotly_chart(charts.bar_figure(items), width="stretch", config={"displayModeBar": False},
                         key="seg_revenue")
 
-    st.subheader("What each segment means")
-    for s in segments:
-        st.markdown(
-            f"**{s['segment']}** · {s['customers']:,} customers · typical customer: "
-            f"{round(s['median_recency_days'])} days since last order, "
-            f"{s['median_orders']:g} order{'' if s['median_orders'] == 1 else 's'}, "
-            f"{charts.money(s['median_revenue'], compact=False)} spent  \n"
-            f"{s['meaning']} **→ {s['action']}**"
-        )
+    with theme.card("seg_meaning"):
+        st.subheader("What each segment means")
+        for s in segments:
+            st.markdown(
+                f"**{s['segment']}** · {s['customers']:,} customers · typical customer: "
+                f"{round(s['median_recency_days'])} days since last order, "
+                f"{s['median_orders']:g} order{'' if s['median_orders'] == 1 else 's'}, "
+                f"{charts.money(s['median_revenue'], compact=False)} spent  \n"
+                f"{s['meaning']} **→ {s['action']}**"
+            )
 
-    chosen = st.selectbox("Customers in", [s["segment"] for s in segments], key="seg_choice")
-    try:
-        page = client.segment_customers(chosen, limit=100)
-    except client.ApiError as exc:
-        st.error(str(exc))
-        return
-    st.caption(f"Top {len(page['rows'])} of {page['total']:,} by revenue")
-    rows = pd.DataFrame([{
-        "Customer": r["customer_id"], "Days since last order": r["recency_days"], "Orders": r["orders"],
-        "Spent": charts.money(r["revenue"], compact=False),
-    } for r in page["rows"]])
-    st.dataframe(rows, hide_index=True, width="stretch")
+    with theme.card("seg_list"):
+        chosen = st.selectbox("Customers in", [s["segment"] for s in segments], key="seg_choice")
+        try:
+            page = client.segment_customers(chosen, limit=100)
+        except client.ApiError as exc:
+            st.error(str(exc))
+            return
+        st.caption(f"Top {len(page['rows'])} of {page['total']:,} by revenue")
+        rows = pd.DataFrame([{
+            "Customer": r["customer_id"], "Days since last order": r["recency_days"], "Orders": r["orders"],
+            "Spent": charts.money(r["revenue"], compact=False),
+        } for r in page["rows"]])
+        st.dataframe(rows, hide_index=True, width="stretch")
 
 
 # --- churn ---------------------------------------------------------------------
@@ -203,12 +208,14 @@ def _churn() -> None:
                          f"(random picking: 20%; days since last purchase: {m['baseline_top20_capture_pct']:.0f}%).")
     st.caption(f"{run['message']} ({_when(run)})")
 
-    left, right = st.columns([1, 2])
-    with left:
+    left, right = st.columns([2, 3])
+    with left, theme.card("churn_bands"):
+        st.subheader("Customers by risk")
         items = [{"label": RISK_LABEL[b["risk"]], "customers": b["customers"]} for b in result["bands"]]
         st.plotly_chart(charts.bar_figure(items, value_key="customers", sort=False, fmt=charts.count),
                         width="stretch", config={"displayModeBar": False}, key="churn_bands")
-    with right:
+    with right, theme.card("churn_pick"):
+        st.subheader("Who to contact first")
         risk = st.selectbox("Customers", ["high", "medium", "low"], format_func=lambda r: f"{RISK_LABEL[r]} risk",
                             key="churn_risk")
         try:
@@ -216,14 +223,15 @@ def _churn() -> None:
         except client.ApiError as exc:
             st.error(str(exc))
             return
-        st.caption(f"{min(len(page['rows']), page['total']):,} of {page['total']:,}, most at stake first")
+        st.caption(f"{min(len(page['rows']), page['total']):,} of {page['total']:,}, most at stake first. "
+                   "Warning signs are facts about each customer, not the model's reasons.")
     if page["rows"]:
         table = pd.DataFrame([{
             "Customer": r["customer_id"], "Chance of not buying": r["probability"],
             "Days since last purchase": r["recency_days"], "Usually every (days)": round(r["typical_gap_days"]),
             "Usual spend at risk": charts.money(r["value_at_risk"], compact=False), "Warning signs": r["signals"],
         } for r in page["rows"]])
-        st.dataframe(table, hide_index=True, width="stretch", column_config={
+        st.dataframe(table, hide_index=True, width="stretch", height=420, column_config={
             "Customer": st.column_config.TextColumn(width="small"),
             "Chance of not buying": st.column_config.ProgressColumn(
                 "Chance", format="percent", min_value=0, max_value=1, width="small",
@@ -260,12 +268,13 @@ def _basket() -> None:
     chosen = st.selectbox("What goes with", products, key="basket_item",
                           index=products.index(rules[0]["antecedent"]))
     companions = sorted((r for r in rules if r["antecedent"] == chosen), key=lambda r: -r["confidence_pct"])
-    st.subheader(f"Bought with {chosen}")
-    items = [{"label": r["consequent"], "share": r["confidence_pct"]} for r in companions]
-    st.plotly_chart(charts.bar_figure(items, value_key="share", sort=False, fmt=charts.pct), width="stretch",
-                    config={"displayModeBar": False}, key="basket_chart")
-    st.caption(f"Share of orders with {chosen} that also include each product. "
-               + "; ".join(f"{r['consequent']}: {r['lift']:.1f}x its usual rate" for r in companions[:3]) + ".")
+    with theme.card("basket"):
+        st.subheader(f"Bought with {chosen}")
+        items = [{"label": r["consequent"], "share": r["confidence_pct"]} for r in companions]
+        st.plotly_chart(charts.bar_figure(items, value_key="share", sort=False, fmt=charts.pct), width="stretch",
+                        config={"displayModeBar": False}, key="basket_chart")
+        st.caption(f"Share of orders with {chosen} that also include each product. "
+                   + "; ".join(f"{r['consequent']}: {r['lift']:.1f}x its usual rate" for r in companions[:3]) + ".")
     with st.expander("All pairs"):
         table = pd.DataFrame([{
             "Customers who buy": r["antecedent"], "Also buy": r["consequent"],
@@ -288,23 +297,27 @@ def _anomalies() -> None:
         return
     run = result["run"]
     st.caption(f"{run['message']} ({_when(run)})")
-    metric = st.segmented_control("Show", ["orders", "revenue"], default="orders", key="an_metric",
-                                  format_func=str.title) or "orders"
-    st.plotly_chart(charts.anomaly_figure(result["series"], result["days"], metric), width="stretch",
-                    config={"displayModeBar": False}, key="anomaly_chart")
-    if result["days"]:
-        table = pd.DataFrame([{
-            "Day": d["day"], "Type": d["direction"],
-            "Orders": f"{d['orders']:,} (normal ≈ {d['expected_orders']:.0f})",
-            "Revenue": f"{charts.money(d['revenue'])} (normal ≈ {charts.money(d['expected_revenue'])})",
-            "Unusual in": d["signal"],
-        } for d in result["days"]])
-        st.dataframe(table, hide_index=True, width="stretch")
-    st.subheader("Unusual sale lines")
-    if not result["lines"]:
-        st.caption("No sale lines stand out from how their product usually sells.")
-        return
-    lines = pd.DataFrame(result["lines"])[["order_id", "order_date", "product", "quantity", "unit_price",
-                                           "discount", "reason"]]
-    lines["order_date"] = pd.to_datetime(lines["order_date"])
-    st.dataframe(lines, hide_index=True, width="stretch")
+    with theme.card("anomalies"):
+        top = st.columns([3, 2], vertical_alignment="bottom")
+        top[0].subheader("Daily sales and unusual days")
+        metric = top[1].segmented_control("Show", ["orders", "revenue"], default="orders", key="an_metric",
+                                          format_func=str.title) or "orders"
+        st.plotly_chart(charts.anomaly_figure(result["series"], result["days"], metric), width="stretch",
+                        config={"displayModeBar": False}, key="anomaly_chart")
+        if result["days"]:
+            table = pd.DataFrame([{
+                "Day": d["day"], "Type": d["direction"],
+                "Orders": f"{d['orders']:,} (normal ≈ {d['expected_orders']:.0f})",
+                "Revenue": f"{charts.money(d['revenue'])} (normal ≈ {charts.money(d['expected_revenue'])})",
+                "Unusual in": d["signal"],
+            } for d in result["days"]])
+            st.dataframe(table, hide_index=True, width="stretch")
+    with theme.card("anomaly_lines"):
+        st.subheader("Unusual sale lines")
+        if not result["lines"]:
+            st.caption("No sale lines stand out from how their product usually sells.")
+            return
+        lines = pd.DataFrame(result["lines"])[["order_id", "order_date", "product", "quantity", "unit_price",
+                                               "discount", "reason"]]
+        lines["order_date"] = pd.to_datetime(lines["order_date"])
+        st.dataframe(lines, hide_index=True, width="stretch")

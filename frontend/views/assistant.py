@@ -9,6 +9,7 @@ import streamlit as st
 
 import charts
 import client
+import theme
 
 SUGGESTIONS = [
     "How did revenue change over the last 3 months?",
@@ -35,15 +36,10 @@ STEP_LABELS = {
 }
 
 PLOT_CONFIG = {"displayModeBar": False}
+USER, AI = ":material/person:", ":material/auto_awesome:"  # chat avatars
 
 
 def render() -> None:
-    header, reset = st.columns([5, 1], vertical_alignment="bottom")
-    header.header("Ask AI")
-    if reset.button("New conversation", key="chat_reset", width="stretch"):
-        st.session_state.pop("chat_thread", None)
-        st.rerun()
-
     try:
         status = client.chat_status()
         thread_id = st.session_state.get("chat_thread")
@@ -52,10 +48,19 @@ def render() -> None:
         st.error(str(exc))
         return
 
-    if status["ready"]:
-        st.caption(f"Answers are worked out from your data by {status['model']}: every number comes from a query, "
-                   "a calculation or a model, and each step is listed above the answer.")
-    else:
+    header, reset = st.columns([5, 1], vertical_alignment="bottom")
+    with header:
+        theme.page_header(
+            "Ask AI",
+            f"Answers are worked out from your data by {status['model']}: every number comes from a query, a "
+            "calculation or a model, and each step is listed above the answer." if status["ready"] else
+            "Ask about your sales in plain English.",
+            eyebrow="Assistant",
+        )
+    if reset.button("New conversation", key="chat_reset", width="stretch", icon=":material/add_comment:"):
+        st.session_state.pop("chat_thread", None)
+        st.rerun()
+    if not status["ready"]:
         _setup_help(status)
 
     for i, exchange in enumerate(history):
@@ -70,7 +75,8 @@ def render() -> None:
 
 def _setup_help(status: dict) -> None:
     st.warning(status["message"])
-    with st.expander("How to set up the assistant", expanded=True):
+    with theme.card("setup"):
+        st.subheader("How to set up the assistant")
         st.markdown(
             "The assistant runs on Claude through the Anthropic API for now (a local model is planned).\n"
             "1. Create an API key at console.anthropic.com.\n"
@@ -83,8 +89,8 @@ def _setup_help(status: dict) -> None:
 def _suggestions() -> str | None:
     slot = st.empty()
     with slot.container():
-        st.markdown("**Try asking**")
-        with st.container(horizontal=True):  # wraps onto more rows on narrow screens
+        st.html('<div class="bi-eyebrow">Try asking</div>')
+        with st.container(horizontal=True, key="suggestions"):  # wraps onto more rows on narrow screens
             clicked = [st.button(text, key=f"chat_suggestion_{i}") for i, text in enumerate(SUGGESTIONS)]
         picked = next((text for text, hit in zip(SUGGESTIONS, clicked) if hit), None)
     if picked:
@@ -96,9 +102,9 @@ def _suggestions() -> str | None:
 
 def _exchange(exchange: dict, key: str) -> None:
     """A finished question and answer, from the saved conversation."""
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER):
         st.markdown(_md(exchange["question"]))
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AI):
         steps = exchange["steps"]
         if steps:
             box = st.status(_steps_label(steps), state="complete", expanded=False)
@@ -114,9 +120,9 @@ def _exchange(exchange: dict, key: str) -> None:
 
 def _ask(question: str, thread_id: str | None) -> None:
     """Send a question and draw the answer as it streams in."""
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER):
         st.markdown(_md(question))
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AI):
         steps_slot, artifacts_slot, answer_slot = st.container(), st.container(), st.empty()
         box, steps = None, {}
         text, turn_start = "", 0  # turn_start: where the current model turn's text begins

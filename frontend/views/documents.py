@@ -8,14 +8,15 @@ from datetime import datetime
 import streamlit as st
 
 import client
+import theme
 
 KIND_LABEL = {"pdf": "PDF", "docx": "Word", "txt": "Text", "md": "Markdown"}
 
 
 def render() -> None:
-    st.header("Documents")
-    st.caption("Add your policies, price lists, supplier terms, notes or logs. Ask AI searches them - by keywords "
-               "and by meaning - and says which file and page an answer came from. Only the text is kept.")
+    theme.page_header("Documents", "Add your policies, price lists, supplier terms, notes or logs. Ask AI searches "
+                      "them - by keywords and by meaning - and says which file and page an answer came from. "
+                      "Only the text is kept.", eyebrow="Knowledge")
     try:
         library = client.documents()
     except client.ApiError as exc:
@@ -95,7 +96,7 @@ def _search() -> None:
         st.caption(result["note"])
     for n, hit in enumerate(result["hits"], start=1):
         how = " + ".join(w for w, v in (("keywords", hit["keyword"]), ("meaning", hit["similarity"])) if v is not None)
-        with st.container(border=True):
+        with theme.card(f"hit_{n}"):
             st.markdown(f"**{n}. {hit['source']}**")
             st.caption(f"Matched by {how}" + (f" · similarity {hit['similarity']:.2f}" if hit["similarity"] else ""))
             st.markdown(_md(hit["text"]))

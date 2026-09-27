@@ -9,21 +9,30 @@ from __future__ import annotations
 import streamlit as st
 
 import client
+import theme
 from views import assistant, dashboard, documents, explore, insights, upload
 
-PAGES = {"Dashboard": dashboard.render, "Insights": insights.render, "Ask AI": assistant.render,
-         "Upload data": upload.render, "Documents": documents.render, "Explore data": explore.render}
+PAGES = {  # name -> (render, Material icon)
+    "Dashboard": (dashboard.render, "space_dashboard"),
+    "Insights": (insights.render, "insights"),
+    "Ask AI": (assistant.render, "auto_awesome"),
+    "Upload data": (upload.render, "upload_file"),
+    "Documents": (documents.render, "description"),
+    "Explore data": (explore.render, "table_view"),
+}
 
-st.set_page_config(page_title="AI Business Analyst", layout="wide")
+st.set_page_config(page_title="AI Business Analyst", page_icon=":material/monitoring:", layout="wide")
+theme.inject()
 
 with st.sidebar:
-    st.title("AI Business Analyst")
-    page = st.radio("Page", list(PAGES), key="page", label_visibility="collapsed")
-    st.divider()
+    theme.brand()
+    page = st.radio("Page", list(PAGES), key="page", label_visibility="collapsed",
+                    format_func=lambda name: f":material/{PAGES[name][1]}: {name}")
     try:
         h = client.health()
-        st.caption(f"{h['sales_rows']:,} sales rows from {h['uploads']:,} upload(s)")
+        chat = client.chat_status()
+        theme.status(h["sales_rows"], h["uploads"], chat["model"] if chat["ready"] else "not set up")
     except client.ApiError as exc:
         st.error(str(exc))
 
-PAGES[page]()
+PAGES[page][0]()

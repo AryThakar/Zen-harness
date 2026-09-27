@@ -57,7 +57,7 @@ def run(at: AppTest) -> AppTest:
 def test_pages_render_empty_then_with_demo_data(api):
     at = run(AppTest.from_file(APP, default_timeout=TIMEOUT))
     assert at.header[0].value == "Dashboard"
-    assert any("No sales data yet" in i.value for i in at.info)
+    assert [b.label for b in at.button][:2] == ["Load demo data", "Upload a file"]  # the empty state
 
     next(b for b in at.button if b.label == "Load demo data").click()
     run(at)

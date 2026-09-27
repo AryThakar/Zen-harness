@@ -11,6 +11,8 @@ forecasts and charts - running on your own machine.
 
 ![Dashboard](docs/images/dashboard.png)
 
+![Dashboard in dark mode](docs/images/dashboard-dark.png)
+
 ## What works today
 
 * **Ask AI** - ask about your sales in plain English ("how did revenue change over
@@ -60,6 +62,11 @@ forecasts and charts - running on your own machine.
   profit, ...), plus any custom columns.
 * **REST API** - every screen is built on documented endpoints (OpenAPI at `/docs`),
   including a streaming chat endpoint (server-sent events).
+* **A designed interface** - light and dark themes built as one system: self-hosted
+  Plus Jakarta Sans (no font CDN), cool slate neutrals with one indigo accent, frosted
+  glass cards with a light-catching hairline edge, a written briefing on the dashboard
+  and sparkline KPI tiles. Chart colors are checked with a palette validator (contrast,
+  color-blind separation) against the actual card surfaces in both modes.
 * **Demo data** - one click loads 18 months of realistic synthetic sales with trends,
   seasonality, customer churn, basket patterns and anomalies planted for the ML.
 
@@ -140,7 +147,9 @@ app/
 frontend/
   app.py               Streamlit entry point
   client.py            HTTP client for the API
+  theme.py             design system: tokens, glass surfaces, navigation, shared components
   charts.py            Plotly styling and number formatting (₹ lakh / crore)
+  static/fonts/        self-hosted fonts (SIL Open Font License)
   views/               dashboard, insights, Ask AI, upload, documents, explore pages
 data/samples/          small example exports
 docs/                  architecture and screenshots

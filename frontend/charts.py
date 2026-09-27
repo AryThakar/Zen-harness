@@ -3,7 +3,8 @@
 Palette and mark specs follow the project's data-viz rules: one series hue
 (validated for contrast in light and dark mode), recessive hairline grid, 2px
 lines, thin bars with rounded ends, values at bar tips, text in text colours
-(never the series colour), and one y-axis per chart.
+(never the series colour), and one y-axis per chart. Colors and font match the
+app's design system (theme.py, .streamlit/config.toml).
 """
 
 from __future__ import annotations
@@ -16,20 +17,23 @@ import plotly.graph_objects as go
 import streamlit as st
 
 CURRENCY = os.environ.get("BIZ_CURRENCY", "₹")
-FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
+FONT = "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
 
+# The brand indigo is the one series hue; with the orange accent it passes the
+# data-viz validator (lightness band, chroma, CVD separation, >= 3:1 contrast)
+# against the card surfaces of each mode: #FBFCFE light, #111829 dark.
 TOKENS = {
     "light": {
-        "series": "#2a78d6", "series_wash": "rgba(42,120,214,0.10)", "other": "#898781",
-        "accent": "#eb6834",
-        "text": "#0b0b0b", "text2": "#52514e", "muted": "#898781",
-        "grid": "#e1e0d9", "axis": "#c3c2b7", "surface": "#fcfcfb",
+        "series": "#3E63DD", "series_wash": "rgba(62,99,221,0.10)", "other": "#8B93A7",
+        "accent": "#EB6834",
+        "text": "#141A2A", "text2": "#4A5468", "muted": "#7A8499",
+        "grid": "#E4E8F0", "axis": "#CBD2DE", "surface": "#FBFCFE",
     },
     "dark": {
-        "series": "#3987e5", "series_wash": "rgba(57,135,229,0.16)", "other": "#898781",
-        "accent": "#d95926",
-        "text": "#ffffff", "text2": "#c3c2b7", "muted": "#898781",
-        "grid": "#2c2c2a", "axis": "#383835", "surface": "#1a1a19",
+        "series": "#5472E4", "series_wash": "rgba(84,114,228,0.16)", "other": "#6B7489",
+        "accent": "#D95926",
+        "text": "#E8ECF6", "text2": "#AEB7CB", "muted": "#7C869C",
+        "grid": "#1F2839", "axis": "#2E384D", "surface": "#111829",
     },
 }
 

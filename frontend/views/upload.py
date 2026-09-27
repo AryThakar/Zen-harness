@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import streamlit as st
 
 import client
+import theme
 from tables import rejected_frame
 
 NOT_IN_FILE = ""
+MAX_UPLOAD_MB = int(os.environ.get("BIZ_MAX_UPLOAD_MB", "100"))  # the API's limit (same setting)
+STEPS = (
+    ("1", "Drop in a file", "CSV or Excel straight from your POS, shop or spreadsheet - no tidying first."),
+    ("2", "Check the columns", "Each column is matched to the standard format; change any match, keep extras "
+                               "like salesperson or payment mode."),
+    ("3", "Clean and load", "Dates, amounts and names are cleaned; rows that can't be read are listed with "
+                            "the reason, never guessed."),
+)
 KIND_TITLES = {
     "required": "Required",
     "optional": "Optional – each one unlocks features",
@@ -17,9 +28,9 @@ KIND_TITLES = {
 
 
 def render() -> None:
-    st.header("Upload data")
-    st.caption("CSV or Excel exports from your shop, POS, Shopify, Tally or spreadsheet. "
-               "Messy files are fine – title rows, ₹ symbols and different date styles are handled.")
+    theme.page_header("Upload data", "CSV or Excel exports from your shop, POS, Shopify, Tally or spreadsheet. "
+                      "Messy files are fine - title rows, ₹ symbols and different date styles are handled.",
+                      eyebrow="Data")
 
     if report := st.session_state.get("last_report"):
         _show_report(report)
@@ -30,10 +41,11 @@ def render() -> None:
             st.rerun()
         return
 
-    file = st.file_uploader("Sales file", type=["csv", "txt", "tsv", "xlsx", "xlsm"],
+    file = st.file_uploader("Sales file", type=["csv", "txt", "tsv", "xlsx", "xlsm"], max_upload_size=MAX_UPLOAD_MB,
                             key=f"uploader_{st.session_state.get('uploader_key', 0)}")
     if file is None:
         st.session_state.pop("upload_preview", None)
+        _how_it_works()
         return
     if st.session_state.get("upload_file_id") != file.file_id:  # a different file: forget its sheet
         st.session_state["upload_file_id"] = file.file_id
@@ -50,6 +62,17 @@ def render() -> None:
         st.error(str(exc))
         return
     _load_controls(preview, mapping, check)
+
+
+def _how_it_works() -> None:
+    cols = st.columns(3)
+    for col, (number, title, text) in zip(cols, STEPS):
+        with col, theme.card(f"step_{number}", stretch=True):
+            st.html(f'<span class="bi-chip">Step {number}</span>')
+            st.subheader(title)
+            st.caption(text)
+    st.caption("Needed in every file: a date, a product and either quantity with unit price or a line total. "
+               "Order number, customer, cost, category, discount, location and channel each unlock more.")
 
 
 def _preview(file, sheet: str | None = None) -> dict | None:
