@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .core import ToolError, ToolResult, number, ok, tool
-from .periods import CODE, bucket, drop_partial_edges, full_range
+from .periods import CODE, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq
 from .values import parse_dates
 from .workspace import Workspace, resolve_column
 
@@ -96,9 +96,10 @@ def _line(df, x, y, agg, time_unit):
     else:
         raise ToolError(f"A line chart needs dates or numbers on x; '{x}' is text. For values over time, give the "
                         "table's date column as x and a time_unit: the chart groups by period itself.", field="x")
-    if values.empty:
-        raise ToolError("No rows to draw.", invalid=False)
     v = values.dropna()
+    if v.empty:
+        raise ToolError("No values to draw: every period is empty." if len(values) else "No rows to draw.",
+                        invalid=False)
     summary = {"points": len(values), "grouping": note,
                "first": [labels[0], number(values.iloc[0])], "last": [labels[-1], number(values.iloc[-1])],
                "highest": [_label(v.idxmax()), number(v.max())], "lowest": [_label(v.idxmin()), number(v.min())]}
@@ -151,8 +152,10 @@ def _histogram(df, x):
 
 
 def _auto_unit(dates: pd.Series) -> str:
+    """By the span (enough points, not too many), never finer than the data's own grain."""
     days = (dates.max() - dates.min()).days
-    return "day" if days <= 62 else "week" if days <= 550 else "month" if days <= 3650 else "year"
+    by_span = "D" if days <= 62 else "W" if days <= 550 else "M" if days <= 3650 else "Y"
+    return WORD[coarsest(native_freq(dates), by_span)]
 
 
 def _label(v):

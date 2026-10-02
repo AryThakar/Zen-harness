@@ -8,7 +8,8 @@ and scikit-learn are there) inside the workspace's sandbox folder, with:
 - output cut to 10,000 characters (start and end kept)
 - table("data_1") to read a workspace table (a copy - the original can't be changed) and path("file_1")
   for where a stored file is; open("file_1") and open("story.txt") (a stored file's original name)
-  work too, because small models write that
+  work too for reading, because small models write that. Writing to such a name makes a new file:
+  a script never changes a stored one
 Files the script writes are registered: .csv / .parquet become workspace tables, images become
 images, anything else a file.
 
@@ -21,6 +22,7 @@ sandbox (studio/backend/core/inference/tools.py), written independently and much
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -66,20 +68,26 @@ import builtins as _builtins
 _open = _builtins.open
 
 def _resolve(name):
-    """'file_1' or a stored file's original name -> its path, when no such local file exists."""
-    if not isinstance(name, str) or _os.path.exists(name):
+    """'file_1' -> the stored file (always); a stored file's original name -> its path when no such
+    local file exists."""
+    if not isinstance(name, str):
         return name
     with _open(_os.path.join(_WS, "registry.json"), encoding="utf-8") as f:
         items = _json.load(f)["items"]
     if "file" in items.get(name, {{}}):
         return _os.path.join(_WS, items[name]["file"])
+    if _os.path.exists(name):
+        return name
     for e in items.values():
         if e.get("name") == _os.path.basename(name) and "file" in e:
             return _os.path.join(_WS, e["file"])
     return name
 
-def _open_resolving(file, *args, **kwargs):
-    return _open(_resolve(file), *args, **kwargs)
+def _open_resolving(file, mode="r", *args, **kwargs):
+    # Ids resolve for reading only: writing to "file_2" makes a new file here, never changes the stored one.
+    if not any(c in mode for c in "wax+"):
+        file = _resolve(file)
+    return _open(file, mode, *args, **kwargs)
 _builtins.open = _open_resolving
 
 def _save_figures():
@@ -132,7 +140,8 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT) -> Tool
         result["error"] = {"message": f"Stopped after {timeout} s (time limit). Make the script faster or smaller."}
         status = "failed"
     elif proc.returncode != 0:
-        result["error"] = {"message": "The script raised an error (see errors); fix the code and run it again."}
+        result["error"] = {"message": "The script raised an error (see errors); fix the code and run it again."
+                                      + _hint(errors)}
         status = "invalid_arguments"
     else:
         status = "ok"
@@ -171,6 +180,25 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         except ProcessLookupError:
             pass
     proc.kill()
+
+
+ID_AS_VARIABLE = re.compile(r"NameError: name '((?:data|file|model|image|note)_\d+\w*)' is not defined")
+ID_AS_PATH = re.compile(r"(?:FileNotFoundError|No such file).*?'((?:data|file|model|image|note)_\d+\w*)'")
+
+
+def _hint(errors: str) -> str:
+    """The fix for mistakes small models repeat run after run: a workspace id used as a variable,
+    or given to a library that opens files itself (pandas does not go through open())."""
+    m = ID_AS_VARIABLE.search(errors)
+    if m:
+        return (f" Workspace items are not Python variables: use df = table('{m[1]}') for a table, path('{m[1]}') "
+                "for a file. To keep a new table, write it to a file (df.to_parquet('name.parquet')); it becomes "
+                "a workspace table.")
+    m = ID_AS_PATH.search(errors)
+    if m:
+        return (f" '{m[1]}' is an id, not a file name: use path('{m[1]}') for its location (e.g. "
+                f"pd.read_csv(path('{m[1]}'))), or table('{m[1]}') if it is a table.")
+    return ""
 
 
 def _cut(text: str) -> str:

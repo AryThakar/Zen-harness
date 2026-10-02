@@ -198,4 +198,10 @@ def resolve_column(df: pd.DataFrame, name: str, field: str = "column") -> str:
     for c in df.columns:
         if re.sub(r"[^0-9a-z]+", "_", str(c).lower()).strip("_") == wanted:
             return c
+    if re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}.*|\d{1,2}[/.]\d{1,2}[/.]\d{2,4}", str(name).strip()):
+        # Small models put a date where a column name goes (often today's date from the context).
+        dates = [str(c) for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+        raise ToolError(f"{field} takes a column's name, not a date like '{name}'. "
+                        + (f"Date columns: {', '.join(dates)}." if dates else
+                           f"This table has no date column. Columns: {', '.join(map(str, df.columns))}."), field=field)
     raise ToolError(f"No column '{name}'. Columns: {', '.join(map(str, df.columns))}.", field=field)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .core import ToolResult, number, ok, tool
+from .periods import split_time_note
 from .values import as_text, is_missing, parse_dates, parse_numbers
 from .workspace import Workspace
 
@@ -47,8 +48,9 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
     ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions])
     result = {"data": data, "name": ws.entry(data)["name"], "rows": len(df), "columns": columns,
               "duplicate_rows": duplicates, "sample_rows": sample, "suggested_steps": steps, "questions": questions}
-    if missing_note:
-        result["note"] = missing_note
+    note = " ".join(filter(None, [missing_note, split_time_note(df, data)]))
+    if note:
+        result["note"] = note
     artifact = {"type": "table", "title": f"Columns of {ws.describe(data)}",
                 "columns": ["column", "type", "missing", "unique", "summary"],
                 "rows": [[c["name"], c["type"], c.get("missing", 0), c["unique"], _summary(c)] for c in columns]}

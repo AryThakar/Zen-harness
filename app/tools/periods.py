@@ -2,9 +2,13 @@
 
 A sum over a month that has only 10 days of data is not a 'drop'. For sums and counts, a first or
 last period the data covers only partly is left out, with a note saying so.
+split_time: time kept as a year column plus a quarter or month column (no date column) - the SQL
+that makes a date, for inspect_data and forecast to hand the model.
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 import pandas as pd
@@ -12,6 +16,21 @@ import pandas as pd
 CODE = {"day": "D", "week": "W", "month": "M", "quarter": "Q", "year": "Y"}
 WORD = {v: k for k, v in CODE.items()}
 OFFSET = {"D": "D", "W": "W-MON", "M": "MS", "Q": "QS", "Y": "YS"}  # period starts; weeks start on Monday
+
+
+ORDER = "DWMQY"  # finest to coarsest
+
+
+def native_freq(dates: pd.Series) -> str:
+    """The data's own grain, from the usual gap between its distinct dates (monthly data dated the
+    1st -> 'M'). An automatic period is never finer: weeks over monthly data are mostly empty."""
+    days = pd.Series(dates.dropna().dt.normalize().unique()).sort_values()
+    gap = days.diff().dt.days.median() if len(days) > 1 else 1
+    return "D" if gap <= 1.5 else "W" if gap <= 8 else "M" if gap <= 35 else "Q" if gap <= 100 else "Y"
+
+
+def coarsest(*freqs: str) -> str:
+    return max(freqs, key=ORDER.index)
 
 
 def bucket(dates: pd.Series, freq: str) -> pd.Series:
@@ -55,3 +74,45 @@ def drop_partial_edges(y: pd.Series, dates: pd.Series, freq: str) -> tuple[pd.Se
                      "so it was left out.")
         y = y.iloc[1:]
     return y, notes
+
+
+def split_time(df: pd.DataFrame) -> tuple[str, str, str] | None:
+    """(year column, quarter or month column, 'quarter' | 'month') when time is split that way
+    and the table has no date column; None otherwise."""
+    if any(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns):
+        return None
+    names = {c: re.sub(r"[^0-9a-z]+", "_", str(c).lower()).strip("_") for c in df.columns}
+    year = next((c for c, n in names.items()
+                 if n in ("year", "yr", "fiscal_year") and _whole(df[c], 1800, 2200)), None)
+    if year is None:
+        return None
+    for c, n in names.items():
+        if n in ("quarter", "qtr") and _whole(df[c], 1, 4):
+            return year, c, "quarter"
+        if n in ("month", "mon", "mth") and _whole(df[c], 1, 12):
+            return year, c, "month"
+    return None
+
+
+def split_dates(df: pd.DataFrame, year: str, part: str, kind: str) -> pd.Series:
+    """The first day of each row's quarter or month."""
+    p = pd.to_numeric(df[part], errors="coerce")
+    months = (p - 1) * 3 + 1 if kind == "quarter" else p
+    return pd.to_datetime(pd.DataFrame({"year": pd.to_numeric(df[year], errors="coerce"), "month": months, "day": 1}),
+                          errors="coerce")
+
+
+def split_time_note(df: pd.DataFrame, table: str) -> str | None:
+    found = split_time(df)
+    if not found:
+        return None
+    year, part, kind = found
+    month = f'("{part}" - 1) * 3 + 1' if kind == "quarter" else f'"{part}"'
+    return (f"Time is split into '{year}' and '{part}' columns, with no date column. forecast combines them itself "
+            f"(date='{year}'). To chart over time, first make a date column with query_data and save=true: "
+            f"SELECT *, make_date(CAST(\"{year}\" AS INTEGER), CAST({month} AS INTEGER), 1) AS date FROM {table}")
+
+
+def _whole(s: pd.Series, low: int, high: int) -> bool:
+    v = pd.to_numeric(s, errors="coerce").dropna()
+    return len(v) > 0 and bool((v % 1 == 0).all()) and bool(v.between(low, high).all())

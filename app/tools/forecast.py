@@ -23,12 +23,12 @@ import numpy as np
 import pandas as pd
 
 from .core import ToolError, ToolResult, number, ok, tool
-from .periods import CODE, OFFSET, WORD, bucket, drop_partial_edges, full_range
+from .periods import (CODE, OFFSET, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq,
+                      split_dates, split_time)
 from .workspace import Workspace, resolve_column
 
 SEASON = {"D": 7, "W": 52, "M": 12, "Q": 4, "Y": 1}
 HORIZON = {"D": 14, "W": 8, "M": 6, "Q": 4, "Y": 2}
-ORDER = "DWMQY"
 MIN_POINTS = 10
 
 
@@ -38,9 +38,19 @@ def forecast(ws: Workspace, data: str, date: str, value: str | None = None, hori
              agg: Literal["sum", "mean", "last", "count"] = "sum") -> ToolResult:
     """Forecast ``value`` (combined per period by ``agg``; row count without value)."""
     df = ws.table(data)
-    date = resolve_column(df, date, "date")
-    if not pd.api.types.is_datetime64_any_dtype(df[date]):
-        raise ToolError(f"'{date}' is not a date column (parse_dates first if it holds dates).", field="date")
+    split, made = split_time(df), []  # time kept as year + quarter (or month) columns: combined here
+    try:
+        date = resolve_column(df, date, "date")
+    except ToolError:
+        if not split:
+            raise
+        date = None
+    if date is None or not pd.api.types.is_datetime64_any_dtype(df[date]):
+        if not split:
+            raise ToolError(f"'{date}' is not a date column (parse_dates first if it holds dates).", field="date")
+        year, part, kind = split
+        df, date = df.assign(_period=split_dates(df, year, part, kind)), "_period"
+        made = [f"Dates were made from the '{year}' and '{part}' columns."]
     if value:
         value = resolve_column(df, value, "value")
         if not pd.api.types.is_numeric_dtype(df[value]) or pd.api.types.is_bool_dtype(df[value]):
@@ -53,17 +63,13 @@ def forecast(ws: Workspace, data: str, date: str, value: str | None = None, hori
     freq = _auto_freq(frame[date]) if time_unit == "auto" else CODE[time_unit]
     y, notes = _series(frame, date, value, agg, freq)
     warning = ws.issues_warning(data)
-    return _forecast(y, freq, horizon, agg, data, value or "rows", notes + ([warning] if warning else []))
+    return _forecast(y, freq, horizon, agg, data, value or "rows", made + notes + ([warning] if warning else []))
 
 
 def _auto_freq(dates: pd.Series) -> str:
     """The data's own grain, coarsened when the span is long (enough points, not too many)."""
-    days = pd.Series(dates.dt.normalize().unique()).sort_values()
-    gap = days.diff().dt.days.median() if len(days) > 1 else 1
-    native = "D" if gap <= 1.5 else "W" if gap <= 8 else "M" if gap <= 35 else "Q" if gap <= 100 else "Y"
     span = (dates.max() - dates.min()).days
-    by_span = "D" if span <= 120 else "W" if span <= 400 else "M"
-    return max(native, by_span, key=ORDER.index)
+    return coarsest(native_freq(dates), "D" if span <= 120 else "W" if span <= 400 else "M")
 
 
 def _series(frame, date, value, agg, freq) -> tuple[pd.Series, list[str]]:
@@ -81,7 +87,9 @@ def _series(frame, date, value, agg, freq) -> tuple[pd.Series, list[str]]:
         y = y.fillna(0.0)  # a period without rows had nothing
         y, notes = drop_partial_edges(y, frame[date], freq)
     elif y.isna().mean() > 0.2:
-        raise ToolError(f"{y.isna().mean():.0%} of the {WORD[freq]}s have no value; too many gaps to forecast.",
+        raise ToolError(f"{y.isna().mean():.0%} of the {WORD[freq]}s have no value; too many gaps to forecast. "
+                        "Check the dates: if they were made from year + quarter columns, quarter q starts in month "
+                        "(q - 1) * 3 + 1 - or give forecast the original table, which combines them itself.",
                         invalid=False)
     else:
         y = y.interpolate(limit_direction="both")
@@ -140,7 +148,8 @@ def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str, data: str,
               for d, m, a, b in zip(dates, mean, lo, hi)]
     result = {"data": data, "value": label, "combined_by": agg, "period": word, "history_points": n,
               "horizon": h, "model": _model_word(use), "beats_baseline": beats, "backtest": backtest + caveat,
-              "reliability": strength, "forecast": points}
+              "reliability": strength, "forecast": points,
+              "range": "low_80 to high_80: the model's past errors put 80% of outcomes in this range."}
     if agg in ("sum", "count"):
         result["total_over_horizon"] = number(float(mean.sum()))
     if notes:

@@ -162,15 +162,14 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         url = "https://" + url
     if len(url) > 2048:
         raise ToolError("The address is too long.", field="url")
-    http = http or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False,
-                                headers={"User-Agent": net.USER_AGENT, "Accept": "text/html,text/plain,application/pdf,*/*;q=0.5"})
     resolve = resolve or socket.getaddrinfo
-    special = _from_github(http, url, resolve) or _from_youtube(http, url, resolve)
-    if special:
-        title, text, meta = special
-        final = url
+    if http is None:  # a client made here is closed here
+        with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False,
+                          headers={"User-Agent": net.USER_AGENT,
+                                   "Accept": "text/html,text/plain,application/pdf,*/*;q=0.5"}) as own:
+            title, text, meta, final = _page(own, url, resolve)
     else:
-        title, text, meta, final = _read(http, url, resolve)
+        title, text, meta, final = _page(http, url, resolve)
     if not text.strip():
         raise ToolError("No readable text was found on the page (it may need JavaScript to show its content).",
                         invalid=False)
@@ -189,6 +188,14 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         result["truncated"] = (f"The page is long: only the first {MAX_TEXT:,} characters are shown. If what you need "
                                "is not here, call read_webpage again with find='a few words to look for'.")
     return ok(result, {"type": "webpage", "url": final, "title": title or meta["site"], **meta})
+
+
+def _page(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:
+    """(title, text, card, final url): GitHub and YouTube through their own routes, anything else as is."""
+    special = _from_github(http, url, resolve) or _from_youtube(http, url, resolve)
+    if special:
+        return (*special, url)
+    return _read(http, url, resolve)
 
 
 def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:

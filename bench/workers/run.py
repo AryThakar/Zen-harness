@@ -62,7 +62,8 @@ def main() -> None:
         started = time.perf_counter()
         try:
             out = run_worker(model, PROFILES[task.role], task.task, ctx, user_message=task.task,
-                             progress=lambda e: tools.append({"name": e["name"], "input": e["input"]}))
+                             progress=lambda e: e["type"] == "worker_tool" and tools.append(
+                                 {"name": e["name"], "input": e["input"]}))
         except Exception as exc:  # noqa: BLE001 - a crash is a failed task, reported
             out = {"status": "crash", "answer": "", "warnings": [f"{type(exc).__name__}: {exc}"]}
         seconds = time.perf_counter() - started
@@ -71,7 +72,8 @@ def main() -> None:
                      "seconds": round(seconds, 1), "model_calls": model.calls, "tokens": model.tokens,
                      "tools": [t["name"] for t in tools], "calls": tools, "warnings": out.get("warnings", []),
                      "answer": (out.get("answer") or "")[:600], "sources": out.get("sources"),
-                     "question_for_user": out.get("question_for_user")})
+                     "question_for_user": out.get("question_for_user"),
+                     **{k: out[k] for k in ("suggestion", "trail", "note") if out.get(k)}})
         mark = "PASS" if passed else "FAIL"
         print(f"{mark} {task.id:18s} {seconds:6.1f}s calls={model.calls:2d} tools={[t['name'] for t in tools]} | {detail}",
               flush=True)

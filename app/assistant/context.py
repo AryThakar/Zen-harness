@@ -1,8 +1,10 @@
 """What every model call gets without having to ask, and how long histories fit a slot.
 
-context_block: today's date and time, the workspace listing (ids, names, sizes - never content)
-and the pinned notes. Built by code every turn, so a small model never has to remember to pass
-them on.
+context_block: the workspace listing (ids, names, sizes - never content) and the pinned notes,
+for the system prompt. Built by code, so a small model never has to remember to pass them on.
+The clock is not in it: llama.cpp reuses a prompt only up to its first changed token, and a
+minute that changes in the system prompt made it reprocess 5,673 of 5,878 tokens (measured; the
+same prompt again: 1 token). now_line goes into the newest message instead.
 
 Rolling window (main slot): the oldest complete turns are dropped (a turn = a user message and
 everything up to the next one; the current turn is never cut). When trimming is needed it trims
@@ -11,7 +13,8 @@ the budget again - so the prompt prefix stays the same for several turns and lla
 cache keeps working. Dropped turns are still findable: every turn is indexed for recall.
 
 Inside one worker task the history is short, but tool results can be big (a web page is ~3,000
-tokens): when it runs over budget, older tool results are shortened, newest kept whole.
+tokens): when it runs over budget, older tool results are shortened, newest kept whole - again
+to 25% below the budget, and the number shortened stays put until it overflows again.
 Ideas from Unsloth Studio's rolling context (studio/backend/core/inference/context_window.py),
 written independently. Token counts are estimates (characters / 3.5), on the safe side.
 """
@@ -31,9 +34,13 @@ HEADROOM = 0.25
 SHORT_RESULT = 1_200  # characters an older tool result keeps when a worker task runs long
 
 
-def context_block(ws: Workspace, now: datetime | None = None, dropped_turns: int = 0) -> str:
+def now_line(now: datetime | None = None) -> str:
     now = now or datetime.now().astimezone()
-    parts = [f"Now: {now:%A, %d %B %Y, %H:%M} (the user's local time).", ws.listing()]
+    return f"Now: {now:%A, %d %B %Y, %H:%M} (the user's local time)."
+
+
+def context_block(ws: Workspace, dropped_turns: int = 0) -> str:
+    parts = [ws.listing()]
     pinned = pinned_text(ws)
     if pinned:
         parts.append(pinned)
@@ -43,9 +50,10 @@ def context_block(ws: Workspace, now: datetime | None = None, dropped_turns: int
     return "\n\n".join(parts)
 
 
-def history_budget(system: str, tool_specs: list[dict]) -> int:
-    """Tokens left for the conversation once the instructions, tools and reply room are counted."""
-    return SLOT_TOKENS - OUTPUT_RESERVE - tokens(system) - tokens(tool_specs)
+def history_budget(system: str, tool_specs: list[dict], reply: int | None = None) -> int:
+    """Tokens left for the conversation once the instructions, tools and reply room are counted.
+    ``reply`` is the provider's own output limit (max_tokens), so a long reply can never overflow."""
+    return SLOT_TOKENS - (reply or OUTPUT_RESERVE) - tokens(system) - tokens(tool_specs)
 
 
 def tokens(item) -> int:
@@ -71,16 +79,24 @@ def fit_turns(messages: list[dict], budget: int, dropped: int = 0) -> tuple[list
     return messages[starts[dropped]:], dropped
 
 
-def shorten_tool_results(messages: list[dict], budget: int, keep_last: int = 2) -> list[dict]:
-    """Within one task: shorten older tool results (newest ``keep_last`` stay whole) until it fits."""
-    if tokens(messages) <= budget:
-        return messages
+def shorten_tool_results(messages: list[dict], budget: int, shortened: int = 0,
+                         keep_last: int = 2) -> tuple[list[dict], int]:
+    """Within one task: (the messages to send, how many of the oldest tool results are shortened).
+    ``shortened`` is the count used last time; the newest ``keep_last`` results stay whole."""
     out = [dict(m) for m in messages]
-    tool_positions = [i for i, m in enumerate(out) if m["role"] == "tool"][:-keep_last or None]
-    for i in tool_positions:
-        content = out[i]["content"]
-        if len(content) > SHORT_RESULT:
-            out[i]["content"] = content[:SHORT_RESULT] + " ... [shortened to save space]"
-            if tokens(out) <= budget:
-                break
-    return out
+    positions = [i for i, m in enumerate(out) if m["role"] == "tool"][:-keep_last or None]
+
+    def cut(i: int) -> None:
+        if len(out[i]["content"]) > SHORT_RESULT:
+            out[i]["content"] = out[i]["content"][:SHORT_RESULT] + " ... [shortened to save space]"
+
+    shortened = min(shortened, len(positions))
+    for i in positions[:shortened]:
+        cut(i)
+    if tokens(out) <= budget:
+        return out, shortened
+    target = int(budget * (1 - HEADROOM))
+    while shortened < len(positions) and tokens(out) > target:
+        cut(positions[shortened])
+        shortened += 1
+    return out, shortened

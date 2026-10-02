@@ -84,8 +84,10 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
                    "sources": ["https://news.example.com/rates"]}
     first = model.requests[0]
     assert {t["name"] for t in first["tools"]} == {"web_search", "read_webpage", "submit_result"}
-    assert "Now:" in first["system"] and "Workspace:" in first["system"]
-    assert first["messages"][0]["content"].startswith("The user's message: any rate news?")
+    # the system prompt is the role's fixed instructions (cached across tasks); what changes is in the task
+    assert first["system"] == PROFILES["web"].instructions
+    opening = first["messages"][0]["content"]
+    assert opening.startswith("Now: ") and "Workspace:" in opening and "The user's message: any rate news?" in opening
 
 
 def test_citing_an_unread_page_gets_one_chance_to_fix(ctx, fake_web):
@@ -192,7 +194,11 @@ def test_delegate_tool_returns_the_checked_result(ctx, fake_web):
     events = []
     tools = main_tools(worker, ctx, user_message=lambda: "rates?", progress=events.append)
     r = tools["research_web"].handler(ctx, registry.TaskIn(task="Find the latest rate change."))
-    assert r.status == "ok" and r.result["answer"] == "Up 0.25." and events[0]["name"] == "read_webpage"
+    assert r.status == "ok" and r.result["answer"] == "Up 0.25."
+    # the flow, in order: start, model turn, tool call, its result, model turn, the check of the submission
+    assert [e["type"] for e in events] == ["worker_start", "worker_turn", "worker_tool", "worker_result",
+                                           "worker_turn", "worker_check"]
+    assert events[2]["name"] == "read_webpage" and events[3]["status"] == "ok" and events[5]["problems"] == []
 
 
 # ---------------------------------------------------------------- rolling window
@@ -226,12 +232,16 @@ def test_the_current_turn_is_never_dropped():
 def test_long_worker_tasks_shorten_old_tool_results():
     msgs = [{"role": "user", "content": "task"}] + [
         {"role": "tool", "tool_call_id": str(i), "name": "read_webpage", "content": "p" * 12_000} for i in range(4)]
-    out = shorten_tool_results(msgs, 8_000)
+    out, shortened = shorten_tool_results(msgs, 8_000)
     for older in out[1:3]:  # the two oldest results: cut to 1,200 characters plus a note
         assert older["content"].startswith("p" * 1_200) and len(older["content"]) < 1_300
         assert "shortened" in older["content"]
     assert [m["content"] for m in out[3:]] == [m["content"] for m in msgs[3:]]  # newest two stay whole
-    assert tokens(out) <= 8_000
+    assert tokens(out) <= 8_000 and shortened == 2
+    small = msgs[:3] + [{"role": "tool", "tool_call_id": "9", "name": "calculate", "content": "4"}] * 2
+    again, kept = shorten_tool_results(small, 8_000, shortened)
+    assert kept == 2 and again[1]["content"] == out[1]["content"]  # the cut stays put: same prefix, cache kept
+    assert shorten_tool_results(msgs[:2], 8_000) == (msgs[:2], 0)
 
 
 def test_plain_text_answers_get_the_same_checks(ctx):
@@ -346,3 +356,174 @@ def test_a_repeated_call_is_not_run_again_and_says_what_to_do(ctx, monkeypatch):
     assert "already ran this exact search" in again and "https://blog.example.com/b" in again
     assert "docs.example.com/a" not in again  # already tried
     assert "already failed" in model.requests[4]["messages"][-1]["content"]
+
+
+def test_an_incomplete_answer_comes_with_a_briefing(ctx, monkeypatch):
+    results = {"results": [{"title": "Docs", "url": "https://docs.example.com/a", "snippet": "..."}]}
+    busy = ToolResult("failed", {"error": {"message": "The page answered HTTP 503 (the site is not answering right now)."}})
+    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(results)))
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn, lambda c, a: busy))
+    model = ScriptedProvider([
+        tools_turn(call("web_search", query="server default port")),
+        tools_turn(call("read_webpage", url="https://docs.example.com/a")),
+        submit(answer="I couldn't confirm the default port.", suggestion="The project's README on GitHub may list it."),
+    ])
+    out = run_worker(model, PROFILES["web"], "default port?", ctx)
+    assert out["suggestion"] == "The project's README on GitHub may list it."
+    assert out["trail"].startswith("Ran web_search, read_webpage. Failed: read_webpage https://docs.example.com/a: "
+                                   "The page answered HTTP 503")
+    clean = run_worker(ScriptedProvider([tools_turn(call("web_search", query="q")),
+                                         submit(answer="Rates rose.", sources=[])]), PROFILES["web"], "x", ctx)
+    assert "trail" not in clean  # a complete answer needs no briefing
+
+
+def test_any_worker_can_hand_a_question_to_the_user(ctx):
+    ctx.ws.add_bytes("file", b"Leave: 24 days a year.", ".txt", "handbook_2024.txt")
+    model = ScriptedProvider([
+        tools_turn(call("read_file", file="file_1")),
+        submit(answer="", question_for_user="Which year's handbook do you mean?", options=["2024", "2025"]),
+    ])
+    out = run_worker(model, PROFILES["knowledge"], "How many leave days?", ctx)
+    assert out["question_for_user"] == "Which year's handbook do you mean?" and out["options"] == ["2024", "2025"]
+    assert "warnings" not in out and "trail" in out  # asking is not a failed check
+    spec = workers._submit_spec(PROFILES["knowledge"])["input_schema"]["properties"]
+    assert list(spec)[:2] == ["answer", "sources"] and list(spec)[-3:] == list(workers.BRIEF)
+
+
+def test_the_last_steps_are_announced(ctx, fake_web):
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(6)]
+                             + [ModelTurn(text="I could not finish.")])
+    run_worker(model, PROFILES["web"], "loop forever", ctx)
+    assert "[2 steps left" in model.requests[4]["messages"][-1]["content"]
+    assert "[Last step" in model.requests[5]["messages"][-1]["content"]
+    assert "steps left" not in model.requests[3]["messages"][-1]["content"]
+
+
+def test_printed_output_in_place_of_code_becomes_the_code_that_ran(ctx):
+    ran = "def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\nprint(fib(30))"
+    model = ScriptedProvider([tools_turn(call("run_python", code=ran)), submit(answer="832040", code="832040")])
+    out = run_worker(model, PROFILES["coder"], "fib(30)?", ctx)
+    assert "warnings" not in out and out["code"] == ran and out["output"].strip() == "832040"
+    text = f"Here it is:\n```python\n{ran}\n```\nIt printed:\n```\n832040\n```"
+    plain = run_worker(ScriptedProvider([tools_turn(call("run_python", code=ran)), ModelTurn(text=text)]),
+                       PROFILES["coder"], "fib(30)?", ctx)
+    assert "warnings" not in plain and plain["code"] == ran  # the output block is not the code
+
+
+def test_a_coder_whose_every_run_failed_is_flagged(ctx):
+    model = ScriptedProvider([tools_turn(call("run_python", code="1 / 0")),
+                              submit(answer="Here is the script."), submit(answer="Here is the script.")])
+    out = run_worker(model, PROFILES["coder"], "divide", ctx)
+    assert "no run finished without error" in out["warnings"][0]
+
+
+def test_addresses_differing_only_in_case_are_different_calls(ctx, monkeypatch):
+    read = []
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: read.append(a.url) or ok({"url": a.url})))
+    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://youtu.be/abcDEF12345")),
+                              tools_turn(call("read_webpage", url="https://youtu.be/abcdef12345")),
+                              ModelTurn(text="done")])
+    run_worker(model, PROFILES["web"], "two videos", ctx)
+    assert read == ["https://youtu.be/abcDEF12345", "https://youtu.be/abcdef12345"]  # video ids are case-sensitive
+
+
+def test_a_tool_that_crashes_does_not_end_the_task(ctx, monkeypatch):
+    def broken(c, a):
+        raise KeyError("boom")
+    monkeypatch.setitem(registry.TOOLS, "calculate", Tool("calculate", "c", registry.CalcIn, broken))
+    r = execute(ctx, "calculate", {"expression": "1 + 1"})
+    assert r.status == "failed" and "internal error (KeyError)" in r.result["error"]["message"]
+
+
+def test_the_reply_room_is_the_providers_own_limit():
+    from app.assistant.context import SLOT_TOKENS, history_budget
+    assert history_budget("", [], 8_192) == history_budget("", [], 4_096) - 4_096
+    assert history_budget("", []) < SLOT_TOKENS - 4_000
+
+
+def test_made_lists_only_what_the_task_created(ctx):
+    ctx.ws.add_table(pd.DataFrame({"a": [1, 2, 3]}), name="t.csv")
+    model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                              tools_turn(call("query_data", sql="SELECT a * 2 AS b FROM data_1", save=True)),
+                              submit(answer="Saved.")])
+    out = run_worker(model, PROFILES["data"], "double a", ctx)
+    assert out["made"] == ["data_2"]  # data_1 was the input
+
+
+def test_a_question_without_an_answer_is_accepted_first_time(ctx):
+    model = ScriptedProvider([submit(question_for_user="Day first or month first?", options=["day", "month"])])
+    out = run_worker(model, PROFILES["data"], "February total?", ctx)
+    assert out["question_for_user"] == "Day first or month first?" and len(model.requests) == 1
+
+
+def test_long_pages_are_focused_on_the_last_search(ctx, monkeypatch):
+    asked = []
+    results = {"results": [{"title": "Docs", "url": "https://docs.example.com/a", "snippet": "..."}]}
+    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(results)))
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: asked.append(a.find) or ok({"url": a.url})))
+    model = ScriptedProvider([tools_turn(call("web_search", query="server default port")),
+                              tools_turn(call("read_webpage", url="https://docs.example.com/a")),
+                              tools_turn(call("read_webpage", url="https://docs.example.com/a", find="timeout")),
+                              ModelTurn(text="done")])
+    run_worker(model, PROFILES["web"], "default port?", ctx)
+    assert asked == ["server default port", "timeout"]  # the worker's own find wins
+
+
+def test_a_table_is_inspected_before_anything_is_computed_on_it(ctx):
+    ctx.ws.add_table(pd.DataFrame({"pizza": ["a", "b", "Total"], "quantity": [2, 3, 5]}), name="sales.csv")
+    model = ScriptedProvider([tools_turn(call("query_data", sql="SELECT count(*) FROM data_1")),
+                              tools_turn(call("query_data", sql="SELECT sum(quantity) FROM data_1")),
+                              submit(answer="10")])
+    run_worker(model, PROFILES["data"], "How many pizzas?", ctx)
+    first = model.requests[1]["messages"][-1]["content"]
+    assert "had not been inspected, so inspect_data ran first" in first and "Total" in first
+    second = model.requests[2]["messages"][-1]["content"]
+    assert '"rows": [[10]]' in second  # once inspected, calls run normally
+    later = ScriptedProvider([tools_turn(call("query_data", sql="SELECT 1 AS x FROM data_1 LIMIT 1")),
+                              submit(answer="ok")])
+    run_worker(later, PROFILES["data"], "again", ctx)
+    assert "not been inspected" not in later.requests[1]["messages"][-1]["content"]  # remembered on the table
+
+
+def test_a_tidied_copy_of_the_code_that_ran_is_handed_on_as_it_ran(ctx):
+    ran = "import json\nimport io\nrows = [{'a': 1}, {'a': 2}]\nprint(len(rows))\njson.dumps(rows)"
+    tidied = ran.replace("import io\n", "")  # the model dropped an unused import while copying
+    out = run_worker(ScriptedProvider([tools_turn(call("run_python", code=ran)), submit(answer="2", code=tidied)]),
+                     PROFILES["coder"], "count", ctx)
+    assert "warnings" not in out and out["code"] == ran
+    other = "import pandas as pd\nprint(pd.DataFrame({'a': [1, 2]}).shape[0])"
+    flagged = run_worker(ScriptedProvider([tools_turn(call("run_python", code=ran)), submit(answer="2", code=other),
+                                           submit(answer="2", code=other)]), PROFILES["coder"], "count", ctx)
+    assert "never ran" in flagged["warnings"][0]  # a different script that never ran is still caught
+
+
+def test_a_tool_question_asked_in_prose_is_handed_on_as_a_question(ctx):
+    upload = ctx.ws.root / "sales_q1.csv"  # an upload: add_file types the columns and notes the ambiguous dates
+    upload.write_text("\n".join(["date,amount"] + [f"{d:02d}/{m:02d}/2025,{100 + d}" for m in (1, 2, 3)
+                                                  for d in (1, 3, 5, 7, 9, 11)]), encoding="utf-8")
+    ctx.ws.add_file(upload)
+    model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                              ModelTurn(text="The dates are ambiguous. Which order do they use, day or month first?")])
+    out = run_worker(model, PROFILES["data"], "February total?", ctx)
+    assert out["question_for_user"].startswith("The dates in date could be read two ways")
+    assert out["options"] == ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]
+    assert "trail" in out and "warnings" not in out
+
+
+def test_a_choice_only_the_user_can_make_is_not_guessed(ctx):
+    upload = ctx.ws.root / "sales_q1.csv"
+    upload.write_text("\n".join(["date,amount"] + [f"{d:02d}/{m:02d}/2025,{100 + d}" for m in (1, 2, 3)
+                                                  for d in (1, 3, 5, 7, 9, 11)]), encoding="utf-8")
+    ctx.ws.add_file(upload)
+    guess = {"op": "parse_dates", "columns": ["date"], "order": "dayfirst"}
+    model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                              tools_turn(call("clean_data", data="data_1", steps=[guess])),
+                              ModelTurn(text="Which order do the dates use?")])
+    run_worker(model, PROFILES["data"], "February total?", ctx)
+    assert "only the user can answer" in model.requests[2]["messages"][-1]["content"]
+    told = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                             tools_turn(call("clean_data", data="data_1", steps=[guess])), submit(answer="done")])
+    run_worker(told, PROFILES["data"], "February total? The user says the dates are day first.", ctx)
+    assert '"rows_after": 18' in told.requests[2]["messages"][-1]["content"]  # the user's answer lets it run

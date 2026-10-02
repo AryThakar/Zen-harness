@@ -155,3 +155,40 @@ def test_flag_columns_made_from_the_target_are_never_inputs(ws):
     flagged = clean_data(ws, data, [{"op": "flag_outliers", "columns": ["spend"]}]).result["data"]
     r = train_model(ws, flagged, "spend")
     assert {"column": "spend_outlier", "reason": "made from the target (a leak)"} in r.result["excluded_columns"]
+
+
+def test_time_split_into_year_and_quarter_is_combined(ws):
+    from app.tools.inspect_data import inspect_data
+    from app.tools.query_data import query_data
+    quarters = pd.DataFrame({"year": np.repeat(np.arange(2000, 2015), 4), "quarter": np.tile([1, 2, 3, 4], 15),
+                             "gdp": np.linspace(100, 160, 60).round(1)})
+    data = ws.add_table(quarters, name="macro.csv")
+    tip = inspect_data(ws, data).result["note"]
+    assert "split into 'year' and 'quarter'" in tip and "forecast combines them itself" in tip
+    for date in ("year", "quarter", "2009-12-31"):  # whatever the model gives: the split columns are used
+        r = forecast(ws, data, date=date, value="gdp", horizon=4, agg="last")
+        assert r.status == "ok" and r.result["period"] == "quarter" and r.result["history_points"] == 60, date
+        assert "made from the 'year' and 'quarter' columns" in r.result["notes"][0]
+    made = query_data(ws, tip.split("save=true: ")[1], save=True).result["saved_as"]  # the chart route works too
+    assert str(ws.table(made)["date"].iloc[5])[:10] == "2001-04-01"
+
+
+def test_a_date_given_where_the_date_column_goes_is_explained(ws):
+    data = ws.add_table(pd.DataFrame({"day": pd.date_range("2020-01-01", periods=20, freq="QS"), "gdp": range(20)}),
+                        name="g.csv")
+    message = forecast(ws, data, date="2026-10-02", value="gdp").result["error"]["message"]
+    assert message == "date takes a column's name, not a date like '2026-10-02'. Date columns: day."
+
+
+def test_a_target_computed_from_a_column_never_learns_from_it(ws):
+    from app.tools.query_data import query_data
+    rng = np.random.default_rng(0)
+    people = pd.DataFrame({"age": rng.integers(20, 60, 300), "rating": rng.integers(1, 6, 300),
+                           "affairs": rng.poisson(0.4, 300).astype(float)})
+    data = ws.add_table(people, name="survey.csv")
+    made = query_data(ws, f"SELECT *, CASE WHEN affairs > 0 THEN 'yes' ELSE 'no' END AS had_affair FROM {data}",
+                      save=True).result["saved_as"]
+    r = train_model(ws, made, "had_affair", features=["age", "rating", "affairs"]).result  # asked for the leak
+    assert {"column": "affairs", "reason": "had_affair was computed from it (a leak)"} in r["excluded_columns"]
+    assert r["score"] < 0.9  # no longer 'predicts' the answer from the answer
+

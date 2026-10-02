@@ -7,6 +7,7 @@ Descriptions say what a tool is for and, where a model could misuse it, what it 
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -18,6 +19,8 @@ from app.tools import (ask, calc, clean_data, diagram, files, forecast, image, i
 from app.tools.core import ToolResult
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -96,7 +99,7 @@ class SearchIn(_In):
 
 
 class ReadPageIn(_In):
-    url: str
+    url: str = Field(description="the page's address, e.g. from a search result or the task")
     find: str | None = Field(None, description="for a long page: words to look for; the parts about them are shown")
 
 
@@ -123,7 +126,8 @@ class CleanIn(_In):
 
 
 class SqlIn(_In):
-    sql: str = Field(description="one DuckDB SELECT; tables are named by id, e.g. SELECT region, sum(amount) FROM data_2 GROUP BY 1")
+    sql: str = Field(description="one DuckDB SELECT; tables are named by id, e.g. SELECT region, sum(amount) FROM "
+                     "data_2 GROUP BY 1. For weekday or month names use dayname(date) / monthname(date), not numbers")
     save: bool = Field(False, description="save the full result as a new table (to chart, test or model it)")
 
 
@@ -159,7 +163,7 @@ class PredictIn(_In):
 
 class ForecastIn(_In):
     data: str
-    date: str
+    date: str = Field(description="the name of the table's date column (not a date)")
     value: str | None = Field(None, description="number column; omit to forecast the row count")
     horizon: int | None = Field(None, ge=1, le=60)
     time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto"
@@ -173,58 +177,56 @@ class PythonIn(_In):
 
 # ---------------------------------------------------------------- the tools
 
-def _t(name, description, model, handler) -> Tool:
-    return Tool(name, description, model, handler)
-
-
 TOOLS: dict[str, Tool] = {t.name: t for t in [
-    _t("get_weather", "Current weather, UV, air quality and local time for a place, or a daily forecast up to 7 days.",
+    Tool("get_weather", "Current weather, UV, air quality and local time for a place, or a daily forecast up to 7 days.",
        WeatherIn, lambda c, a: weather.get_weather(a.location, a.days)),
-    _t("generate_image", "Generate one image from a detailed description; it is shown to the user.",
+    Tool("generate_image", "Generate one image from a detailed description; it is shown to the user.",
        ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size)),
-    _t("draw_diagram", "Draw a flowchart, sequence, class, state, ER, gantt, pie, mindmap or timeline diagram from Mermaid code.",
+    Tool("draw_diagram", "Draw a flowchart, sequence, class, state, ER, gantt, pie, mindmap or timeline diagram from Mermaid code.",
        DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title)),
-    _t("calculate", "Exact arithmetic. Use it for every calculation instead of doing sums yourself.",
+    Tool("calculate", "Exact arithmetic. Use it for every calculation instead of doing sums yourself.",
        CalcIn, lambda c, a: calc.calculate(a.expression)),
-    _t("save_note", "Save a decision, constraint, conclusion or summary worth keeping (not tool output).",
+    Tool("save_note", "Save a decision, constraint, conclusion or summary worth keeping (not tool output).",
        NoteIn, lambda c, a: notes.save_note(c.ws, a.title, a.content, a.pin, index=c.index)),
-    _t("ask_user", "Ask the user one question, only when reasonable readings would give materially different "
+    Tool("ask_user", "Ask the user one question, only when reasonable readings would give materially different "
        "results. Never ask about preferences that don't change the answer.",
        AskIn, lambda c, a: ask.ask_user(a.question, a.options, a.allow_text)),
     # worker tools
-    _t("web_search", "Search the web: titles, links and snippets. Snippets are not enough to quote; read the page.",
+    Tool("web_search", "Search the web: titles, links and snippets. Snippets are not enough to quote; read the page.",
        SearchIn, lambda c, a: web.web_search(a.query, a.site)),
-    _t("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
+    Tool("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
        "channel, length, date and description (not what is said in it).", ReadPageIn,
        lambda c, a: web.read_webpage(a.url, a.find)),
-    _t("search_files", "Find passages in the user's documents and saved notes that match a query.", FilesQueryIn,
+    Tool("search_files", "Find passages in the user's documents and saved notes that match a query.", FilesQueryIn,
        lambda c, a: files.search_files(c.index, a.query)),
-    _t("recall", "Find what was said in earlier conversations.", FilesQueryIn,
+    Tool("recall", "Find what was said in earlier conversations.", FilesQueryIn,
        lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation)),
-    _t("read_file", "Read a stored file or note from start to end, in parts (for summaries and code).", ReadFileIn,
+    Tool("read_file", "Read a stored file or note from start to end, in parts (for summaries and code).", ReadFileIn,
        lambda c, a: read_file.read_file(c.ws, a.file, a.part)),
-    _t("inspect_data", "First look at a table: columns, types, missing values, duplicates, outliers, suggested "
+    Tool("inspect_data", "First look at a table: columns, types, missing values, duplicates, outliers, suggested "
        "cleaning steps and questions only the user can answer.", DataIn,
        lambda c, a: inspect_data.inspect_data(c.ws, a.data)),
-    _t("clean_data", "Apply cleaning steps to a table; saves a new table and a log. Nothing is changed without a step.",
+    Tool("clean_data", "Apply cleaning steps to a table; saves a new table and a log. Nothing is changed without a step.",
        CleanIn, lambda c, a: clean_data.clean_data(c.ws, a.data, a.steps)),
-    _t("query_data", "Exact numbers with one read-only SQL query: totals, rankings, filters, group-bys.",
+    Tool("query_data", "Exact numbers with one read-only SQL query: totals, rankings, filters, group-bys.",
        SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save)),
-    _t("make_chart", "Draw a line (over time), bar (by category), scatter or histogram chart of a table. For a "
+    Tool("make_chart", "Draw a line (over time), bar (by category), scatter or histogram chart of a table. For a "
        "chart over time give the date column as x and a time_unit: it sums (agg) per period itself, so there is "
        "no need to aggregate with query_data first.",
        ChartIn, lambda c, a: make_chart.make_chart(c.ws, a.data, a.type, a.x, a.y, a.agg, a.time_unit, a.top, a.title)),
-    _t("stats_test", "Is a difference, correlation or association real or chance? The right test is chosen for you.",
+    Tool("stats_test", "Is a difference, correlation or association real or chance? The right test is chosen for you.",
        StatsIn, lambda c, a: stats_test.stats_test(c.ws, a.data, a.question, a.columns)),
-    _t("train_model", "Train and test a model that predicts a column; reports quality against a baseline, leaks "
+    Tool("train_model", "Train and test a model that predicts a column; reports quality against a baseline, leaks "
        "and important predictive features (associations, not causes).", TrainIn,
        lambda c, a: ml.train_model(c.ws, a.data, a.target, a.features, a.time_column)),
-    _t("predict", "Apply a trained model to a table of new rows.", PredictIn,
+    Tool("predict", "Apply a trained model to a table of new rows.", PredictIn,
        lambda c, a: ml.predict(c.ws, a.model, a.data)),
-    _t("forecast", "Forecast a value over time with a range, tested against a simple baseline.", ForecastIn,
+    Tool("forecast", "Forecast a value over time with a range, tested against a simple baseline.", ForecastIn,
        lambda c, a: forecast.forecast(c.ws, a.data, a.date, a.value, a.horizon, a.time_unit, a.agg)),
-    _t("run_python", "Run a Python script for what no other tool does. Do NOT use it for cleaning, SQL, charts, "
-       "statistical tests, training or forecasting - those tools are tested and exact.", PythonIn,
+    Tool("run_python", "Run a Python script for what no other tool does. Do NOT use it for cleaning, SQL, charts, "
+       "statistical tests, training or forecasting - those tools are tested and exact. In the script, "
+       "table('data_1') reads a table and open('file_3') a stored file; files the script writes are saved to "
+       "the workspace (.csv / .parquet become tables).", PythonIn,
        lambda c, a: sandbox.run_python(c.ws, a.code, a.timeout)),
 ]}
 
@@ -242,7 +244,12 @@ def execute(ctx: ToolContext, name: str, raw_input) -> ToolResult:
         first = exc.errors()[0]
         where = ".".join(str(p) for p in first["loc"]) or "arguments"
         return ToolResult("invalid_arguments", {"error": {"message": f"{where}: {first['msg']}", "field": where}})
-    result = tool.handler(ctx, args)
+    try:
+        result = tool.handler(ctx, args)
+    except Exception as exc:  # noqa: BLE001 - a bug in one tool must not end the whole task
+        log.exception("tool %s failed on %s", name, raw_input)
+        return ToolResult("failed", {"error": {"message": f"{name} stopped with an internal error "
+                                               f"({type(exc).__name__}); try other input or another tool."}})
     if result.artifact:
         ctx.emit({"tool": name, **result.artifact})
     return result

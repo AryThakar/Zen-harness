@@ -171,3 +171,25 @@ def test_line_chart_reads_month_labels_as_dates(ws):
     assert r.status == "ok" and r.result["points"] == 12 and r.artifact["x"][0] == "2015-01-01"
     r = make_chart(ws, ws.add_table(pd.DataFrame({"k": ["a", "b"], "v": [1, 2]}), "t"), "line", x="k", y="v")
     assert r.status == "invalid_arguments" and "date column" in r.result["error"]["message"]
+
+
+def test_a_query_that_matches_nothing_says_what_to_check(ws, sales):
+    for sql in [f"SELECT * FROM {sales} WHERE region = 'north'", f"SELECT sum(amount) FROM {sales} WHERE region = 'north'"]:
+        r = query_data(ws, sql)
+        assert r.status == "ok" and "SELECT DISTINCT" in r.result["note"], sql
+    assert "note" not in query_data(ws, f"SELECT count(*) FROM {sales}").result
+
+
+def test_auto_period_is_never_finer_than_the_data(ws, sales):
+    monthly = ws.add_table(pd.DataFrame({"month": [f"2015-{m:02d}" for m in range(1, 13)],
+                                         "revenue": np.arange(12) * 10.0 + 100}), name="monthly")
+    chart = make_chart(ws, monthly, "line", x="month", y="revenue").artifact
+    assert len(chart["x"]) == 12 and chart["x"][0] == "2015-01-01"  # months, not 49 mostly empty weeks
+    daily = make_chart(ws, sales, "line", x="date", y="amount").artifact  # a year of daily rows: by week
+    assert 50 <= len(daily["x"]) <= 53
+
+
+def test_a_line_chart_with_only_empty_periods_says_so(ws):
+    empty = ws.add_table(pd.DataFrame({"day": pd.date_range("2025-01-01", periods=60), "v": [float("nan")] * 60}), name="e")
+    r = make_chart(ws, empty, "line", x="day", y="v", agg="mean")
+    assert r.status == "failed" and "every period is empty" in r.result["error"]["message"]

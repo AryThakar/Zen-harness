@@ -41,7 +41,28 @@ def _numeric(s: pd.Series) -> bool:
     return pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
 
 
-def _choose_features(df: pd.DataFrame, target: str, time_col: str | None, wanted: list[str] | None):
+def _made_from(ws: Workspace, data: str, target: str) -> set[str]:
+    """The columns a target was computed from, when the table was saved by a query that defines it
+    (e.g. CASE WHEN affairs > 0 THEN 'yes' ... AS had_affair): learning from them is a leak."""
+    import sqlglot
+    from sqlglot import exp
+
+    sql = ws.entry(data).get("meta", {}).get("sql")
+    if not sql:
+        return set()
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+    except sqlglot.errors.ParseError:
+        return set()
+    sources = set()
+    for alias in tree.find_all(exp.Alias):
+        if alias.alias.lower() == target.lower():
+            sources |= {c.name for c in alias.this.find_all(exp.Column)}
+    return {c for c in sources if c.lower() != target.lower()}
+
+
+def _choose_features(df: pd.DataFrame, target: str, time_col: str | None, wanted: list[str] | None,
+                     made_from: set[str] = frozenset()):
     """Columns to learn from, and the ones left out with the reason."""
     excluded = []
     if time_col and not wanted:
@@ -56,6 +77,9 @@ def _choose_features(df: pd.DataFrame, target: str, time_col: str | None, wanted
             continue
         if c == f"{target}_outlier":  # made from the target by clean_data's flag_outliers
             excluded.append({"column": c, "reason": "made from the target (a leak)"})
+            continue
+        if c in made_from:  # also when asked for: it would predict the target from itself
+            excluded.append({"column": c, "reason": f"{target} was computed from it (a leak)"})
             continue
         if present.empty:
             reason = "no values"
@@ -152,7 +176,7 @@ def train_model(ws: Workspace, data: str, target: str, features: list[str] | Non
         classes, positive = None, None
     binary = classify and len(classes) == 2
 
-    cols, excluded = _choose_features(frame, target, time_col, wanted)
+    cols, excluded = _choose_features(frame, target, time_col, wanted, _made_from(ws, data, target))
     spec = _spec(frame, cols, time_col)
     X, _ = _build(frame, spec)
     if X.shape[1] == 0:

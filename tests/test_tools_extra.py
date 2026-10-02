@@ -102,3 +102,28 @@ def test_known_table_problems_travel_with_results(ws, tmp_path):
     inspect_data(ws, data)
     warned = query_data(ws, f"SELECT sum(qty) FROM {data}").result
     assert "summary rows" in warned["data_warning"] and "clean_data" in warned["data_warning"]
+
+
+def test_a_workspace_id_used_as_a_variable_gets_the_fix(ws):
+    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
+    message = run_python(ws, "df = data_1.copy()").result["error"]["message"]
+    assert "table('data_1')" in message and "to_parquet" in message
+    assert "Workspace items" not in run_python(ws, "1 / 0").result["error"]["message"]
+
+
+def test_an_id_given_to_a_library_that_opens_files_itself_gets_the_fix(ws):
+    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
+    message = run_python(ws, "import pandas as pd; pd.read_parquet('data_1')").result["error"]["message"]
+    assert "table('data_1')" in message  # pyarrow opens files itself, so the id is not resolved
+
+
+def test_a_script_never_changes_a_stored_file(ws):
+    fid = ws.add_bytes("file", b"ORIGINAL", "py", name="average.py")
+    stored = ws.root / ws.entry(fid)["file"]
+    code = f"print(open('{fid}').read())\nwith open('{fid}', 'w') as f:\n    f.write('CHANGED')"
+    r = run_python(ws, code)
+    assert r.result["output"].strip() == "ORIGINAL" and stored.read_text() == "ORIGINAL"
+    assert r.result["files"][0]["id"] != fid  # the written copy is a new item
+    again = run_python(ws, f"print(open('{fid}').read())")  # the id still means the stored file
+    assert again.result["output"].strip() == "ORIGINAL"
+

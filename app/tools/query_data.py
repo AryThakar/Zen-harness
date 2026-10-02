@@ -43,6 +43,10 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
         if res.total_rows > shown:
             result["note"] = (f"Showing {shown} of {res.total_rows:,} rows"
                               + ("." if save else "; aggregate or add a LIMIT for fewer."))
+        elif res.total_rows == 0 or (res.total_rows == 1 and all(v is None for v in res.rows[0])):
+            # SUM / AVG over no rows give one row of NULLs: the same 'nothing matched'.
+            result["note"] = ("No rows matched. Before concluding there are none, check the values you filtered on "
+                              "(SELECT DISTINCT column ...): text must match exactly, including case and spelling.")
         warnings = [w for w in (ws.issues_warning(t) for t in used) if w]
         if warnings:
             result["data_warning"] = " ".join(warnings)
