@@ -53,9 +53,10 @@ class QueryResult:
     truncated: bool
 
 
-def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
+def check(sql: str, existing: frozenset[str] = frozenset(), allowed: frozenset[str] | set[str] = ALLOWED_TABLES) -> str:
     """Validate ``sql``; return the normalized query to run. ``existing`` names the
-    database's tables and views, so a CTE can't be named after a hidden one."""
+    database's tables and views, so a CTE can't be named after a hidden one; ``allowed``
+    are the tables the query may read."""
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None]
     except sqlglot.errors.ParseError as exc:
@@ -70,7 +71,7 @@ def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
         raise SqlRejected(f"'{forbidden.key.upper()}' is not allowed; only SELECT queries.")
 
     cte_names = {cte.alias_or_name.lower() for cte in statement.find_all(exp.CTE)}
-    hiding = sorted((cte_names & {name.lower() for name in existing}) - ALLOWED_TABLES)
+    hiding = sorted((cte_names & {name.lower() for name in existing}) - allowed)
     if hiding:
         raise SqlRejected(f"Rename the CTE '{hiding[0]}': it has the name of a table that isn't available.")
     for table in statement.find_all(exp.Table):
@@ -82,9 +83,9 @@ def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
         if table.args.get("db") or table.args.get("catalog"):
             raise SqlRejected(f"Use table names without a schema: '{table.sql(dialect='duckdb')}'.")
         name = table.name.lower()
-        if name not in ALLOWED_TABLES and name not in cte_names:
+        if name not in allowed and name not in cte_names:
             raise SqlRejected(
-                f"Table '{table.name}' is not available. Tables: {', '.join(sorted(ALLOWED_TABLES))}."
+                f"Table '{table.name}' is not available. Tables: {', '.join(sorted(allowed))}."
             )
     # Resolve references by scope: 'schema_migrations' inside a CTE defined before
     # a CTE of that name means the real table, whatever the names say.
@@ -95,7 +96,7 @@ def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
     for scope in scopes:
         for source in scope.sources.values():
             if isinstance(source, exp.Table) and not isinstance(source.this, exp.Func):
-                if source.name.lower() not in ALLOWED_TABLES:
+                if source.name.lower() not in allowed:
                     raise SqlRejected(f"Table '{source.name}' is not available.")
     for func in statement.find_all(exp.Func):
         name = _function_name(func)
@@ -105,11 +106,11 @@ def check(sql: str, existing: frozenset[str] = frozenset()) -> str:
 
 
 def run(cur: duckdb.DuckDBPyConnection, sql: str, max_rows: int = MAX_ROWS,
-        timeout: float = TIMEOUT_SECONDS) -> QueryResult:
+        timeout: float = TIMEOUT_SECONDS, allowed: frozenset[str] | set[str] = ALLOWED_TABLES) -> QueryResult:
     """Check and run a query, returning at most ``max_rows`` rows."""
     existing = frozenset(name for (name,) in cur.execute(
         "SELECT table_name FROM duckdb_tables() UNION SELECT view_name FROM duckdb_views()").fetchall())
-    safe_sql = check(sql, existing)
+    safe_sql = check(sql, existing, allowed)
     timer = threading.Timer(timeout, cur.interrupt)
     timer.start()
     try:
