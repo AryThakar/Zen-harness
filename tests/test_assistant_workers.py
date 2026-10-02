@@ -527,3 +527,40 @@ def test_a_choice_only_the_user_can_make_is_not_guessed(ctx):
                              tools_turn(call("clean_data", data="data_1", steps=[guess])), submit(answer="done")])
     run_worker(told, PROFILES["data"], "February total? The user says the dates are day first.", ctx)
     assert '"rows_after": 18' in told.requests[2]["messages"][-1]["content"]  # the user's answer lets it run
+
+
+def test_a_reply_cut_off_by_the_length_limit_gets_another_step(ctx, fake_web):
+    model = ScriptedProvider([ModelTurn(text="", stop="max_tokens"),  # cut while thinking
+                              ModelTurn(text="The bank raised rates by", stop="max_tokens"),  # cut mid-answer
+                              tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                              submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"])])
+    out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
+    assert out["answer"] == "Rates rose by 0.25 points." and "warnings" not in out and "note" not in out
+    assert "cut off by the length limit" in model.requests[1]["messages"][-1]["content"]
+    assert "cut off by the length limit" in model.requests[2]["messages"][-1]["content"]
+
+
+def test_a_reply_cut_off_at_the_last_step_is_marked(ctx, fake_web):
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(6)]
+                             + [ModelTurn(text="The bank raised rates by", stop="max_tokens")])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert out["note"] == "answered at the step limit; the reply was cut off by the length limit"
+    assert "trail" in out  # flagged, so the main slot gets the briefing too
+
+
+def test_a_page_that_failed_is_not_read_again_with_other_find_words(ctx, monkeypatch):
+    reads = []
+    refused = ToolResult("failed", {"error": {"message": "The page answered HTTP 403."}})
+    results = {"results": [{"title": "Blog", "url": "https://blog.example.com/p", "snippet": "..."}]}
+    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(results)))
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: reads.append(a.find) or refused))
+    model = ScriptedProvider([tools_turn(call("web_search", query="parquet engines")),
+                              tools_turn(call("read_webpage", url="https://blog.example.com/p")),
+                              tools_turn(call("web_search", query="read_parquet engine docs")),
+                              tools_turn(call("read_webpage", url="https://blog.example.com/p")),  # new find words
+                              ModelTurn(text="I could not read a source.")])
+    run_worker(model, PROFILES["web"], "parquet engines?", ctx)
+    assert reads == ["parquet engines"]  # the second read of the failed page did not run
+    assert "This page already failed" in model.requests[4]["messages"][-1]["content"]
+

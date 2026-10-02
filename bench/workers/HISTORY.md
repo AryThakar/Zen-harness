@@ -53,6 +53,12 @@ failure was read in its trace or tool calls before anything was changed.
 | r6, r7 | w_llama_port | did not use find= on a 113 KB page | model | long pages are focused on the worker's latest search |
 | r7 | h_bulk | not captured (passed in every run and trace since) | unknown | - |
 | r9 | d_model | listed the column the target was made from as a feature (AUC 1.0) | model | train_model leaves out columns the target was computed from |
+| r10 | h_bulk | asked about an earlier chat, searched only documents (search_files), found nothing; most likely the r7 failure too | model, tool let it | an empty search points to the other one (search_files <-> recall) |
+| r10 | w_parquet | re-read a page that had answered 403, because the automatic find words made it look like a new call | **tool (my regression)** | a page that failed is blocked by its address, whatever find says |
+
+Run 10 (after the cut-off handling: a reply stopped by the output limit gets another step instead of
+ending the task or being handed on half-written): 30/32, the two failures above; each fixed and then
+3/3 on the real model.
 
 Each fix was then run 3 times on the real model on the failed task (all passed), and the whole
 suite again. Traces of real runs, event by event: [traces.md](traces.md) (`python -m bench.workers.trace`).

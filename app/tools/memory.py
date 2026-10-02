@@ -58,7 +58,8 @@ def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str
               "keywords only (the embedding model is unavailable)"}
     if not hits:
         result["turns"] = []
-        result["note"] = "No earlier conversation matched. Say so; don't guess what was said."
+        result["note"] = ("No earlier conversation matched. If it may be in a document or saved note, use "
+                          "search_files; otherwise say so - don't guess what was said.")
         return ok(result)
     result["turns"] = [{"when": h.created[:16].replace("T", " "), "conversation": h.ref,
                         "text": h.text if len(h.text) <= MAX_TEXT else h.text[:MAX_TEXT] + " ..."} for h in hits]

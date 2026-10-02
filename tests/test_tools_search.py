@@ -54,7 +54,7 @@ def test_document_passages_come_with_their_source(ws, index, policy):
 def test_no_match_says_so_instead_of_returning_noise(index, policy):
     for query in ["best pizza topping", "how to be the one"]:  # the second is all stopwords
         r = search_files(index, query)
-        assert r.result["passages"] == [] and "don't cover this" in r.result["note"]
+        assert r.result["passages"] == [] and "don't cover it" in r.result["note"] and "use recall" in r.result["note"]
     assert search_files(index, " ").status == "invalid_arguments"
 
 

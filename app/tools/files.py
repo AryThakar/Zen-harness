@@ -50,7 +50,9 @@ def search_files(index: SearchIndex, query: str, k: int = 5) -> ToolResult:
               "keywords only (the embedding model is unavailable)"}
     if not hits:
         result["passages"] = []
-        result["note"] = "Nothing matched. Say the documents don't cover this rather than answering from memory."
+        result["note"] = ("Nothing matched in the documents and notes. If the question is about something said in "
+                          "an earlier chat, use recall; otherwise say the documents don't cover it - don't answer "
+                          "from memory.")
         return ok(result)
     result["passages"] = [{"source": _source(h), "text": _cut(h.text)} for h in hits]
     result["note"] = "Answer only from these passages and name the source of each fact."

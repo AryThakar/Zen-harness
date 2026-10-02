@@ -88,6 +88,7 @@ class Trace:
     passages: list[tuple[str, str]] = field(default_factory=list)  # (source, text) the knowledge tools returned
     calls: dict[str, ToolResult] = field(default_factory=dict)  # each distinct call (name + input) -> its result
     tried_urls: set[str] = field(default_factory=set)  # every page read_webpage was asked for, read or not
+    failed_urls: dict[str, str] = field(default_factory=dict)  # page -> why it could not be read
     counts: dict[str, int] = field(default_factory=dict)  # tool -> calls that ran
     failures: list[str] = field(default_factory=list)  # "tool target: why", for the briefing
     not_run: int = 0  # calls refused: repeats, tools outside the profile
@@ -110,6 +111,8 @@ class Trace:
         self.questions += [q for q in res.get("questions", []) if isinstance(q, dict) and q.get("question")]
         if name == "read_webpage":
             self.tried_urls.add(args.get("url", ""))
+            if result.status not in ("ok", "partial"):
+                self.failed_urls[args.get("url", "").strip()] = str((res.get("error") or {}).get("message", ""))
         if name == "read_webpage" and result.status == "ok":
             self.read_urls.add(res["url"])
             self.read_urls.add(args.get("url", ""))
@@ -178,6 +181,11 @@ def _repeat(trace: Trace, name: str, args: dict) -> ToolResult | None:
     """A call the worker already made with the same input is not run again - a small model re-runs
     a search after a failed read instead of reading another result - and it is told what to do
     instead. run_python is exempt: the same code can give a new result once files have changed."""
+    if name == "read_webpage" and str(args.get("url", "")).strip() in trace.failed_urls:
+        # The same page with other find words is the same failure (find only picks lines to show).
+        why = trace.failed_urls[str(args["url"]).strip()]
+        return ToolResult("invalid_arguments", {"error": {"message": (
+            f"This page already failed ({why.rstrip('.')}). Read another source instead.")}})
     earlier = trace.calls.get(_call_key(name, args))
     if earlier is None or name == "run_python":
         return None
@@ -359,10 +367,17 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         progress({"type": "worker_turn", "worker": profile.name, "step": step, "stop": turn.stop,
                   "calls": [c["name"] for c in turn.tool_calls], "text": turn.text[:300], "usage": turn.usage,
                   "shortened": shortened})
+        cut = turn.stop == "max_tokens"  # stopped by the output limit: thinking or answer unfinished
+        if cut and not last:
+            messages.append({"role": "user", "content": CUT_OFF})
+            progress({"type": "worker_hint", "worker": profile.name, "text": CUT_OFF})
+            continue
         if not turn.tool_calls:
             # A plain-text answer (small models often skip submit_result): the same checks apply to it.
+            note = "; ".join(n for n, on in (("answered at the step limit", last),
+                                             ("the reply was cut off by the length limit", cut)) if on) or None
             if not turn.text.strip():
-                return _done(ctx, profile, {"answer": ""}, trace, ["the worker returned no answer"])
+                return _done(ctx, profile, {"answer": ""}, trace, ["the worker returned no answer"], note=note)
             written = _json_in_text(turn.text)
             outcome = _submitted(profile, written, trace, opening) if written is not None else None
             if isinstance(outcome, dict):
@@ -376,8 +391,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                 retried = True
                 messages.append({"role": "user", "content": "Fix this and answer again: " + "; ".join(problems)})
                 continue
-            return _done(ctx, profile, result, trace, problems,
-                         note="answered at the step limit" if last else None)
+            return _done(ctx, profile, result, trace, problems, note=note)
         for call in turn.tool_calls:
             if call["name"] == SUBMIT:
                 outcome = _submitted(profile, call["input"], trace, opening)
@@ -435,6 +449,10 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             progress({"type": "worker_hint", "worker": profile.name, "text": STEPS_LEFT[left]})
     return _done(ctx, profile, {"answer": ""}, trace, ["the worker ran out of steps without an answer"])
 
+
+# Sent when a reply stopped at the output limit (max_tokens): another step, not a half answer.
+CUT_OFF = ("[Your last reply was cut off by the length limit before it finished. Think briefly, then call one "
+           "tool or submit_result.]")
 
 # Said with the tool results near the end, so a worker finishes instead of being cut off.
 STEPS_LEFT = {2: "[2 steps left: finish soon with submit_result.]",

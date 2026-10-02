@@ -39,5 +39,8 @@ class ScriptedProvider:
         if on_event and turn.text:
             for word in turn.text.split(" "):
                 on_event("text", word + " ")
+        # Like llama-server: with tools off no calls come back, but a reply cut by the length limit
+        # still says so.
+        stop = turn.stop if allow_tools or turn.stop == "max_tokens" else "end"
         return ModelTurn(text=turn.text, tool_calls=list(turn.tool_calls) if allow_tools else [],
-                         raw=None, stop=turn.stop if allow_tools else "end", model=self.model, usage=turn.usage)
+                         raw=None, stop=stop, model=self.model, usage=turn.usage)
