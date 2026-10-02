@@ -24,7 +24,7 @@ from app.ingestion.reader import ReadError, read_file
 from .core import ToolError
 from .values import type_columns
 
-PREFIX = {"table": "data", "model": "model"}
+PREFIX = {"table": "data", "model": "model", "image": "image", "file": "file", "note": "note"}
 
 
 class Workspace:
@@ -74,6 +74,35 @@ class Workspace:
         self._expect(item_id, "table")
         return pd.read_parquet(self.root / f"{item_id}.parquet")
 
+    def add_bytes(self, kind: str, data: bytes, ext: str, name: str, parent: str | None = None,
+                  meta: dict | None = None) -> str:
+        """Store a file the tools made (an image, a chart, a script's output) under a new id."""
+        new_id = self._new_id(kind)
+        filename = f"{new_id}.{ext.lstrip('.')}"
+        tmp = self.root / f".{filename}.part"
+        tmp.write_bytes(data)
+        os.replace(tmp, self.root / filename)
+        self._add(new_id, kind, name, parent, file=filename, bytes=len(data), meta=meta or {})
+        return new_id
+
+    def replace_bytes(self, item_id: str, data: bytes, meta: dict | None = None) -> None:
+        """Overwrite a stored file in place (a note saved again under the same title)."""
+        e = self.entry(item_id)
+        tmp = self.root / f".{e['file']}.part"
+        tmp.write_bytes(data)
+        os.replace(tmp, self.root / e["file"])
+        e.update(bytes=len(data), updated=datetime.now().isoformat(timespec="seconds"))
+        if meta is not None:
+            e["meta"] = meta
+        self._save()
+
+    def path(self, item_id: str) -> Path:
+        """Where a stored file is, for the server that sends it to the UI (never shown to the model)."""
+        e = self.entry(item_id)
+        if "file" not in e:
+            raise ToolError(f"'{item_id}' is a {e['kind']}, not a stored file.", field="id")
+        return self.root / e["file"]
+
     def model(self, item_id: str):
         self._expect(item_id, "model")
         return joblib.load(self.root / f"{item_id}.joblib")
@@ -113,6 +142,9 @@ class Workspace:
     def _add(self, item_id: str, kind: str, name: str, parent: str | None, **fields) -> None:
         self._reg["items"][item_id] = {"kind": kind, "name": name, "parent": parent,
                                        "created": datetime.now().isoformat(timespec="seconds"), **fields}
+        self._save()
+
+    def _save(self) -> None:
         tmp = self._registry_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self._reg, indent=1, ensure_ascii=False), "utf-8")
         os.replace(tmp, self._registry_path)
