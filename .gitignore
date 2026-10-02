@@ -12,3 +12,7 @@ data/chat.sqlite*
 data/models/
 data/generated/
 data/staging/
+
+# benchmark data (public downloads) and results scratch
+bench/data/
+bench/work/
