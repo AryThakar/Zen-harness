@@ -6,6 +6,7 @@ POST /chat streams server-sent events while the assistant works:
     restart     {}                                 discard text streamed so far for this model turn
     tool_start  {"id", "name", "input"}            a tool is running
     tool_end    {"id", "name", "is_error", "summary", "artifact"}
+    stats       {"output_tokens", "prompt_tokens", "tokens_per_second", "seconds"}  after each model turn
     done        {"thread_id", "answer"}
     error       {"message"}
 """

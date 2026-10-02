@@ -113,6 +113,8 @@ def test_tool_specs_are_strict_json_schemas():
         assert spec["input_schema"]["type"] == "object"
         assert spec["input_schema"]["additionalProperties"] is False
         assert '"title": "' not in json.dumps(spec["input_schema"])  # no pydantic title annotations
+        # ...but a field named "title" stays: a required field the model can't see can never be sent
+        assert set(spec["input_schema"].get("required", [])) <= set(spec["input_schema"]["properties"])
 
 
 def test_tools_return_text_and_artifacts(db):
@@ -151,6 +153,14 @@ def test_tools_return_text_and_artifacts(db):
 def test_bad_tool_calls_become_error_results(db, name, raw, fragment):
     output = execute(ToolContext(db, "$"), name, raw)
     assert output.is_error and fragment in output.content
+
+
+def test_invalid_input_says_what_to_fix(db):
+    output = execute(ToolContext(db, "$"), "make_chart",
+                     {"chart_type": "line", "sql": "SELECT 1 AS a", "x": "a", "y": "a", "unit": "count"})
+    error = json.loads(output.content)["error"]
+    assert error.startswith("The make_chart call was not run: title: Field required.")
+    assert "required fields: chart_type, sql, x, y, unit, title" in error
 
 
 @pytest.fixture(scope="module")
@@ -359,6 +369,14 @@ def test_graph_runs_tools_and_remembers_the_conversation(db):
     list(graph.stream(new_question("And now?"), config, stream_mode="custom"))
     sent = provider.requests[-1]["messages"]
     assert [m["role"] for m in sent] == ["user", "assistant", "tool", "assistant", "user"]
+
+
+def test_graph_streams_turn_speed(db):
+    usage = {"output_tokens": 40, "prompt_tokens": 3500, "tokens_per_second": 13.2}
+    graph = build_graph(db, ScriptedProvider([ModelTurn(text="Hi.", usage=usage)]), InMemorySaver())
+    events = list(graph.stream(new_question("Hello"), {"configurable": {"thread_id": "s"}}, stream_mode="custom"))
+    stats = [e for e in events if e["type"] == "stats"]
+    assert len(stats) == 1 and stats[0]["output_tokens"] == 40 and stats[0]["seconds"] >= 0
 
 
 def test_graph_stops_tools_after_the_round_limit(db):

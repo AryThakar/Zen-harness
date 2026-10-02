@@ -18,7 +18,7 @@ import os
 
 import anthropic
 
-from .base import EventCallback, ModelTurn, ProviderError
+from .base import EventCallback, ModelTurn, ProviderError, answered_ids
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TOKENS = 64_000  # streaming, so no HTTP-timeout concern; thinking counts against it
@@ -113,7 +113,13 @@ def parse_message(message) -> ModelTurn:
         calls = []
     if stop == "refusal" and not text:
         text = "I can't help with that request."
-    return ModelTurn(text=text, tool_calls=calls, raw=content, stop=stop, model=message.model)
+    tokens = getattr(message, "usage", None)
+    usage = None
+    if tokens is not None:
+        prompt = sum(getattr(tokens, k, None) or 0 for k in
+                     ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        usage = {"output_tokens": tokens.output_tokens, "prompt_tokens": prompt, "tokens_per_second": None}
+    return ModelTurn(text=text, tool_calls=calls, raw=content, stop=stop, model=message.model, usage=usage)
 
 
 def to_anthropic_messages(messages: list[dict]) -> list[dict]:
@@ -125,7 +131,7 @@ def to_anthropic_messages(messages: list[dict]) -> list[dict]:
         if role == "user":
             out.append({"role": "user", "content": msg["content"]})
         elif role == "assistant":
-            answered = _answered_ids(messages, i)
+            answered = answered_ids(messages, i)
             blocks = _assistant_blocks(msg, answered)
             if any(b["type"] in ("text", "tool_use") for b in blocks):
                 out.append({"role": "assistant", "content": blocks})
@@ -162,15 +168,6 @@ def _assistant_blocks(msg: dict, answered: set[str]) -> list[dict]:
             continue  # a call that never ran (refused, truncated, round limit)
         blocks.append(block)
     return blocks
-
-
-def _answered_ids(messages: list[dict], index: int) -> set[str]:
-    ids = set()
-    for msg in messages[index + 1:]:
-        if msg["role"] != "tool":
-            break
-        ids.add(msg["tool_call_id"])
-    return ids
 
 
 def _last_fallback(content: list[dict]) -> int:

@@ -459,8 +459,12 @@ def execute(ctx: ToolContext, name: str, raw_input) -> ToolOutput:
     except (ValidationError, ValueError) as exc:
         problems = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()] \
             if isinstance(exc, ValidationError) else [str(exc)]
-        return ToolOutput(json.dumps({"INVALID_JSON": json.dumps(raw_input, default=str), "problems": problems}),
-                          is_error=True)
+        # Plain words first: smaller models otherwise resend the same call unchanged.
+        required = ", ".join(tool.input_model.model_json_schema().get("required", [])) or "none"
+        error = (f"The {name} call was not run: {'; '.join(problems)}. Fix this and call {name} again "
+                 f"(required fields: {required}).")
+        return ToolOutput(json.dumps({"error": error, "INVALID_JSON": json.dumps(raw_input, default=str),
+                                      "problems": problems}), is_error=True)
     try:
         return tool.handler(ctx, args)
     except (sql_guard.SqlRejected, NotEnoughData, analytics.InvalidQuery) as exc:
@@ -514,9 +518,12 @@ def _jsonable(value):
     return value
 
 
-def _strip_titles(schema):
+def _strip_titles(schema, property_names: bool = False):
+    """Drop pydantic's generated "title" labels - but not a property called "title"
+    (make_chart has one): inside "properties" the keys are field names."""
     if isinstance(schema, dict):
-        return {k: _strip_titles(v) for k, v in schema.items() if k != "title"}
+        return {k: _strip_titles(v, property_names=k == "properties") for k, v in schema.items()
+                if property_names or k != "title"}
     if isinstance(schema, list):
         return [_strip_titles(v) for v in schema]
     return schema

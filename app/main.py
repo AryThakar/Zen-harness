@@ -1,7 +1,8 @@
-"""FastAPI application.
+"""FastAPI application: the API and the chat page.
 
     uvicorn app.main:app --reload
-    open http://localhost:8000/docs
+    open http://localhost:8000        (chat)
+    open http://localhost:8000/docs   (API)
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import FileResponse
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.agent.graph import build_graph
@@ -25,6 +27,8 @@ from .api import chat, dashboard, data, documents, ml, uploads
 from .api.deps import get_cursor
 from .api.schemas import HealthOut
 from .api.staging import Staging
+
+WEB_PAGE = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 
 def create_app(
@@ -67,6 +71,11 @@ def create_app(
     app.include_router(ml.router)
     app.include_router(documents.router)
     app.include_router(chat.router)
+
+    @app.get("/", include_in_schema=False)
+    def chat_page() -> FileResponse:
+        """The single-page chat UI (web/index.html)."""
+        return FileResponse(WEB_PAGE, media_type="text/html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/health", response_model=HealthOut, tags=["system"])
     def health(cur=Depends(get_cursor)) -> HealthOut:

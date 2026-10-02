@@ -35,6 +35,12 @@ def test_health(client):
     assert client.get("/health").json() == {"status": "ok", "sales_rows": 0, "uploads": 0}
 
 
+def test_chat_page_is_served(client):
+    r = client.get("/")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "<title>Analyst</title>" in r.text and 'fetch("/chat"' in r.text
+
+
 def test_preview_suggests_a_mapping(client):
     r = preview(client, SAMPLES / "shopify_orders.csv")
     assert r.status_code == 200

@@ -33,6 +33,20 @@ class ModelTurn:
     raw: list | None = None
     stop: str = "end"  # end | tool_use | refusal | max_tokens
     model: str | None = None
+    # How the turn went, for the speed shown under each answer: output_tokens, and when
+    # the provider knows them prompt_tokens and tokens_per_second (generation only).
+    usage: dict | None = None
+
+
+def answered_ids(messages: list[dict], index: int) -> set[str]:
+    """Ids of the tool calls of the assistant turn at ``index`` that got a result.
+    Calls that never ran (refused, truncated, round limit) must not be replayed."""
+    ids = set()
+    for msg in messages[index + 1:]:
+        if msg["role"] != "tool":
+            break
+        ids.add(msg["tool_call_id"])
+    return ids
 
 
 class Provider(Protocol):

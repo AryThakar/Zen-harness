@@ -77,8 +77,18 @@ def _setup_help(status: dict) -> None:
     st.warning(status["message"])
     with theme.card("setup"):
         st.subheader("How to set up the assistant")
+        if status["provider"] == "llamacpp":
+            st.markdown(
+                "The assistant runs on a local model served by llama.cpp.\n"
+                "1. Start llama-server with your model, e.g.\n"
+                "   ```bash\n   llama-server -m Qwen3.5-9B-MTP-IQ4_XS.gguf -c 16384 --spec-type draft-mtp\n   ```\n"
+                "2. Wait until it says it is listening, then reload this page.\n"
+                "3. Another address? Set `BIZ_LLAMACPP_URL` (default `http://127.0.0.1:8080`) and restart the API."
+            )
+            return
         st.markdown(
-            "The assistant runs on Claude through the Anthropic API for now (a local model is planned).\n"
+            "The assistant runs on Claude through the Anthropic API, or on a local model "
+            "(`BIZ_LLM_PROVIDER=llamacpp`).\n"
             "1. Create an API key at console.anthropic.com.\n"
             "2. Start the API with the key in its environment:\n"
             "   ```bash\n   export ANTHROPIC_API_KEY=...\n   uvicorn app.main:app\n   ```\n"

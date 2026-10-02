@@ -40,4 +40,4 @@ class ScriptedProvider:
             for word in turn.text.split(" "):
                 on_event("text", word + " ")
         return ModelTurn(text=turn.text, tool_calls=list(turn.tool_calls) if allow_tools else [],
-                         raw=None, stop=turn.stop if allow_tools else "end", model=self.model)
+                         raw=None, stop=turn.stop if allow_tools else "end", model=self.model, usage=turn.usage)

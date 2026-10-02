@@ -13,12 +13,13 @@
   calls stay with their results.
 
 Progress is streamed with LangGraph's custom stream: events
-{"type": "text"|"restart"|"tool_start"|"tool_end", ...}.
+{"type": "text"|"restart"|"tool_start"|"tool_end"|"stats", ...}.
 """
 
 from __future__ import annotations
 
 import operator
+import time
 from typing import Annotated, TypedDict
 
 from langgraph.config import get_stream_writer
@@ -54,11 +55,14 @@ def build_graph(db: Database, provider: Provider, checkpointer=None, currency: s
             system = system_prompt(schema_card(cur), ctx.currency)
         finally:
             cur.close()
+        started = time.perf_counter()
         turn = provider.complete(
             system, recent(state["messages"]), TOOL_SPECS,
             allow_tools=state["rounds"] < MAX_TOOL_ROUNDS,
             on_event=lambda kind, text: writer({"type": kind, "text": text}),
         )
+        if turn.usage:  # speed of this turn, for the numbers under the answer
+            writer({"type": "stats", **turn.usage, "seconds": round(time.perf_counter() - started, 3)})
         message = {"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,
                    "provider": provider.name, "model": turn.model, "stop": turn.stop}
         return {"messages": [message]}

@@ -268,7 +268,7 @@ def anomaly_figure(series: list[dict], days: list[dict], metric: str) -> go.Figu
         fig.add_trace(go.Scatter(
             x=[d["day"] for d in days], y=[d[metric] for d in days], mode="markers+text",
             marker={"size": 10, "color": t["accent"], "line": {"width": 2, "color": t["surface"]}},
-            text=[date.fromisoformat(d["day"]).strftime("%-d %b") for d in days],
+            text=[f"{x.day} {x:%b}" for x in (date.fromisoformat(d["day"]) for d in days)],  # %-d fails on Windows
             textposition=["top center" if d["direction"] == "spike" else "bottom center" for d in days],
             textfont={"color": t["text2"], "size": 11}, cliponaxis=False, name="Unusual day",
             customdata=[[fmt(d[metric]), fmt(d[expected_key]), day(d["day"]), d["direction"]] for d in days],
