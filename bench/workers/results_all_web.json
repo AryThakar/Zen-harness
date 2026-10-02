@@ -1,0 +1,254 @@
+[
+ {
+  "id": "w_duckdb_license",
+  "role": "web",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('MIT',); sources ['https://duckdb.org/faq']",
+  "seconds": 11.3,
+  "model_calls": 3,
+  "tokens": 439,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "DuckDB license"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://duckdb.org/faq"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "DuckDB is fully open-source under the MIT license. The DuckDB Foundation's statutes ensure that DuckDB remains open-source under the MIT license in perpetuity.",
+  "sources": [
+   "https://duckdb.org/faq"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "w_statsforecast",
+  "role": "web",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('Nixtla',); sources ['https://github.com/Nixtla/statsforecast']",
+  "seconds": 10.7,
+  "model_calls": 3,
+  "tokens": 376,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "statsforecast Python library developer company"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://github.com/Nixtla/statsforecast"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The `statsforecast` Python library is developed by Nixtla.\n\nSource:\nhttps://github.com/Nixtla/statsforecast",
+  "sources": [
+   "https://github.com/Nixtla/statsforecast"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "w_llama_port",
+  "role": "web",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('8080',); sources ['https://llama.app/docs/serve']",
+  "seconds": 14.4,
+  "model_calls": 3,
+  "tokens": 713,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "llama.cpp llama-server default port"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://llama.app/docs/serve"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "llama.cpp's `llama-server` listens on the default port **8080**.\n\nThis is specified in the documentation:\n*   \"By default the server listens on http://127.0.0.1:8080.\"\n*   The command-line flag `--port` (or `--host, --port`) specifies the bind address and port, with the default being `127.0.0.1:8080`.\n\nSource:\n*   https://llama.app/docs/serve",
+  "sources": [
+   "https://llama.app/docs/serve"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "w_parquet",
+  "role": "web",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('pyarrow', 'fastparquet'); sources ['https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_parquet.html']",
+  "seconds": 11.9,
+  "model_calls": 3,
+  "tokens": 571,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "pandas.read_parquet supported engines"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_parquet.html"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The `pandas.read_parquet` function can use the following engines:\n\n*   **'auto'**: This is the default setting. If 'auto' is used, pandas attempts to use 'pyarrow' first, and if 'pyarrow' is unavailable, it falls back to 'fastparquet'.\n*   **'pyarrow'**: Uses the PyArrow engine.\n*   **'fastparquet'**: Uses the FastParquet engine.\n\nSource: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_parquet.html",
+  "sources": [
+   "https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_parquet.html"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "h_pypi",
+  "role": "web",
+  "split": "holdout",
+  "passed": true,
+  "detail": "expects ('Python Software Foundation',); sources ['https://en.wikipedia.org/wiki/Python_Package_Index']",
+  "seconds": 8.6,
+  "model_calls": 3,
+  "tokens": 347,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "who runs PyPI"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://en.wikipedia.org/wiki/Python_Package_Index"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The Python Package Index (PyPI) is run by the Python Software Foundation.\n\nSource:\n- https://en.wikipedia.org/wiki/Python_Package_Index",
+  "sources": [
+   "https://en.wikipedia.org/wiki/Python_Package_Index"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "h_duckdb_lang",
+  "role": "web",
+  "split": "holdout",
+  "passed": true,
+  "detail": "expects ('C++',); sources ['https://duckdb.org/docs/current/dev/building/overview']",
+  "seconds": 33.4,
+  "model_calls": 5,
+  "tokens": 1029,
+  "tools": [
+   "web_search",
+   "read_webpage",
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "DuckDB programming language"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://duckdb.org/"
+    }
+   },
+   {
+    "name": "web_search",
+    "input": {
+     "query": "DuckDB source code language"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://duckdb.org/docs/current/dev/building/overview"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "Based on the documentation for building DuckDB from source, the core language used for DuckDB is C++.\n\nThe documentation states that building DuckDB requires \"a C++11-compliant compiler (e.g., GCC, Apple-Clang, MSVC)\" and notes that \"DuckDB v2.0 will require C++17.\"\n\nSource:\n* https://duckdb.org/docs/current/dev/building/overview",
+  "sources": [
+   "https://duckdb.org/docs/current/dev/building/overview"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "h_hgb",
+  "role": "web",
+  "split": "holdout",
+  "passed": true,
+  "detail": "expects ('HistGradientBoostingClassifier',); sources ['https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html']",
+  "seconds": 14.4,
+  "model_calls": 3,
+  "tokens": 483,
+  "tools": [
+   "web_search",
+   "read_webpage"
+  ],
+  "calls": [
+   {
+    "name": "web_search",
+    "input": {
+     "query": "scikit-learn histogram-based gradient boosting for classification"
+    }
+   },
+   {
+    "name": "read_webpage",
+    "input": {
+     "url": "https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The class in scikit-learn that implements histogram-based gradient boosting for classification is `sklearn.ensemble.HistGradientBoostingClassifier`. This estimator is described as a \"Histogram-based Gradient Boosting Classification Tree\" and is noted for being much faster than `GradientBoostingClassifier` for large datasets (n_samples >= 10 000).",
+  "sources": [
+   "https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html"
+  ],
+  "question_for_user": null
+ }
+]

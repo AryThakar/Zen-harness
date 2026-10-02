@@ -147,3 +147,11 @@ def test_forecast_counts_rows_and_checks_inputs(ws):
     short = ws.add_table(monthly_sales(1), "short")
     r = forecast(ws, short, "day", "amount", time_unit="month")
     assert r.status == "failed" and "at least 10" in r.result["error"]["message"]
+
+
+def test_flag_columns_made_from_the_target_are_never_inputs(ws):
+    from app.tools.clean_data import clean_data
+    data = ws.add_table(customers(), "customers")
+    flagged = clean_data(ws, data, [{"op": "flag_outliers", "columns": ["spend"]}]).result["data"]
+    r = train_model(ws, flagged, "spend")
+    assert {"column": "spend_outlier", "reason": "made from the target (a leak)"} in r.result["excluded_columns"]

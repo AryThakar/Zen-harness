@@ -52,7 +52,8 @@ def forecast(ws: Workspace, data: str, date: str, value: str | None = None, hori
         raise ToolError("No rows have both a date and a value.", invalid=False)
     freq = _auto_freq(frame[date]) if time_unit == "auto" else CODE[time_unit]
     y, notes = _series(frame, date, value, agg, freq)
-    return _forecast(y, freq, horizon, agg, data, value or "rows", notes)
+    warning = ws.issues_warning(data)
+    return _forecast(y, freq, horizon, agg, data, value or "rows", notes + ([warning] if warning else []))
 
 
 def _auto_freq(dates: pd.Series) -> str:
@@ -78,7 +79,7 @@ def _series(frame, date, value, agg, freq) -> tuple[pd.Series, list[str]]:
     notes = []
     if agg in ("sum", "count"):
         y = y.fillna(0.0)  # a period without rows had nothing
-        y, notes = drop_partial_edges(y, frame[date].min(), frame[date].max(), freq)
+        y, notes = drop_partial_edges(y, frame[date], freq)
     elif y.isna().mean() > 0.2:
         raise ToolError(f"{y.isna().mean():.0%} of the {WORD[freq]}s have no value; too many gaps to forecast.",
                         invalid=False)

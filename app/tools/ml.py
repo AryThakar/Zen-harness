@@ -54,6 +54,9 @@ def _choose_features(df: pd.DataFrame, target: str, time_col: str | None, wanted
         present = s.dropna()
         if c == target:
             continue
+        if c == f"{target}_outlier":  # made from the target by clean_data's flag_outliers
+            excluded.append({"column": c, "reason": "made from the target (a leak)"})
+            continue
         if present.empty:
             reason = "no values"
         elif present.nunique() == 1:
@@ -215,7 +218,9 @@ def train_model(ws: Workspace, data: str, target: str, features: list[str] | Non
     bundle = {"model": full, "spec": spec, "target": target, "classify": classify, "binary": binary,
               "positive": positive}
     model_id = ws.add_model(bundle, name=f"{target} model", parent=data, meta=meta)
+    warning = ws.issues_warning(data)
     result = {"model": model_id, "data": data, "target": target, "task": meta["task"], "rows": len(frame),
+              **({"data_warning": warning} if warning else {}),
               "tested_on": tested_on, "model_type": chosen, "metric": metric, "score": number(score),
               "baseline": number(base), **extra, "scores_by_model": meta["scores_by_model"],
               "better_than_baseline": better, "verdict": verdict,

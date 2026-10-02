@@ -43,6 +43,9 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
         if res.total_rows > shown:
             result["note"] = (f"Showing {shown} of {res.total_rows:,} rows"
                               + ("." if save else "; aggregate or add a LIMIT for fewer."))
+        warnings = [w for w in (ws.issues_warning(t) for t in used) if w]
+        if warnings:
+            result["data_warning"] = " ".join(warnings)
         if save:
             full = con.execute(res.sql).df()
             new_id = ws.add_table(full, name="query result", parent=used[0] if used else None,

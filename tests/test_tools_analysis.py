@@ -148,14 +148,26 @@ def test_partial_edge_periods_need_90_percent_of_their_days():
     from app.tools.periods import drop_partial_edges
     weeks = pd.Series(1.0, index=pd.date_range("2014-12-29", periods=5, freq="W-MON"))
     # data from Thursday 1 Jan to Thursday 29 Jan: first and last weeks cover 4/7 and 4/7 days
-    y, notes = drop_partial_edges(weeks, pd.Timestamp("2015-01-01"), pd.Timestamp("2015-01-29"), "W")
+    days = pd.Series(pd.date_range("2015-01-01", "2015-01-29", freq="D"))
+    y, notes = drop_partial_edges(weeks, days, "W")
     assert len(y) == 3 and len(notes) == 2
     months = pd.Series(1.0, index=pd.date_range("2025-01-01", periods=3, freq="MS"))
     # starting on 2 January (97% of the month) is not partial; ending on 20 March is
-    y, notes = drop_partial_edges(months, pd.Timestamp("2025-01-02"), pd.Timestamp("2025-03-20"), "M")
+    y, notes = drop_partial_edges(months, pd.Series(pd.date_range("2025-01-02", "2025-03-20", freq="D")), "M")
     assert list(y.index.month) == [1, 2] and "last month" in notes[0]
+    # monthly data dated the 1st: every row is a whole month, nothing is partial
+    y, notes = drop_partial_edges(months, pd.Series(pd.date_range("2025-01-01", periods=3, freq="MS")), "M")
+    assert len(y) == 3 and notes == []
 
 
 def test_tiny_p_values_are_quoted_as_a_bound(ws, sales):
     r = stats_test(ws, sales, "correlation", ["units", "amount"])
     assert r.result["p_text"] == "p < 0.0001"
+
+
+def test_line_chart_reads_month_labels_as_dates(ws):
+    monthly = ws.add_table(pd.DataFrame({"month": [f"2015-{m:02d}" for m in range(1, 13)], "revenue": range(12)}), "m")
+    r = make_chart(ws, monthly, "line", x="month", y="revenue", time_unit="month")
+    assert r.status == "ok" and r.result["points"] == 12 and r.artifact["x"][0] == "2015-01-01"
+    r = make_chart(ws, ws.add_table(pd.DataFrame({"k": ["a", "b"], "v": [1, 2]}), "t"), "line", x="k", y="v")
+    assert r.status == "invalid_arguments" and "date column" in r.result["error"]["message"]

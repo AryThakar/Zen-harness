@@ -27,12 +27,18 @@ def full_range(index: pd.Index, freq: str) -> pd.DatetimeIndex:
 COVERED = 0.9  # a period with data on less than 90% of its days is partial (a month from the 2nd is not)
 
 
-def drop_partial_edges(y: pd.Series, first: pd.Timestamp, last: pd.Timestamp, freq: str) -> tuple[pd.Series, list[str]]:
-    """Leave out a first / last period that the data (first..last date) covers only partly."""
+def drop_partial_edges(y: pd.Series, dates: pd.Series, freq: str) -> tuple[pd.Series, list[str]]:
+    """Leave out a first / last period that the data's dates cover only partly - unless each row
+    already stands for a whole period or more (monthly data dated the 1st, charted by month)."""
     notes = []
     if freq == "D" or len(y) <= 2:
         return y, notes
     step = pd.tseries.frequencies.to_offset(OFFSET[freq])
+    distinct = pd.Series(dates.dropna().dt.normalize().unique()).sort_values()
+    period_days = ((pd.Timestamp(y.index[0]) + step) - pd.Timestamp(y.index[0])).days
+    if len(distinct) > 1 and distinct.diff().dt.days.median() >= COVERED * period_days:
+        return y, notes
+    first, last = distinct.iloc[0], distinct.iloc[-1]
 
     def days(start: pd.Timestamp) -> int:
         return ((start + step) - start).days

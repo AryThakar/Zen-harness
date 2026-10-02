@@ -43,6 +43,8 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
     else:
         missing_note = None
     sample = df.head(SAMPLE_ROWS).astype(object).where(df.head(SAMPLE_ROWS).notna(), None).to_dict("records")
+    # Remembered on the table, so tools working on it can warn until a cleaned copy is used.
+    ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions])
     result = {"data": data, "name": ws.entry(data)["name"], "rows": len(df), "columns": columns,
               "duplicate_rows": duplicates, "sample_rows": sample, "suggested_steps": steps, "questions": questions}
     if missing_note:
@@ -74,10 +76,9 @@ def _column(name: str, s: pd.Series, note: dict, rows: int) -> tuple[dict, list[
             p["unit"] = note["unit"]
         far = _far_outliers(x)
         if far:
+            # Reported, not suggested: a flag column is noise for most questions (and a leak when the
+            # column is later the thing to predict). clean_data can flag or remove them on request.
             p["far_outliers"] = far
-            steps.append({"op": "flag_outliers", "columns": [name],
-                          "why": f"{_n(far, 'value')} far outside the usual range of {name} (3 x IQR); "
-                                 "flagging marks them without removing anything"})
     elif kind == "date":
         p.update(first=present.min(), last=present.max())
     elif kind == "text":

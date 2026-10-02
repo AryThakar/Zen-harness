@@ -6,7 +6,9 @@ and scikit-learn are there) inside the workspace's sandbox folder, with:
 - a minimal environment: no API keys or other secrets from the app's environment; TEMP, TMP and
   HOME point into the sandbox; matplotlib draws off-screen and open figures are saved as images
 - output cut to 10,000 characters (start and end kept)
-- table("data_1") to read a workspace table (a copy - the original can't be changed)
+- table("data_1") to read a workspace table (a copy - the original can't be changed) and path("file_1")
+  for where a stored file is; open("file_1") and open("story.txt") (a stored file's original name)
+  work too, because small models write that
 Files the script writes are registered: .csv / .parquet become workspace tables, images become
 images, anything else a file.
 
@@ -51,6 +53,34 @@ def table(item_id):
     if items.get(item_id, {{}}).get("kind") != "table":
         raise KeyError(f"No table {{item_id!r}}. Tables: {{', '.join(i for i, e in items.items() if e['kind'] == 'table')}}")
     return _pd.read_parquet(_os.path.join(_WS, item_id + ".parquet"))
+
+def path(item_id):
+    """Where a stored file, note or image is (e.g. open(path("file_1"))). Read it; write new files here instead."""
+    with open(_os.path.join(_WS, "registry.json"), encoding="utf-8") as f:
+        items = _json.load(f)["items"]
+    if "file" not in items.get(item_id, {{}}):
+        raise KeyError(f"No stored file {{item_id!r}}. Files: {{', '.join(i for i, e in items.items() if 'file' in e)}}")
+    return _os.path.join(_WS, items[item_id]["file"])
+
+import builtins as _builtins
+_open = _builtins.open
+
+def _resolve(name):
+    """'file_1' or a stored file's original name -> its path, when no such local file exists."""
+    if not isinstance(name, str) or _os.path.exists(name):
+        return name
+    with _open(_os.path.join(_WS, "registry.json"), encoding="utf-8") as f:
+        items = _json.load(f)["items"]
+    if "file" in items.get(name, {{}}):
+        return _os.path.join(_WS, items[name]["file"])
+    for e in items.values():
+        if e.get("name") == _os.path.basename(name) and "file" in e:
+            return _os.path.join(_WS, e["file"])
+    return name
+
+def _open_resolving(file, *args, **kwargs):
+    return _open(_resolve(file), *args, **kwargs)
+_builtins.open = _open_resolving
 
 def _save_figures():
     import sys as _sys

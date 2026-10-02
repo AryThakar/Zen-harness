@@ -18,6 +18,7 @@ import pandas as pd
 
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import CODE, bucket, drop_partial_edges, full_range
+from .values import parse_dates
 from .workspace import Workspace, resolve_column
 
 ChartType = Literal["line", "bar", "scatter", "histogram"]
@@ -53,7 +54,9 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str, y: str | None 
                       else f"distribution of {x}")
     artifact = {"type": "chart", "chart": type, "title": title, "x_label": x, "y_label": y_label,
                 **({"unit": unit} if unit else {}), **chart}
-    return ok({"chart": type, "data": data, "title": title, **summary}, artifact)
+    warning = ws.issues_warning(data)
+    return ok({"chart": type, "data": data, "title": title, **summary, **({"data_warning": warning} if warning else {})},
+              artifact)
 
 
 def _need_number(df: pd.DataFrame, c: str, field: str) -> pd.Series:
@@ -71,6 +74,11 @@ def _combine(groups, y: str | None, agg: str) -> pd.Series:
 
 def _line(df, x, y, agg, time_unit):
     frame = df.dropna(subset=[x])
+    if not pd.api.types.is_datetime64_any_dtype(frame[x]) and not pd.api.types.is_numeric_dtype(frame[x]):
+        # Periods written as text ('2015-01', 'Jan 2015', '2015-03-01') are dates too.
+        dates, bad, _ = parse_dates(frame[x].astype(str))
+        if len(frame) and bad.mean() <= 0.05:
+            frame = frame.assign(**{x: dates}).dropna(subset=[x])
     if pd.api.types.is_datetime64_any_dtype(frame[x]):
         unit = _auto_unit(frame[x]) if time_unit == "auto" else time_unit
         freq = CODE[unit]
@@ -79,14 +87,15 @@ def _line(df, x, y, agg, time_unit):
         notes = []
         if agg in ("sum", "count"):
             values = values.fillna(0.0)  # no rows in a period = nothing happened
-            values, notes = drop_partial_edges(values, frame[x].min(), frame[x].max(), freq)
+            values, notes = drop_partial_edges(values, frame[x], freq)
         labels = [d.strftime("%Y-%m-%d") for d in values.index]
         note = f"by {unit}"
     elif pd.api.types.is_numeric_dtype(frame[x]) and not pd.api.types.is_bool_dtype(frame[x]):
         values = _combine(frame.groupby(x), y, agg).sort_index()
         labels, note = [number(float(v)) for v in values.index], "by value"
     else:
-        raise ToolError(f"A line chart needs dates or numbers on x; '{x}' is text (use a bar chart).", field="x")
+        raise ToolError(f"A line chart needs dates or numbers on x; '{x}' is text. For values over time, give the "
+                        "table's date column as x and a time_unit: the chart groups by period itself.", field="x")
     if values.empty:
         raise ToolError("No rows to draw.", invalid=False)
     v = values.dropna()

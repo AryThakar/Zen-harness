@@ -11,7 +11,9 @@ import time
 
 import httpx
 
-USER_AGENT = "Mozilla/5.0 (compatible; ai-assistant-tools/1.0; personal research assistant)"
+# An honest name with the project's address as the contact: Wikipedia (and its API) refuses
+# automated readers without one, also when they claim to be a browser.
+USER_AGENT = "Mozilla/5.0 (compatible; ai-assistant-tools/1.0; +https://github.com/AryThakar/claude-cloud)"
 RETRY_STATUS = {408, 429, 500, 502, 503, 504}
 MAX_RETRY_WAIT = 10.0
 

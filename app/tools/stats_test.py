@@ -56,6 +56,9 @@ def stats_test(ws: Workspace, data: str, question: Literal["difference", "correl
         verdict = f"is larger than chance would explain ({size} effect)"
     res["verdict"] = f"The {question} {verdict}."
     res = {"question": question, "data": data, **res, "p_value": _p(p), "p_text": _p_text(p), "alpha": alpha}
+    warning = ws.issues_warning(data)
+    if warning:
+        res["data_warning"] = warning
     return ok(res, {"type": "table", "title": f"{res['test']}: {a} and {b}",
                     "columns": list(res.get("groups", [{}])[0].keys()) if res.get("groups") else ["result"],
                     "rows": [list(g.values()) for g in res.get("groups", [])] or [[res["verdict"]]]})

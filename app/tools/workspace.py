@@ -122,6 +122,45 @@ class Workspace:
     def column_notes(self, item_id: str) -> dict[str, dict]:
         return self.entry(item_id).get("meta", {}).get("columns", {})
 
+    def set_meta(self, item_id: str, key: str, value) -> None:
+        self.entry(item_id).setdefault("meta", {})[key] = value
+        self._save()
+
+    def issues_warning(self, item_id: str) -> str | None:
+        """For results computed on a table that inspect_data found problems in (summary rows, numbers
+        stored as text, duplicates ...): say so, so the numbers aren't trusted as they are."""
+        issues = self.entry(item_id).get("meta", {}).get("issues") or []
+        if not issues:
+            return None
+        return (f"{item_id} has problems inspect_data found ({'; '.join(issues[:3])}). Clean it with "
+                "clean_data and the suggested steps, then use the cleaned table.")
+
+    def listing(self, limit: int = 30) -> str:
+        """What the workspace holds, for the model's prompt every turn: ids, names and sizes, newest
+        last (content is never listed - tools read it)."""
+        items = list(self._reg["items"].items())
+        if not items:
+            return "Workspace: empty (no files attached yet)."
+        lines = []
+        for item_id, e in items[-limit:]:
+            meta = e.get("meta", {})
+            if e["kind"] == "table":
+                cols = e.get("columns", [])
+                shown = ", ".join(cols[:8]) + (" ..." if len(cols) > 8 else "")
+                info = f"{e['rows']:,} rows, {len(cols)} columns ({shown})"
+            elif e["kind"] == "model":
+                info = f"predicts {meta.get('target')} ({meta.get('metric')} {meta.get('score')})"
+            elif e["kind"] == "note":
+                info = "pinned note" if meta.get("pinned") else "note"
+            elif e["kind"] == "image":
+                info = f"image {meta.get('width')}x{meta.get('height')}"
+            else:
+                info = f"{meta['pages']} pages" if meta.get("pages") else f"{e.get('bytes', 0):,} bytes"
+            origin = f", from {e['parent']}" if e.get("parent") else ""
+            lines.append(f"{item_id}  {e['name']} - {info}{origin}")
+        more = f"\n({len(items) - limit} older items not shown)" if len(items) > limit else ""
+        return "Workspace:\n" + "\n".join(lines) + more
+
     def describe(self, item_id: str) -> str:
         e = self.entry(item_id)
         size = f", {e['rows']:,} rows" if "rows" in e else ""
