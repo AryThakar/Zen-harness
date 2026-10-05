@@ -33,6 +33,7 @@ class Task:
     task: str
     setup: Callable  # (ws, index, truth: dict) -> None
     check: Callable  # (run) -> (passed, detail)
+    file: str | None = None  # a stored file to work on (the coder's write_code file=...)
 
 
 @dataclass
@@ -150,12 +151,71 @@ DATA_TASKS = [
     Task("h_weekday", "data", "holdout", "Which day of the week has the most orders (distinct order ids)?", _pizza,
          lambda r: verdict(says(r.out.get("answer"), r.truth["weekday"]) and clean(r), f"truth {r.truth['weekday']}")),
     Task("h_corr", "data", "holdout", "Across states, is the poverty rate related to the murder rate? Test it properly.", _crime,
-         lambda r: verdict(called(r, "stats_test") and has_number(r.out.get("answer"), r.truth["rho"], 0.006) and clean(r),
+         lambda r: verdict(called(r, "compare") and has_number(r.out.get("answer"), r.truth["rho"], 0.006) and clean(r),
                            f"truth rho {r.truth['rho']:.3f}")),
     Task("h_forecast", "data", "holdout", "Forecast real GDP for the next 4 quarters.", _macro,
          lambda r: verdict(called(r, "forecast") and any(a.get("chart") == "forecast" for a in r.artifacts) and clean(r),
                            "forecast made from year + quarter columns")),
     Task("h_ambiguous", "data", "holdout", "What were the total sales in February 2025?", _ambiguous, _ambiguous_check),
+]
+
+
+# ---------------------------------------------------------------- harder data tasks (step 8: the guide)
+# Each needs a method an expert knows and a small model often gets wrong; the guide has a section on
+# each (on other data). Run with and without the guide: python -m bench.workers.run guide [--no-guide].
+
+def _pizza_hard(ws, index, truth):
+    import itertools
+    df = pd.read_csv(DATA / "pizza_sales.csv")
+    ws.add_file(DATA / "pizza_sales.csv")
+    df["rev"] = df.quantity * df.price
+    top = df.groupby(["category", "name"]).rev.sum().sort_values(ascending=False).groupby("category").head(2)
+    truth["top2"] = [n.replace("The ", "").replace(" Pizza", "") for _, n in top.index]
+    monthly = df.assign(m=pd.to_datetime(df.date).dt.month_name()).groupby("m", sort=False).rev.sum()
+    change = monthly.pct_change() * 100
+    truth["drop_month"], truth["drop_pct"] = change.idxmin(), change.min()
+    pairs = Counter()
+    for _, names in df.groupby("order_id").name:
+        pairs.update(itertools.combinations(sorted(set(names)), 2))
+    (truth["pair"], truth["pair_orders"]), = pairs.most_common(1)
+    truth["l_share_by_cat"] = (df[df["size"] == "L"].groupby("category").rev.sum()
+                               / df.groupby("category").rev.sum() * 100).to_dict()
+    s = df.groupby("name").rev.sum().sort_values(ascending=False)
+    truth["pareto"] = int(((s.cumsum() - s) / s.sum() < 0.8).sum())  # types needed to reach 80%
+    truth["median_order"] = df.groupby("order_id").rev.sum().median()
+
+
+def _short(name: str) -> str:
+    return name.replace("The ", "").replace(" Pizza", "")
+
+
+GUIDE_TASKS = [
+    Task("g_top2", "data", "guide", "What are the two best-selling pizzas by revenue in each category?", _pizza_hard,
+         lambda r: verdict(all(says(r.out.get("answer"), n) for n in r.truth["top2"]) and clean(r),
+                           f"truth {r.truth['top2']}")),
+    Task("g_drop", "data", "guide", "Which month had the largest month-on-month percent drop in revenue, and how big "
+         "was it?", _pizza_hard,
+         lambda r: verdict((says(r.out.get("answer"), r.truth["drop_month"]) or says(r.out.get("answer"), "2015-12"))
+                           and any(has_number(r.out.get("answer"), v, 0.06) for v in (r.truth["drop_pct"], -r.truth["drop_pct"]))
+                           and clean(r),
+                           f"truth {r.truth['drop_month']} {r.truth['drop_pct']:.2f}%")),
+    Task("g_pair", "data", "guide", "Which two pizzas (by name) are most often ordered together in the same order, "
+         "and in how many orders?", _pizza_hard,
+         lambda r: verdict(all(says(r.out.get("answer"), _short(n)) for n in r.truth["pair"])
+                           and has_number(r.out.get("answer"), r.truth["pair_orders"], 0.5) and clean(r),
+                           f"truth {r.truth['pair']} in {r.truth['pair_orders']} orders")),
+    Task("g_large_share", "data", "guide", "Within each category, what share of that category's revenue comes from "
+         "large (L) pizzas?", _pizza_hard,
+         lambda r: verdict(all(has_number(r.out.get("answer"), v, 0.06) or has_number(r.out.get("answer"), v / 100, 0.0006)
+                               for v in r.truth["l_share_by_cat"].values()) and clean(r),
+                           "truth " + ", ".join(f"{k} {v:.2f}%" for k, v in r.truth["l_share_by_cat"].items()))),
+    Task("g_pareto", "data", "guide", "How many pizza types (names), taken from the biggest down, make up 80% of "
+         "revenue?", _pizza_hard,
+         lambda r: verdict(has_number(r.out.get("answer"), r.truth["pareto"], 0.5) and clean(r),
+                           f"truth {r.truth['pareto']} of 32")),
+    Task("g_median_order", "data", "guide", "What is the median order value (an order can hold several pizzas)?",
+         _pizza_hard, lambda r: verdict(has_number(r.out.get("answer"), r.truth["median_order"], 0.006) and clean(r),
+                                        f"truth {r.truth['median_order']} (the median line is 16.5)")),
 ]
 
 
@@ -272,14 +332,28 @@ def _coder_files(ws, index, truth):
     csv = "name,age,city\nAsha,31,Pune\nBen,45,Leeds\nChen,28,Shanghai\nDara,52,Dublin\n"
     ws.add_bytes("file", csv.encode(), "csv", name="people.csv")
     ws.add_bytes("file", EMAILS.encode(), "txt", name="contacts.txt")
+    ws.add_bytes("file", b"nums = [3, 8, 1, 9, 4]\nprint(sum(nums) / len(nums))\n", "py", name="stats.py")
     counts = Counter(TEXT.split())
     truth["top_word"], truth["top_count"] = counts.most_common(1)[0]
 
 
 def _ran(r: Run, *expected: str):
-    text = " ".join(r.out.get(k) or "" for k in ("answer", "code", "output"))
-    ok = all(e.lower() in text.lower() for e in expected) and called(r, "run_python") and clean(r)
-    return verdict(ok, f"expects {expected}")
+    """The coder ran its code and saved the file - or, over the user's own file, asked them first - and
+    the report's facts (written by the app) show the output."""
+    card = (r.out.get("approval_card") or {}).get("approval") or {}
+    report = r.out.get("report") or card.get("report") or ""
+    ok = (all(e.lower() in report.lower() for e in expected) and (called(r, "run_code") or called(r, "fix_code"))
+          and bool(r.out.get("file") or card) and "- Last run: passed" in report and clean(r))
+    return verdict(ok, f"saved (or asking to) with a report showing {expected}")
+
+
+def _edited(r: Run):
+    """A change to the user's own file: saving it waits for their approval, with the new report."""
+    card = (r.out.get("approval_card") or {}).get("approval") or {}
+    report = card.get("report") or ""
+    ok = (card.get("action") == "replace_file" and card.get("name") == "stats.py" and "5.0" in report
+          and "9" in report.split("It printed:")[-1] and called(r, "fix_code") and clean(r))
+    return verdict(ok, "stats.py changed in place, asking the user, report prints 5.0 and 9")
 
 
 CODER_TASKS = [
@@ -299,6 +373,61 @@ CODER_TASKS = [
          _coder_files, lambda r: _ran(r, "380")),
     Task("h_emails", "coder", "holdout", "Extract the distinct email addresses from file_4 (ignore case) and print them sorted.",
          _coder_files, lambda r: _ran(r, "anna@example.com", "bob.smith@mail.example.org", "x@test.io")),
+    Task("c_edit", "coder", "dev", "Change the script so it also prints the largest number, after the mean.",
+         _coder_files, _edited, file="stats.py"),
 ]
 
-TASKS = DATA_TASKS + KNOWLEDGE_TASKS + WEB_TASKS + CODER_TASKS
+# Fresh hard tasks on other data, written before the guide was revised after the GUIDE_TASKS runs and
+# never tuned on: the clean measure of whether the guide helps (python -m bench.workers.run fresh).
+
+def _cdnow(ws, index, truth):
+    c = pd.read_csv(DATA / "cdnow.csv", parse_dates=["date"])
+    ws.add_file(DATA / "cdnow.csv")
+    truth["repeat_pct"] = (c.groupby("customer_id").date.nunique() >= 2).mean() * 100
+    last = c.date.max()
+    truth["recent"] = [c[c.date > last - pd.Timedelta(days=w)].customer_id.nunique() for w in (89, 90, 91)]
+    first = c.groupby("customer_id").date.min()
+    jan = first[(first >= "1997-01-01") & (first < "1997-02-01")].index
+    truth["jan_again_pct"] = (c[c.customer_id.isin(jan) & (c.date >= "1997-02-01")].customer_id.nunique()
+                              / len(jan) * 100)
+    truth["median_customer"] = c.groupby("customer_id").amount.sum().median()
+
+
+def _coffee(ws, index, truth):
+    k = pd.read_excel(DATA / "coffee_shop_sales.xlsx")
+    ws.add_file(DATA / "coffee_shop_sales.xlsx")
+    k["rev"] = k.transaction_qty * k.unit_price
+    m = k.assign(m=k.transaction_date.dt.month).groupby(["store_location", "m"]).rev.sum().unstack()
+    growth = (m[6] / m[1] - 1) * 100
+    truth["growth_store"], truth["growth_pct"] = growth.idxmax(), growth.max()
+    top = k.groupby(["store_location", "product_type"]).rev.sum().sort_values(ascending=False).groupby(
+        "store_location").head(3)
+    truth["top3"] = [float(v) for v in top.values]
+
+
+FRESH_TASKS = [
+    Task("f_repeat", "data", "fresh", "What share of customers came back and bought again on a later day?", _cdnow,
+         lambda r: verdict(has_number(r.out.get("answer"), r.truth["repeat_pct"], 0.06) and clean(r),
+                           f"truth {r.truth['repeat_pct']:.2f}% (distinct purchase days, not rows)")),
+    Task("f_recent", "data", "fresh", "How many customers made a purchase in the last 90 days covered by the data?",
+         _cdnow, lambda r: verdict(any(has_number(r.out.get("answer"), v, 0.5) for v in r.truth["recent"]) and clean(r),
+                                   f"truth {r.truth['recent']} (90 days back from the data's last date, not today)")),
+    Task("f_cohort", "data", "fresh", "Of the customers whose first purchase was in January 1997, what share bought "
+         "again in a later month?", _cdnow,
+         lambda r: verdict(has_number(r.out.get("answer"), r.truth["jan_again_pct"], 0.06) and clean(r),
+                           f"truth {r.truth['jan_again_pct']:.2f}%")),
+    Task("f_median_customer", "data", "fresh", "What is the median total amount a customer spent?", _cdnow,
+         lambda r: verdict(has_number(r.out.get("answer"), r.truth["median_customer"], 0.006) and clean(r),
+                           f"truth {r.truth['median_customer']:.3f} (the median row is 25.98)")),
+    Task("f_store_growth", "data", "fresh", "Which store's revenue grew the most from January to June 2023, in "
+         "percent?", _coffee,
+         lambda r: verdict(says(r.out.get("answer"), r.truth["growth_store"])
+                           and has_number(r.out.get("answer"), r.truth["growth_pct"], 0.06) and clean(r),
+                           f"truth {r.truth['growth_store']} {r.truth['growth_pct']:.2f}%")),
+    Task("f_top3_store", "data", "fresh", "What are the top 3 product types by revenue in each store, with their "
+         "revenue?", _coffee,
+         lambda r: verdict(all(has_number(r.out.get("answer"), v, 0.5) for v in r.truth["top3"]) and clean(r),
+                           f"truth {r.truth['top3']}")),
+]
+
+TASKS = DATA_TASKS + KNOWLEDGE_TASKS + WEB_TASKS + CODER_TASKS + GUIDE_TASKS + FRESH_TASKS

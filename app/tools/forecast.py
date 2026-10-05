@@ -1,16 +1,25 @@
-"""forecast: the next periods of a value over time, with a range and an honest reliability check.
+"""forecast: the next periods of a value over time, with its trend and seasonal pattern, a range and an
+honest reliability check.
 
 1. The table becomes a series: rows grouped by period (day / week / month / quarter / year) and
    combined (sum, mean, last value, or a row count). Partial first and last periods are left out
-   for sums and counts (a month 10 days old is not a 'drop').
-2. Exponential smoothing (ETS) and Theta are backtested against a seasonal naive baseline (same
-   period last season) on past windows; a model is used only if it beat the baseline.
-3. The 80% range is the 80% quantile of the chosen model's own backtest errors (split conformal).
-4. Reliability follows the backtest error itself: beating a baseline that missed by 200% does not
+   for sums and counts (a month 10 days old is not a 'drop'). With by, one series per group (the
+   largest MAX_GROUPS).
+2. Trend: is it really rising or falling? Mann-Kendall on the series (seasonal pattern removed,
+   corrected for autocorrelation, on a log scale when it grows in proportion) combined with a sign
+   test on the period-to-period changes; the slope is Theil-Sen's with its 95% range.
+3. Seasonality: how much of the variation the season explains once the trend is out (0 = none,
+   1 = all of it), with the season's high and low (December, Monday ...).
+4. Exponential smoothing (ETS) and Theta are backtested against a seasonal naive baseline (same
+   period last season) on past windows; a model is used only if it beat the baseline. The 80% range
+   is the 80% quantile of the chosen model's own backtest errors (split conformal).
+5. Reliability follows the backtest error itself: beating a baseline that missed by 200% does not
    make a 90% miss usable, so large past errors are said plainly.
 
-Ported from the analyst project (analyst/ops/timeseries.py). There, on 7 real series, the 80%
-ranges held 69% of the real values: they are somewhat too narrow, a stated limit.
+Ported from the analyst project (analyst/ops/timeseries.py: forecast and trend_test). There, on 7
+real series, the 80% ranges held 69% of the real values (somewhat too narrow, a stated limit); the
+trend test raised 1-9% false alarms on simulated series without a trend and found 79-100% of real
+ones (bench/honesty_bench.py, trend_scale_bench.py). Mann-Kendall is computed here directly.
 """
 
 from __future__ import annotations
@@ -21,49 +30,79 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import (CODE, OFFSET, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq,
                       split_dates, split_time)
+from .roles import table_roles
 from .workspace import Workspace, resolve_column
 
 SEASON = {"D": 7, "W": 52, "M": 12, "Q": 4, "Y": 1}
 HORIZON = {"D": 14, "W": 8, "M": 6, "Q": 4, "Y": 2}
 MIN_POINTS = 10
+MAX_GROUPS = 5
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December"]
 
 
 @tool
-def forecast(ws: Workspace, data: str, date: str, value: str | None = None, horizon: int | None = None,
+def forecast(ws: Workspace, data: str, date: str | None = None, value: str | None = None, horizon: int | None = None,
              time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto",
-             agg: Literal["sum", "mean", "last", "count"] = "sum") -> ToolResult:
-    """Forecast ``value`` (combined per period by ``agg``; row count without value)."""
+             agg: Literal["sum", "mean", "last", "count"] = "sum", by: str | None = None) -> ToolResult:
+    """Forecast ``value`` (combined per period by ``agg``; row count without value), with its trend."""
     df = ws.table(data)
-    split, made = split_time(df), []  # time kept as year + quarter (or month) columns: combined here
-    try:
-        date = resolve_column(df, date, "date")
-    except ToolError:
-        if not split:
-            raise
-        date = None
-    if date is None or not pd.api.types.is_datetime64_any_dtype(df[date]):
-        if not split:
-            raise ToolError(f"'{date}' is not a date column (parse_dates first if it holds dates).", field="date")
-        year, part, kind = split
-        df, date = df.assign(_period=split_dates(df, year, part, kind)), "_period"
-        made = [f"Dates were made from the '{year}' and '{part}' columns."]
+    df, date, made = _date_column(ws, data, df, date)
     if value:
         value = resolve_column(df, value, "value")
         if not pd.api.types.is_numeric_dtype(df[value]) or pd.api.types.is_bool_dtype(df[value]):
             raise ToolError(f"'{value}' is not a number column.", field="value")
     else:
         agg = "count"
+    by = resolve_column(df, by, "by") if by else None
     frame = df.dropna(subset=[date] + ([value] if value else []))
     if frame.empty:
         raise ToolError("No rows have both a date and a value.", invalid=False)
     freq = _auto_freq(frame[date]) if time_unit == "auto" else CODE[time_unit]
-    y, notes = _series(frame, date, value, agg, freq)
+    label = value or "rows"
     warning = ws.issues_warning(data)
-    return _forecast(y, freq, horizon, agg, data, value or "rows", made + notes + ([warning] if warning else []))
+    notes = made + ([warning] if warning else [])
+    if by:
+        return _by_group(frame, date, value, by, agg, freq, horizon, data, label, notes)
+    y, series_notes = _series(frame, date, value, agg, freq)
+    facts, chart = _forecast(y, freq, horizon, agg)
+    notes = notes + series_notes + facts.pop("notes", [])
+    result = {"data": data, "value": label, "combined_by": agg, "period": WORD[freq], **facts}
+    if notes:
+        result["notes"] = notes
+    artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast ({WORD[freq]}s)", **chart,
+                "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
+    return ok(result, artifact)
+
+
+def _date_column(ws, data, df, date):
+    """The date column: the one named, else the table's date role, else year + quarter/month columns."""
+    split, made = split_time(df), []  # time kept as year + quarter (or month) columns: combined here
+    if date:
+        try:
+            date = resolve_column(df, date, "date")
+        except ToolError:
+            if not split:
+                raise
+            date = None
+    else:
+        date = table_roles(ws, data, df).get("date")
+    if date is None or not pd.api.types.is_datetime64_any_dtype(df[date]):
+        if not split:
+            if date is None:
+                raise ToolError("This table has no date column. Columns: " + ", ".join(map(str, df.columns)) + ".",
+                                field="date", invalid=False)
+            raise ToolError(f"'{date}' is not a date column (parse_dates first if it holds dates).", field="date")
+        year, part, kind = split
+        df, date = df.assign(_period=split_dates(df, year, part, kind)), "_period"
+        made = [f"Dates were made from the '{year}' and '{part}' columns."]
+    return df, date, made
 
 
 def _auto_freq(dates: pd.Series) -> str:
@@ -96,8 +135,8 @@ def _series(frame, date, value, agg, freq) -> tuple[pd.Series, list[str]]:
     return y, notes
 
 
-def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str, data: str, label: str,
-              notes: list[str]) -> ToolResult:
+def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str) -> tuple[dict, dict]:
+    """The facts for the model and the chart's series, for one series."""
     from statsforecast import StatsForecast
     from statsforecast.models import AutoETS, AutoTheta, Naive, SeasonalNaive
 
@@ -105,6 +144,7 @@ def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str, data: str,
     if n < MIN_POINTS:
         raise ToolError(f"Only {n} {word}s of history; a forecast needs at least {MIN_POINTS} "
                         "(try a smaller time_unit).", invalid=False)
+    notes = []
     h = max(1, min(int(horizon or HORIZON[freq]), n // 3))
     if horizon and h < horizon:
         notes.append(f"Horizon shortened to {h} {word}s: at most a third of the {n} {word}s of history.")
@@ -146,20 +186,186 @@ def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str, data: str,
     dates = pd.to_datetime(fc["ds"])
     points = [{"period": d.strftime("%Y-%m-%d"), "forecast": number(m), "low_80": number(a), "high_80": number(b)}
               for d, m, a, b in zip(dates, mean, lo, hi)]
-    result = {"data": data, "value": label, "combined_by": agg, "period": word, "history_points": n,
-              "horizon": h, "model": _model_word(use), "beats_baseline": beats, "backtest": backtest + caveat,
-              "reliability": strength, "forecast": points,
-              "range": "low_80 to high_80: the model's past errors put 80% of outcomes in this range."}
+    facts = {"history_points": n, "horizon": h, "model": _model_word(use), "beats_baseline": beats,
+             "backtest": backtest + caveat, "reliability": strength, "forecast": points,
+             "range": "low_80 to high_80: the model's past errors put 80% of outcomes in this range.",
+             "trend": _trend_facts(y, freq), **_season_facts(y, freq), **_latest(y, freq)}
     if agg in ("sum", "count"):
-        result["total_over_horizon"] = number(float(mean.sum()))
+        facts["total_over_horizon"] = number(float(mean.sum()))
     if notes:
-        result["notes"] = notes
-    artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast ({word}s)",
-                "x": [d.strftime("%Y-%m-%d") for d in y.index], "y": [number(v) for v in y],
-                "forecast_x": [p["period"] for p in points], "forecast": [p["forecast"] for p in points],
-                "low": [p["low_80"] for p in points], "high": [p["high_80"] for p in points],
-                "x_label": word, "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
+        facts["notes"] = notes
+    chart = {"x": [d.strftime("%Y-%m-%d") for d in y.index], "y": [number(v) for v in y],
+             "forecast_x": [p["period"] for p in points], "forecast": [p["forecast"] for p in points],
+             "low": [p["low_80"] for p in points], "high": [p["high_80"] for p in points]}
+    return facts, chart
+
+
+def _by_group(frame, date, value, by, agg, freq, horizon, data, label, notes) -> ToolResult:
+    keys = frame[by].astype(str)
+    size = (frame.groupby(keys)[value].sum() if value and agg == "sum" else keys.value_counts()).abs()
+    groups = [str(g) for g in size.sort_values(ascending=False).index[:MAX_GROUPS]]
+    if len(size) > len(groups):
+        notes = notes + [f"The {len(groups)} largest of {len(size)} {by} groups are forecast."]
+    per_group, series, skipped = [], [], []
+    for g in groups:
+        sub = frame[keys == g]
+        try:
+            y, series_notes = _series(sub, date, value, agg, freq)
+            facts, chart = _forecast(y, freq, horizon, agg)
+        except ToolError as exc:
+            skipped.append(f"{g}: {exc.message}")
+            continue
+        trend = facts["trend"]
+        per_group.append({"group": g, "model": facts["model"], "reliability": facts["reliability"],
+                          "beats_baseline": facts["beats_baseline"],
+                          **({"total_over_horizon": facts["total_over_horizon"]} if "total_over_horizon" in facts else {}),
+                          "next": facts["forecast"][0], "trend": trend["direction"],
+                          **({"trend_per_period_pct": trend["per_period_pct"]} if "per_period_pct" in trend else {}),
+                          **({"season_high": facts["season_high"]} if "season_high" in facts else {})})
+        series.append({"name": g, **chart})
+    if not per_group:
+        raise ToolError("No group has enough history to forecast: " + "; ".join(skipped), invalid=False)
+    result = {"data": data, "value": label, "combined_by": agg, "period": WORD[freq], "by": by,
+              "horizon": len(series[0]["forecast_x"]), "groups": per_group,
+              "range": "Each group's forecast has its own 80% range in the chart."}
+    if notes or skipped:
+        result["notes"] = notes + [f"Not forecast - {s}" for s in skipped]
+    artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast by {by} ({WORD[freq]}s)",
+                "series": series, "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
     return ok(result, artifact)
+
+
+# ---------------------------------------------------------------- trend and season
+
+def _trend_facts(y: pd.Series, freq: str) -> dict:
+    if len(y) < 4:
+        return {"direction": "too short to tell"}
+    t = trend_test(y, freq)
+    p = "p < 0.0001" if t["p"] < 1e-4 else f"p = {t['p']:.2g}"
+    out = {"direction": "no clear trend", "says": f"No clear upward or downward trend ({p}).",
+           "p_value": number(t["p"], 4), "method": t["method"]}
+    if t["p"] < 0.05:  # the size only for a real trend: a slope of noise is no fact to quote
+        direction = "rising" if t["slope"] > 0 else "falling"
+        out.update(direction=direction, per_period=number(t["slope"]),
+                   per_period_range_95=[number(t["low"]), number(t["high"])],
+                   per_period_pct=number(100 * t["relative"], 2), unit=f"per {WORD[freq]}",
+                   says=f"{direction.capitalize()}: about {number(t['slope']):+g} per {WORD[freq]} "
+                        f"({100 * t['relative']:+.2g}% of its average level), {p}.")
+    season = SEASON.get(freq, 1)
+    if season > 1 and len(y) < 2 * season + 2:
+        out["note"] = (f"Less than two full {_season_word(freq)} cycles of history: a seasonal rise or fall (e.g. "
+                       "towards December) can't be told apart from a trend.")
+    return out
+
+
+def mann_kendall_z(x: np.ndarray) -> float:
+    """Mann-Kendall's S statistic as a z-score, with the tie correction and continuity correction."""
+    n = len(x)
+    s = sum(float(np.sign(x[k + 1:] - x[k]).sum()) for k in range(n - 1))
+    _, ties = np.unique(x, return_counts=True)
+    var = (n * (n - 1) * (2 * n + 5) - float(np.sum(ties * (ties - 1) * (2 * ties + 5)))) / 18
+    if s == 0 or var <= 0:
+        return 0.0
+    return (s - np.sign(s)) / np.sqrt(var)
+
+
+def trend_test(y: pd.Series, freq: str) -> dict:
+    """Mann-Kendall trend test that does not mistake a season or a slow wander for a trend.
+
+    With 2+ full seasons the seasonal pattern (the average of each month, weekday ...) is removed
+    first. Serial correlation: the lag-1 autocorrelation of what is left after removing Sen's trend,
+    corrected for small-sample bias ((r*n + 1) / (n - 4)), inflates the test's variance by
+    (1 + r) / (1 - r) (Yue & Wang 2004). Series that grow in proportion are tested on a log scale,
+    and a sign test on the period-to-period changes is combined with Mann-Kendall (Bonferroni: 2x the
+    smaller p) so a steady rise is found although the correction takes it for wandering. The slope
+    is Sen's (Theil-Sen), per period, with its 95% range. Measured in the analyst project: 1-9% false
+    alarms on series without a trend; steady and compound growth found 100% of the time at n = 44.
+    """
+    x = y.to_numpy(float)
+    n = len(x)
+    season = SEASON.get(freq, 1)
+    method = "Mann-Kendall corrected for autocorrelation"
+    log_scale = bool(n >= 10 and (x > 0).all() and x.max() / x.min() >= 2)
+    xt = np.log(x) if log_scale else x.copy()  # the series the test runs on
+    if log_scale:
+        method += ", on a log scale (the values grow in proportion)"
+    if season > 1 and n >= 2 * season + 2:
+        pos = np.arange(n) % season
+        x = x - pd.Series(x).groupby(pos).transform("mean").to_numpy() + x.mean()
+        xt = xt - pd.Series(xt).groupby(pos).transform("mean").to_numpy() + xt.mean()
+        method += ", seasonal pattern removed"
+    t = np.arange(n)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        slope, _, low, high = stats.theilslopes(x, t, 0.95)  # in the data's own units
+        slope_t = stats.theilslopes(xt, t)[0] if log_scale else slope
+        z = mann_kendall_z(xt)
+        if n >= 10:
+            resid = xt - slope_t * t
+            r1 = np.corrcoef(resid[:-1], resid[1:])[0, 1] if np.std(resid) > 0 else 0.0
+            r1 = min(max((np.nan_to_num(r1) * n + 1) / (n - 4), 0.0), 0.95)
+            z = z / np.sqrt((1 + r1) / (1 - r1))
+        else:
+            method = "Mann-Kendall"
+    p = float(2 * stats.norm.sf(abs(z))) if np.isfinite(z) else 1.0
+    d = np.diff(xt)
+    d = d[d != 0]
+    if len(d) >= 5:
+        p_sign = float(stats.binomtest(int((d > 0).sum()), len(d), 0.5).pvalue)
+        p = min(1.0, 2 * min(p, p_sign))
+        method += f", with a sign test on the changes ({int((d > 0).sum())} of {len(d)} were rises)"
+    level = float(np.mean(np.abs(y.to_numpy(float))))
+    return {"p": p, "slope": float(slope), "low": float(low), "high": float(high),
+            "relative": float(slope) / level if level else 0.0, "method": method}
+
+
+def _season_facts(y: pd.Series, freq: str) -> dict:
+    """How much of the variation the season explains, and its high and low, with 2+ full seasons."""
+    season = SEASON.get(freq, 1)
+    if season <= 1 or len(y) < 2 * season:
+        return {}
+    window = season + (season % 2 == 0)  # odd, centred
+    trend = y.rolling(window, center=True, min_periods=season // 2 + 1).mean()
+    detrended = y - trend
+    position = _positions(y.index, freq)
+    pattern = detrended.groupby(position).mean()
+    seasonal = pd.Series(position, index=y.index).map(pattern)
+    rest = detrended - seasonal
+    both = (seasonal + rest).dropna()
+    strength = max(0.0, 1 - float(rest.dropna().var()) / float(both.var())) if both.var() > 0 else 0.0
+    words = "strong" if strength >= 0.6 else "moderate" if strength >= 0.3 else "weak or none"
+    out = {"seasonality": {"strength": number(strength, 2), "meaning": f"{words} ({_season_word(freq)} pattern; "
+                           "0 = none, 1 = the season explains all the variation once the trend is out)"}}
+    if strength >= 0.3:
+        out["season_high"] = _position_name(pattern.idxmax(), freq)
+        out["season_low"] = _position_name(pattern.idxmin(), freq)
+    return out
+
+
+def _positions(index: pd.DatetimeIndex, freq: str) -> np.ndarray:
+    return {"D": index.dayofweek, "W": np.minimum(index.isocalendar().week.to_numpy(), 52),
+            "M": index.month, "Q": index.quarter}[freq]
+
+
+def _season_word(freq: str) -> str:
+    return {"D": "weekly", "W": "yearly, by week", "M": "yearly", "Q": "yearly"}[freq]
+
+
+def _position_name(p, freq: str) -> str:
+    p = int(p)
+    return {"D": lambda: WEEKDAYS[p], "W": lambda: f"week {p}", "M": lambda: MONTHS[p - 1],
+            "Q": lambda: f"Q{p}"}[freq]()
+
+
+def _latest(y: pd.Series, freq: str) -> dict:
+    """The latest period, and the same period a year earlier when the history has it."""
+    out = {"latest": [y.index[-1].strftime("%Y-%m-%d"), number(float(y.iloc[-1]))]}
+    year_ago = y.index[-1] - pd.DateOffset(years=1)
+    if freq in ("W", "M", "Q") and year_ago in y.index and y[year_ago]:
+        before = float(y[year_ago])
+        out["year_earlier"] = [year_ago.strftime("%Y-%m-%d"), number(before)]
+        out["change_vs_year_earlier_pct"] = number(100 * (float(y.iloc[-1]) - before) / abs(before), 2)
+    return out
 
 
 def _reliability(error: float, beats: bool) -> tuple[str, str]:

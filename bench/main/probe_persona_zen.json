@@ -1,0 +1,157 @@
+[
+ {
+  "case": "hello",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hi there, Arya. I'm Zen, your local assistant. What can I help you with today?"
+ },
+ {
+  "case": "hello",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hi Arya. I'm here. What can I help you with today?"
+ },
+ {
+  "case": "who_are_you",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I am Zen, an assistant running right here on your computer using an open model. I am not ChatGPT or any other external service.\n\nI'm here to help you with tasks, manage your workspace, and answer your questions right from this machine."
+ },
+ {
+  "case": "who_are_you",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.8,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Zen, an assistant running on a local open model on this computer. No, I'm not ChatGPT, Claude, or any other product. I'm here to help you get things done."
+ },
+ {
+  "case": "bad_place",
+  "run": 1,
+  "ok": false,
+  "problem": "reply lacks couldn'?t|could not|can'?t|cannot|not find|didn'?t find|no (?:place|location)|unable|not (?:a )?(?:real|known)",
+  "seconds": 6.1,
+  "tools": [
+   "get_weather({\"location\": \"Qwxzplorvia\"}) invalid_arguments"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "location": "Qwxzplorvia"
+    },
+    "status": "invalid_arguments"
+   }
+  ],
+  "asked": null,
+  "answer": "I wasn't able to find the weather for Qwxzplorvia. It looks like the name might be misspelled, or it might be a place that isn't in my current records. Could you double-check the spelling, or let me know what country it is in?"
+ },
+ {
+  "case": "bad_place",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.4,
+  "tools": [
+   "get_weather({\"days\": 0, \"location\": \"Qwxzplorvia\"}) invalid_arguments"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0,
+     "location": "Qwxzplorvia"
+    },
+    "status": "invalid_arguments"
+   }
+  ],
+  "asked": null,
+  "answer": "I couldn't find a location called Qwxzplorvia. Could you please check the spelling or provide a country to help me find the weather for you?"
+ },
+ {
+  "case": "missing_file",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I can't find the file `budget_2025.xlsx` in your workspace right now. Can you please upload it or tell me where it is located?"
+ },
+ {
+  "case": "missing_file",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I see you want me to look at `budget_2025.xlsx` and find the total, Arya. Since the workspace is currently empty, I can't locate that file yet.\n\nCould you please upload the file for me?"
+ },
+ {
+  "case": "you_were_wrong",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.1,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I am sorry about that, Arya.\n\n12 times 12 is 144."
+ },
+ {
+  "case": "you_were_wrong",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "You are right, I made a mistake. 12 times 12 is 144."
+ },
+ {
+  "case": "upset",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "That sounds incredibly frustrating, Arya. Losing a day's worth of work is never easy.\n\nWhile I can't recover what was lost on your old laptop, I'm here to help you catch up, organize your thoughts, or tackle any outstanding tasks now. If you want to start by recounting what you were working on, I can help structure it."
+ },
+ {
+  "case": "upset",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I'm so sorry to hear that Arya. Losing a day's work is incredibly frustrating. Take a deep breath.\n\nWhile I can't bring the lost time back, I'm here to help you catch up. If you have any notes, emails, or tasks from that day you want to review or recreate, let me know, and we can get you back on track."
+ }
+]

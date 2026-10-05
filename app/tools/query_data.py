@@ -1,18 +1,22 @@
 """query_data: exact numbers from the workspace tables with one read-only DuckDB query.
 
-Tables are queried by id (SELECT region, sum(amount) FROM data_2 GROUP BY region). The query is
-checked by app.agent.sql_guard (one SELECT, only workspace tables, no file or system functions)
+Tables are queried by id (SELECT region, sum(amount) FROM data_2 GROUP BY region); a SELECT without
+a table is the data helper's arithmetic (SELECT (1410 - 1250) / 1250 * 100 AS growth). The query is
+checked by app.tools.sql_guard (one SELECT, only workspace tables, no file or system functions)
 and runs on a connection with external access switched off, with a time limit. With save=true
 the full result becomes a new table, so it can be charted, tested or modelled like any other.
 """
 
 from __future__ import annotations
 
+import math
+from decimal import Decimal
+
 import duckdb
 import sqlglot
 from sqlglot import exp
 
-from app.agent import sql_guard
+from app.tools import sql_guard
 
 from .core import ToolError, ToolResult, ok, tool
 from .workspace import Workspace
@@ -63,8 +67,17 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
 
 
 def _tidy(row) -> list:
-    """Floats without binary noise (2713.8500000000004 -> 2713.85); 9 decimals keep every exact figure."""
-    return [round(v, 9) if isinstance(v, float) else v for v in row]
+    """Floats without the noise of binary arithmetic: 12 significant digits. A double carries 15-17 and
+    a SUM over many rows loses the last few (817860.049999993 -> 817860.05, 2713.8500000000004 ->
+    2713.85); whole numbers keep every digit. Exact decimals (DuckDB's type for 2450 * 0.18) become
+    numbers too, not text (they are exact, so nothing is trimmed)."""
+    return [_significant(v) if isinstance(v, float) else float(v) if isinstance(v, Decimal) else v for v in row]
+
+
+def _significant(v: float, digits: int = 12) -> float:
+    if v == 0 or not math.isfinite(v):
+        return v
+    return round(v, max(0, digits - 1 - math.floor(math.log10(abs(v)))))
 
 
 def _referenced(sql: str) -> set[str]:

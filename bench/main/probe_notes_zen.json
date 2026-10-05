@@ -1,0 +1,102 @@
+[
+ {
+  "case": "names",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call save_note (called: nothing)",
+  "seconds": 4.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Got it, Arya. I'm Zen, an assistant running right here on your computer.\n\nI'm ready for whatever you need. What can I help you with?"
+ },
+ {
+  "case": "names",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.6,
+  "tools": [
+   "save_note({\"content\": \"The user is Ary and the assistant is Zen.\", \"title\": \"User/Assistant Names\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user is Ary and the assistant is Zen.",
+     "title": "User/Assistant Names"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "A quick action on my part, Ary. I have saved that we are Zen and you are Ary in my notes."
+ },
+ {
+  "case": "your_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "My name is Zen. I'm a personal assistant running right here on this computer."
+ },
+ {
+  "case": "your_name",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hello Arya. My name is Zen, and I am an assistant running on a local open model on this computer.\n\nI'm here to help you with tasks, keep track of things, and provide a focused way to work."
+ },
+ {
+  "case": "my_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Your name is Arya."
+ },
+ {
+  "case": "my_name",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Your name is Arya."
+ },
+ {
+  "case": "who_talking",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.2,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I'm Zen, Arya. I’m an assistant running right here on your computer using a local open model. I'm here to help you with whatever you need!"
+ },
+ {
+  "case": "who_talking",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I am Zen, Arya. I am a personal assistant running right here on your computer.\n\nSpecifically, I operate using a local open model that's installed on this machine, so I'm not linked to external services like ChatGPT or Claude. Think of me as a capable local partner ready to help you with tasks, writing, or calculations."
+ }
+]

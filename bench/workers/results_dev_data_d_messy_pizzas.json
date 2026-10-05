@@ -1,0 +1,127 @@
+[
+ {
+  "id": "d_messy_pizzas",
+  "role": "data",
+  "split": "dev",
+  "passed": true,
+  "detail": "truth 49574 (a Total row doubles it)",
+  "seconds": 28.9,
+  "model_calls": 6,
+  "tokens": 1208,
+  "tools": [
+   "guide",
+   "inspect_data",
+   "clean_data",
+   "query_data"
+  ],
+  "calls": [
+   {
+    "name": "guide",
+    "input": {
+     "id": "totals"
+    }
+   },
+   {
+    "name": "inspect_data",
+    "input": {
+     "data": "data_1"
+    }
+   },
+   {
+    "name": "clean_data",
+    "input": {
+     "data": "data_1",
+     "steps": [
+      {
+       "op": "drop_rows",
+       "column": "order_details_id",
+       "values": [
+        "Total"
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "name": "query_data",
+    "input": {
+     "save": true,
+     "sql": "SELECT sum(quantity) AS total_pizzas FROM data_2"
+    }
+   }
+  ],
+  "warnings": [],
+  "guide": [
+   {
+    "id": "totals"
+   }
+  ],
+  "suggested": "Guide sections that fit this task: totals (Totals, counts and revenue); grain (What one row is); share (Share of a total and percent breakdowns). Read one with guide(id='totals') before you start.",
+  "answer": "49,574",
+  "sources": null,
+  "question_for_user": null,
+  "report": "# How many pizzas were sold in total?\n\n## Data used and cleaning decisions\nuse data_2: data_1 with the row where order_details_id is 'Total' removed.\n\n## Method\nCleaned the data to remove a summary row and then used a query to sum the 'quantity' column.\n\n## Results\n49,574\n\n## Caveats and next steps\nThe calculation assumes that the quantity column accurately represents the number of pizzas sold in each order detail line.\n\n## Facts (written by the app)\n- Table: pizza_messy.csv (data_1), report saved 2026-10-04 13:49\n- Tables made: data_2 (pizza_messy.csv (cleaned), from data_1), data_3 (query result, from data_2)\n- Ran guide, inspect_data, clean_data, query_data.\n"
+ },
+ {
+  "id": "d_messy_pizzas",
+  "role": "data",
+  "split": "dev",
+  "passed": true,
+  "detail": "truth 49574 (a Total row doubles it)",
+  "seconds": 23.7,
+  "model_calls": 5,
+  "tokens": 867,
+  "tools": [
+   "guide",
+   "inspect_data",
+   "clean_data",
+   "query_data"
+  ],
+  "calls": [
+   {
+    "name": "guide",
+    "input": {
+     "id": "totals"
+    }
+   },
+   {
+    "name": "inspect_data",
+    "input": {
+     "data": "data_1"
+    }
+   },
+   {
+    "name": "clean_data",
+    "input": {
+     "data": "data_1",
+     "steps": [
+      {
+       "op": "drop_rows",
+       "column": "order_details_id",
+       "values": [
+        "Total"
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT sum(quantity) AS total_pizzas_sold FROM data_2"
+    }
+   }
+  ],
+  "warnings": [],
+  "guide": [
+   {
+    "id": "totals"
+   }
+  ],
+  "suggested": "Guide sections that fit this task: totals (Totals, counts and revenue); grain (What one row is); share (Share of a total and percent breakdowns). Read one with guide(id='totals') before you start.",
+  "answer": "49,574",
+  "sources": null,
+  "question_for_user": null,
+  "report": "# How many pizzas were sold in total?\n\n## Data used and cleaning decisions\ndata_2: data_1 with the 'Total' row removed\n\n## Method\nFirst, inspected the data to identify potential summary rows. Then, I removed the 'Total' row using clean_data to create data_2. Finally, I used a SQL query to calculate the sum of the 'quantity' column in data_2.\n\n## Results\n49,574\n\n## Caveats and next steps\nThe analysis relied on the assumption that the 'Total' row identified during inspection was a summary row and should be removed to ensure accurate counting of individual pizza sales.\n\n## Facts (written by the app)\n- Table: pizza_messy.csv (data_1), report saved 2026-10-04 13:50\n- Tables made: data_2 (pizza_messy.csv (cleaned), from data_1)\n- Ran guide, inspect_data, clean_data, query_data.\n"
+ }
+]

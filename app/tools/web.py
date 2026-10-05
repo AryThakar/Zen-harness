@@ -10,8 +10,8 @@ read_webpage - the readable text of one page: HTML reduced to its main content (
               addresses are refused, and every redirect is checked again - so a page can't make
               the assistant read this computer's own services (llama-server, this app's API).
               Downloads are capped at 3 MB; the text at 12,000 characters.
-              GitHub pages are read through GitHub's API instead (a repository's README plus its
-              description, main language and license; a file's raw text): the HTML pages are mostly
+              GitHub pages are read through GitHub's API instead (a repository's description, main
+              language, license, its file list and README; a folder's files; a file's raw text): the HTML pages are mostly
               interface and answer 503 now and then. Without a token the API allows 60 calls an
               hour; past that a file comes from raw.githubusercontent.com and a repository page is
               read as HTML.
@@ -21,6 +21,11 @@ read_webpage - the readable text of one page: HTML reduced to its main content (
               only served to YouTube's own player, which proves it is a real app.
               For the UI, each page also yields its card: title, site name, description, preview
               image (og:image), favicon, author and published date, read from the page's <head>.
+look       - what a link holds (name, type, size), read from its first bytes, for the user to
+              approve before anything is downloaded (app/tools/approval.py); then fetch_table stores
+              a data file (CSV, TSV, Excel) from any public link as a table, and fetch_file one file
+              from GitHub like an upload. The same address checks, a 20 MB cap; a web page instead
+              of a file is refused with the files it links to.
 fetch_icon / fetch_image - a site's favicon or a page's preview image, fetched by the server with
               the same public-address checks (size-capped, verified to be an image), so the UI shows
               them from this app instead of the browser contacting every site.
@@ -38,8 +43,12 @@ import ipaddress
 import json
 import re
 import socket
+import tempfile
 import time
-from urllib.parse import parse_qs, quote, urljoin, urlsplit
+from contextlib import nullcontext
+from datetime import date
+from pathlib import Path, PurePosixPath
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit
 
 import httpx
 
@@ -79,7 +88,7 @@ def web_search(query: str, site: str | None = None, k: int = 5, *, engine=None) 
     if not results:
         out["note"] = "No results. Try other words, or read a known page with read_webpage."
         return ok(out)
-    out["note"] = "These are only snippets: read a page with read_webpage before quoting details, and cite its URL."
+    out["note"] = "These are only snippets: read a page with read_webpage before quoting details."
     items = [{**r, "image": f"https://i.ytimg.com/vi/{v}/hqdefault.jpg", "video": v} if (v := youtube_id(r["url"])) else r
              for r in results]  # video results show their thumbnail in the UI
     return ok(out, {"type": "links", "query": query, "items": items})
@@ -173,21 +182,46 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
     if not text.strip():
         raise ToolError("No readable text was found on the page (it may need JavaScript to show its content).",
                         invalid=False)
+    if _bot_check(title, text, final):
+        raise ToolError("The site showed a bot check instead of its page (it only serves people in a browser); "
+                        "read another source.", invalid=False)
     truncated = len(text) > MAX_TEXT
     shown = None
     if truncated and find and find.strip():
         text, shown = _focus(text, find)
     elif truncated:
         text = text[:MAX_TEXT].rsplit(" ", 1)[0] + " ..."
+    files = meta.pop("files", None)
     result = {"url": final, "title": title, "site": meta["site"],
-              **{k: meta[k] for k in ("published", "author") if meta.get(k)},
-              "text": text, "words": len(text.split()), "note": "Quote only what this page says and cite its URL."}
+              **{k: meta[k] for k in ("published", "updated", "author") if meta.get(k)},
+              **({"age": age} if (age := page_age(meta.get("published"), meta.get("updated"))) else {}),
+              "text": text, "words": len(text.split())}
+    if files:  # main can download these with the user's approval; the web helper never does
+        result["files"] = files
+        result["files_note"] = "Files this page links to: if the task wants one, give its link in downloads."
     if shown:
         result["shown"] = shown
     elif truncated:
         result["truncated"] = (f"The page is long: only the first {MAX_TEXT:,} characters are shown. If what you need "
                                "is not here, call read_webpage again with find='a few words to look for'.")
     return ok(result, {"type": "webpage", "url": final, "title": title or meta["site"], **meta})
+
+
+# Pages a site shows automated readers instead of its content (Cloudflare, reCAPTCHA, Imperva,
+# PerimeterX ...). Seen: "Verifying your browser… This takes less than a second." read as a source.
+# Such a page is not read past - it is reported, and the worker reads another source.
+BOT_CHECK = re.compile(
+    r"verifying (?:your browser|you are (?:a )?human)|checking (?:your|if the site connection is) |just a moment"
+    r"|attention required|are you (?:a robot|human)|not a robot|captcha|security check|verify you are human"
+    r"|enable javascript and cookies to continue|ddos protection|pardon our interruption|press & hold"
+    r"|request unsuccessful|access denied", re.I)
+BOT_CHECK_WORDS = 150  # a real page that mentions a captcha is longer than a bot check
+
+
+def _bot_check(title: str | None, text: str, url: str) -> bool:
+    if len(text.split()) >= BOT_CHECK_WORDS:
+        return False
+    return bool(BOT_CHECK.search(f"{title or ''}\n{text}") or re.search(r"captcha|/cdn-cgi/challenge", url, re.I))
 
 
 def _page(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:
@@ -207,6 +241,9 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
     elif "html" in ctype or _looks_html(body):
         title, text, page_meta = _html_text(body, charset, final)
         meta.update(page_meta)
+        files = offered_files(body, final)
+        if files:
+            meta["files"] = files
         if len(text.split()) < 20 and meta.get("description"):  # content drawn by JavaScript
             text = (f"{meta['description']}\n\n(This page shows its content with JavaScript; only its description "
                     "could be read.)")
@@ -245,6 +282,15 @@ def _from_github(http: httpx.Client, url: str, resolve) -> tuple[str, str, dict]
             raise ToolError("not a text file", invalid=False)
         return body.decode("utf-8", "replace").strip()
 
+    if len(segs) >= 3 and segs[2] == "tree":  # a folder: /tree/<ref>/<path>, or the root at a ref
+        ref, path = (segs[3], "/".join(segs[4:])) if len(segs) >= 4 else ("", "")
+        try:
+            listing = _github_files(json.loads(text_of(f"{api}/git/trees/{ref or 'HEAD'}?recursive=1", GITHUB_JSON)),
+                                    path)
+        except (ToolError, ValueError):
+            return None
+        where = f"{owner}/{repo}" + (f"/{path}" if path else "") + (f" ({ref})" if ref else "")
+        return where, f"Files in {where}:\n{listing}", card
     if len(segs) == 2:
         try:
             info = json.loads(text_of(api, GITHUB_JSON))
@@ -257,13 +303,18 @@ def _from_github(http: httpx.Client, url: str, resolve) -> tuple[str, str, dict]
                              ("Homepage", info.get("homepage")), ("Stars", info.get("stargazers_count"))):
             if value not in (None, ""):
                 facts.append(f"{label}: {value:,}." if isinstance(value, int) else f"{label}: {value}.")
+        try:  # the real file list: a README describes files, it does not list them
+            files = "Files:\n" + _github_files(json.loads(text_of(
+                f"{api}/git/trees/{info.get('default_branch') or 'HEAD'}?recursive=1", GITHUB_JSON)))
+        except (ToolError, ValueError):
+            files = "(the file list could not be read)"
         try:
             readme = "README:\n" + text_of(f"{api}/readme", GITHUB_RAW)
         except ToolError:
             readme = "(no README)"
         if info.get("description"):
             card["description"] = info["description"][:300]
-        return f"{owner}/{repo}", " ".join(facts) + "\n\n" + readme, card
+        return f"{owner}/{repo}", " ".join(facts) + "\n\n" + files + "\n\n" + readme, card
     if len(segs) >= 5 and segs[2] == "blob":
         ref, path = segs[3], "/".join(segs[4:])
         for address, headers in ((f"{api}/contents/{path}?ref={ref}", GITHUB_RAW),
@@ -273,6 +324,276 @@ def _from_github(http: httpx.Client, url: str, resolve) -> tuple[str, str, dict]
             except ToolError:
                 continue
     return None
+
+
+# ---------------------------------------------------------------- downloads (import_table, download_file)
+
+TABLE_SUFFIXES = (".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls")
+TABLE_TYPES = {"text/csv": ".csv", "application/csv": ".csv", "text/tab-separated-values": ".tsv",
+               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+               "application/vnd.ms-excel": ".xls"}
+MAX_TABLE_BYTES = 20 * 1024 * 1024
+MAX_FILE_BYTES = 20 * 1024 * 1024
+GITHUB_HOSTS = {"github.com", "www.github.com", "raw.githubusercontent.com", "media.githubusercontent.com",
+                "gist.github.com", "gist.githubusercontent.com", "objects.githubusercontent.com",
+                "release-assets.githubusercontent.com", "codeload.github.com"}
+PEEK = 1024  # bytes read from a link to tell what it is, before the user approves the download
+
+
+def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Client | None = None,
+         resolve=None) -> dict:
+    """What a link holds, for the user to approve before anything is downloaded: the file's name,
+    type, size and the address to fetch it from (a GitHub file page gives its raw file; a file kept
+    in Git LFS, its real one). Only the first bytes of the response are read. A web page instead of
+    a file is a ToolError naming the files it links to. github: GitHub only (download_file);
+    tables: a CSV, TSV or Excel file (import_table)."""
+    url = str(url).strip()
+    if not re.match(r"^https?://", url, re.I):
+        raise ToolError("Give the file's full http(s) link.", field="url")
+    url = _raw_link(url)
+    if github and not _on_github(url):
+        raise ToolError("download_file only takes files on GitHub (github.com, raw.githubusercontent.com, gists). "
+                        "For a data table from another site use import_table.", field="url")
+    resolve = resolve or socket.getaddrinfo
+    with _downloader(http) as client:
+        head, ctype, size, final = _peek(client, url, resolve)
+        if head.startswith(b"version https://git-lfs") and urlsplit(final).hostname == "raw.githubusercontent.com":
+            # A file kept in Git LFS: raw.githubusercontent.com serves its pointer, GitHub's media host the file.
+            stated = re.search(rb"\nsize (\d+)", head)
+            final, ctype = "https://media.githubusercontent.com/media" + urlsplit(final).path, ""
+            size = int(stated[1]) if stated else None
+        if ctype in ("text/html", "application/xhtml+xml") or head.lstrip().lower().startswith((b"<!doctype", b"<html")):
+            page = _fetch(client, url, resolve)[0]  # a page, read like read_webpage would: which files does it offer?
+            found, total = _file_links(http, url, page, final, resolve, TABLE_SUFFIXES if tables else None)
+            what = "data file" if tables else "file"
+            if found:  # one call more instead of another search
+                shown = (f"Files it has ({len(found)} of {total}; a folder's link lists that folder): "
+                         if total > len(found) else "Files it has: ")  # measured: 10 shown were taken for all
+                raise ToolError(f"That link is a web page, not a {what}. {shown}" + ", ".join(found)
+                                + " - ask for one of these.", invalid=False)
+            raise ToolError(f"That link is a web page, not a {what}. A file's own link ends in its name (e.g. "
+                            ".csv); ask research_web for it, or ask the user to upload the file.", invalid=False)
+    if github and not _on_github(final):
+        raise ToolError("That link leads away from GitHub; download_file only takes files on GitHub.", invalid=False)
+    name = unquote(PurePosixPath(urlsplit(final).path).name) or "download"
+    limit = MAX_TABLE_BYTES if tables else MAX_FILE_BYTES
+    if size and size > limit:
+        raise ToolError(f"The file is {size / 2 ** 20:.1f} MB; at most {limit // 2 ** 20} MB can be downloaded.",
+                        invalid=False)
+    if tables and PurePosixPath(name).suffix.lower() not in TABLE_SUFFIXES and not (
+            TABLE_TYPES.get(ctype) or ctype.startswith("text/")):
+        raise ToolError(f"That link is not a CSV, TSV or Excel file (it is {ctype or 'of an unknown type'}).",
+                        invalid=False)
+    return {"url": final, "name": name, "type": ctype, "bytes": size, "host": urlsplit(final).hostname,
+            **({"github": True} if github else {})}
+
+
+def fetch_table(ws, looked: dict, *, http: httpx.Client | None = None, resolve=None) -> ToolResult:
+    """The approved data file (from look), downloaded and stored as a table."""
+    body, ctype, final = _download(looked, MAX_TABLE_BYTES, http, resolve)
+    suffix = PurePosixPath(urlsplit(final).path).suffix.lower()
+    if suffix not in TABLE_SUFFIXES:
+        suffix = TABLE_TYPES.get(ctype) or ".csv"
+    name = looked["name"]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / (name if name.lower().endswith(suffix) else name + suffix)
+        path.write_bytes(body)
+        data = ws.add_file(path)
+    df = ws.table(data)
+    preview = df.head(8).astype(object).where(df.head(8).notna(), None)
+    return ok({"data": data, "name": name, "rows": len(df), "columns": list(map(str, df.columns)),
+               "source": final, "note": f"Saved as {data}: give analyze_data a task on {data}."},
+              {"type": "table", "title": f"{data}: {name}", "columns": list(map(str, df.columns)),
+               "rows": preview.values.tolist(), "note": f"{len(df):,} rows from {urlsplit(final).hostname}"})
+
+
+def fetch_file(ws, index, looked: dict, *, http: httpx.Client | None = None, resolve=None) -> ToolResult:
+    """The approved GitHub file (from look), downloaded and kept like an upload: a data file as a
+    table, a document indexed for search, anything else as a file."""
+    from .files import store_file
+    body, _, final = _download(looked, MAX_FILE_BYTES, http, resolve)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / Path(looked["name"]).name
+        path.write_bytes(body)
+        kept = store_file(ws, index, path)
+    item = kept.get("id") or kept.get("file")
+    use = {"table": f"give analyze_data a task on {item}", "document": "ask_knowledge can search it",
+           "file": f"write_code can open it as '{item}'"}[kept["kind"]]
+    return ok({**kept, "bytes": len(body), "source": final, "note": f"Saved as {item}: {use}."})
+
+
+def _download(looked: dict, limit: int, http, resolve) -> tuple[bytes, str, str]:
+    with _downloader(http, timeout=60.0) as client:
+        body, ctype, _, final = _fetch(client, looked["url"], resolve or socket.getaddrinfo, limit)
+    if looked.get("github") and not _on_github(final):
+        raise ToolError("The file's link led away from GitHub; nothing was saved.", invalid=False)
+    return body, ctype, final
+
+
+def _downloader(http: httpx.Client | None, timeout: float = 30.0):
+    return (httpx.Client(timeout=httpx.Timeout(timeout, connect=5.0), follow_redirects=False,
+                         headers={"User-Agent": net.USER_AGENT}) if http is None else nullcontext(http))
+
+
+def _peek(http: httpx.Client, url: str, resolve) -> tuple[bytes, str, int | None, str]:
+    """(first bytes, content type, size or None, final url) - the redirects checked as in _fetch, the
+    body not downloaded. Asked uncompressed, so the stated length is the file's size."""
+    for _ in range(MAX_REDIRECTS + 1):
+        _check_public(url, resolve)
+        try:
+            with http.stream("GET", url, headers={"Accept-Encoding": "identity"}) as r:
+                if r.is_redirect and r.headers.get("location"):
+                    url = urljoin(url, r.headers["location"])
+                    continue
+                if not r.is_success:
+                    raise ToolError(f"The link answered HTTP {r.status_code}{_why(r.status_code)}.", invalid=False)
+                head = b""
+                for chunk in r.iter_bytes():
+                    head += chunk
+                    if len(head) >= PEEK:
+                        break
+                length = r.headers.get("content-length", "")
+                ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+                return head[:PEEK], ctype, int(length) if length.isdigit() else None, url
+        except httpx.TimeoutException as exc:
+            raise ToolError("The link did not answer in time.", invalid=False) from exc
+        except httpx.HTTPError as exc:
+            raise ToolError("The link could not be reached.", invalid=False) from exc
+    raise ToolError(f"More than {MAX_REDIRECTS} redirects.", invalid=False)
+
+
+def _raw_link(url: str) -> str:
+    """A GitHub file page (github.com/<owner>/<repo>/blob/<ref>/<path>, or /raw/) as its raw file - and
+    the half-converted raw.githubusercontent.com/<owner>/<repo>/blob/<ref>/<path> a model writes (measured
+    twice, a 404 each time, once rewriting the link the user typed)."""
+    parts, segs = urlsplit(url), [s for s in urlsplit(url).path.split("/") if s]
+    host = (parts.hostname or "").lower()
+    if host in ("github.com", "www.github.com", "raw.githubusercontent.com") and len(segs) >= 5 and segs[2] in (
+            "blob", "raw"):
+        return f"https://raw.githubusercontent.com/{segs[0]}/{segs[1]}/{'/'.join(segs[3:])}"
+    return url
+
+
+def _on_github(url: str) -> bool:
+    parts = urlsplit(url)
+    return parts.scheme == "https" and (parts.hostname or "").lower() in GITHUB_HOSTS
+
+
+FILE_LINKS = 10
+
+
+def _file_links(http: httpx.Client | None, url: str, body: bytes, final: str, resolve,
+                suffixes: tuple[str, ...] | None) -> tuple[list[str], int]:
+    """(the first FILE_LINKS links to files on a page, how many there are) - only those with these
+    suffixes, if given: for a GitHub repository or folder, from its file tree (the page itself is drawn
+    by JavaScript); otherwise the page's own links to such files."""
+    parts, segs = urlsplit(url), [s for s in urlsplit(url).path.split("/") if s]
+    if (parts.hostname or "").lower() in ("github.com", "www.github.com") and len(segs) >= 2 and (
+            len(segs) == 2 or segs[2] == "tree"):
+        owner, repo = segs[0], segs[1].removesuffix(".git")
+        ref, under = (segs[3], "/".join(segs[4:])) if len(segs) >= 4 else ("HEAD", "")
+        try:
+            with _downloader(http, timeout=15.0) as c:
+                tree = json.loads(_fetch(c, f"{GITHUB_API}/{owner}/{repo}/git/trees/{ref}?recursive=1", resolve,
+                                         headers=GITHUB_JSON)[0])
+        except (ToolError, ValueError):
+            return [], 0
+        paths = [e["path"] for e in tree.get("tree", []) if e.get("type") == "blob"
+                 and e.get("path", "").startswith(under) and (suffixes is None or (
+                     PurePosixPath(e["path"]).suffix.lower() in suffixes and not e["path"].lower().endswith(".txt")))]
+        return [f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{p}" for p in paths[:FILE_LINKS]], len(paths)
+    from lxml import html as lxml_html
+    try:
+        doc = lxml_html.document_fromstring(body)
+    except (ValueError, lxml_html.etree.ParserError):
+        return [], 0
+    wanted = suffixes or (".csv", ".tsv", ".xlsx", ".xls", ".json", ".txt", ".pdf", ".zip", ".py", ".ipynb")
+    found = []
+    for href in doc.xpath("//a/@href"):
+        link = urljoin(final, str(href)).split("#")[0]
+        if (PurePosixPath(urlsplit(link).path).suffix.lower() in wanted and link not in found
+                and link.startswith(("http://", "https://"))):
+            found.append(link)
+    return found[:FILE_LINKS], len(found)
+
+
+OFFERED = 8  # files a page lists in read_webpage's result
+
+
+def offered_files(body: bytes, final: str) -> list[str]:
+    """Links on a page to files main can download with the user's approval: data tables from any site,
+    and files on GitHub (a file page or a raw file)."""
+    from lxml import html as lxml_html
+    try:
+        doc = lxml_html.document_fromstring(body)
+    except (ValueError, lxml_html.etree.ParserError):
+        return []
+    found = []
+    for href in doc.xpath("//a/@href"):
+        link = urljoin(final, str(href)).split("#")[0]
+        if link.startswith(("http://", "https://")) and link not in found and is_file_link(link):
+            found.append(link)
+    return found[:OFFERED]
+
+
+def is_file_link(link: str) -> bool:
+    """A link files(mode='download') can fetch: a data table from any site, or a file on GitHub."""
+    suffix = PurePosixPath(urlsplit(link).path).suffix.lower()
+    if suffix in TABLE_SUFFIXES and suffix != ".txt":
+        return True
+    return bool(_on_github(link) and suffix and (urlsplit(link).hostname != "github.com" or "/blob/" in link
+                                                  or "/raw/" in link))
+
+
+def page_age(published: str | None, updated: str | None, today: date | None = None) -> str | None:
+    """'updated 2026-03-02, 7 months ago' - how old a page is, worked out by code: a 'latest' answer
+    from a page years old is the known slip (the 'stale latest picks' of the user's chats)."""
+    today = today or date.today()
+    for word, value in (("updated", updated), ("published", published)):
+        try:
+            when = date.fromisoformat(str(value or "")[:10])
+        except ValueError:
+            continue
+        days = (today - when).days
+        if days < 0:
+            return f"{word} {when}"
+        span = ("today" if days == 0 else f"{days} days ago" if days < 60 else f"{days // 30} months ago"
+                if days < 730 else f"{days // 365} years ago")
+        return f"{word} {when}, {span}"
+    return None
+
+
+FILES_CHARS = 3_500  # the file list's share of a page's text
+
+
+def _github_files(tree: dict, under: str = "") -> str:
+    """A repository's files from GitHub's git tree, one line per folder ('src/: app.rs  bin/ ...'),
+    shallow folders first, cut to FILES_CHARS. ``under``: only that folder and below."""
+    if not isinstance(tree.get("tree"), list):
+        raise ValueError("no tree")
+    prefix = under.strip("/") + "/" if under.strip("/") else ""
+    folders: dict[str, list[str]] = {}
+    for entry in tree["tree"]:
+        path = str(entry.get("path", ""))
+        if prefix and not path.startswith(prefix):
+            continue
+        parent, _, name = path[len(prefix):].rpartition("/")
+        folders.setdefault(parent, []).append(name + "/" if entry.get("type") == "tree" else name)
+    if not folders:
+        raise ValueError("no such folder")
+    lines, shown = [], 0
+    for folder in sorted(folders, key=lambda f: (f.count("/") + bool(f), f)):
+        names = sorted(folders[folder], key=lambda n: (not n.endswith("/"), n.lower()))
+        line = f"{prefix + folder + '/' if folder else prefix or '/'}: {'  '.join(names)}"
+        if shown + len(line) > FILES_CHARS:
+            lines.append("... more folders not shown; read one through its link: "
+                         "github.com/<owner>/<repo>/tree/<branch>/<folder>")
+            break
+        lines.append(line)
+        shown += len(line)
+    if tree.get("truncated"):
+        lines.append("(GitHub cut this list short: the repository is very large)")
+    return "\n".join(lines)
 
 
 YOUTUBE_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"}
@@ -520,6 +841,7 @@ def _page_meta(doc, base: str) -> dict:
            "author": meta("author", "article:author", "parsely-author"),
            "published": meta("article:published_time", "og:published_time", "datePublished", "pubdate", "date",
                              "DC.date") or (times[0] if times else None),
+           "updated": meta("article:modified_time", "og:updated_time", "dateModified", "last-modified"),
            "og_title": meta("og:title", "twitter:title"),
            "language": (doc.get("lang") or "").split("-")[0] or None}
     return {k: v for k, v in out.items() if v}
@@ -567,12 +889,16 @@ RASTER = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp", "GIF":
 
 def _fetch_image(url, max_bytes, http, resolve, allow_svg: bool) -> tuple[bytes, str] | None:
     from PIL import Image, UnidentifiedImageError
+    own = http is None  # the API's icon and image requests: a client of their own, closed after
     http = http or httpx.Client(timeout=httpx.Timeout(5.0, connect=3.0), follow_redirects=False,
                                 headers={"User-Agent": net.USER_AGENT, "Accept": "image/*"})
     try:
         body, ctype, _, _ = _fetch(http, url, resolve or socket.getaddrinfo, max_bytes)
     except ToolError:
         return None
+    finally:
+        if own:
+            http.close()
     if allow_svg and (ctype == "image/svg+xml" or body.lstrip()[:5].lower() in (b"<svg ", b"<?xml")):
         return (body, "image/svg+xml") if b"<svg" in body[:4096].lower() else None
     try:

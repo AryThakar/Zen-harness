@@ -64,6 +64,13 @@ def test_named_place_with_forecast():
     assert "80% chance of rain" in res["summary"] and r.artifact["type"] == "weather"
 
 
+def test_days_count_days_ahead():
+    calls = []
+    get_weather("Paris, France", days=1, http=fake(SERVICES, calls))  # "tomorrow": the model writes days=1
+    asked = [c for c in calls if c.url.host == "api.open-meteo.com"][0]
+    assert asked.url.params["forecast_days"] == "2"  # today and tomorrow
+
+
 def test_country_hint_picks_the_right_place():
     r = get_weather("Paris, Texas", http=fake(SERVICES))
     assert r.result["place"] == "Paris, Texas, United States"
@@ -118,31 +125,72 @@ def ws(tmp_path):
     return Workspace(tmp_path / "ws")
 
 
-def test_image_is_checked_and_stored(ws):
+@pytest.fixture
+def keyed(monkeypatch):
+    monkeypatch.delenv("POLLINATIONS_TOKEN", raising=False)
+    monkeypatch.setenv("POLLINATIONS_KEY", "sk_test")
+
+
+def test_image_is_checked_and_stored(ws, keyed):
     calls = []
-    http = fake({"image.pollinations.ai": lambda req: httpx.Response(200, content=png_bytes(),
-                                                                     headers={"content-type": "image/png"})}, calls)
+    http = fake({"gen.pollinations.ai": lambda req: httpx.Response(200, content=png_bytes(),
+                                                                   headers={"content-type": "image/png"})}, calls)
     r = generate_image(ws, "  a teal   square ", size="wide", http=http)
     assert r.status == "ok" and r.result["image"] == "image_1" and (r.result["width"], r.result["height"]) == (64, 32)
     assert ws.path("image_1").read_bytes() == png_bytes() and r.artifact["prompt"] == "a teal square"
     url = calls[0].url
-    assert url.raw_path.split(b"?")[0].endswith(b"/a%20teal%20square") and url.params["width"] == "1344"
+    assert url.raw_path.split(b"?")[0] == b"/image/a%20teal%20square" and url.params["width"] == "1344"
+    assert url.params["model"] == "zimage" and calls[0].headers["Authorization"] == "Bearer sk_test"
     assert "prompt" not in r.result  # the model gets the id, not its own prompt back
 
 
-def test_error_page_is_never_stored_as_an_image(ws):
-    http = fake({"image.pollinations.ai": lambda req: httpx.Response(200, content=b"<html>busy</html>")})
+def test_a_generated_image_is_looked_at_so_main_can_check_the_request(ws, keyed):
+    """The vision model describes the new picture and quotes its text; a failed look never costs the image."""
+    http = fake({"gen.pollinations.ai": lambda req: httpx.Response(200, content=png_bytes(),
+                                                                   headers={"content-type": "image/png"})})
+    asked = []
+
+    def look(image, mime, question):
+        asked.append(question)
+        return "A teal rectangle with the words 'HAPY BIRTHDAY'."
+
+    r = generate_image(ws, "a teal card saying HAPPY BIRTHDAY", http=http, look=look)
+    assert r.result["what_it_shows"] == "A teal rectangle with the words 'HAPY BIRTHDAY'."
+    assert "quote it exactly" in asked[0] and "say so plainly" in r.result["check"]
+
+    def broken(image, mime, question):
+        raise RuntimeError("vision server down")
+
+    r = generate_image(ws, "a teal card", http=http, look=broken)
+    assert r.status == "ok" and "what_it_shows" not in r.result
+
+
+def test_without_a_key_nothing_is_sent_and_the_user_is_told(ws, monkeypatch):
+    monkeypatch.delenv("POLLINATIONS_KEY", raising=False)
+    monkeypatch.delenv("POLLINATIONS_TOKEN", raising=False)
+    calls = []
+    r = generate_image(ws, "a cat", http=fake({"gen.pollinations.ai": lambda req: httpx.Response(200)}, calls))
+    assert r.status == "failed" and "POLLINATIONS_KEY" in r.result["error"]["message"] and calls == []
+
+
+def test_an_empty_balance_is_said_plainly(ws, keyed):
+    r = generate_image(ws, "a cat", http=fake({"gen.pollinations.ai": lambda req: httpx.Response(402)}))
+    assert r.status == "failed" and "no Pollen left" in r.result["error"]["message"]
+
+
+def test_error_page_is_never_stored_as_an_image(ws, keyed):
+    http = fake({"gen.pollinations.ai": lambda req: httpx.Response(200, content=b"<html>busy</html>")})
     r = generate_image(ws, "a cat", http=http)
     assert r.status == "failed" and "not a valid image" in r.result["error"]["message"]
     assert ws.ids() == []
 
 
-def test_rate_limit_is_retried_but_bad_requests_are_not(ws):
+def test_rate_limit_is_retried_but_bad_requests_are_not(ws, keyed):
     answers = [httpx.Response(429, headers={"Retry-After": "0"}), httpx.Response(200, content=png_bytes())]
     calls = []
-    r = generate_image(ws, "a dog", http=fake({"image.pollinations.ai": lambda req: answers.pop(0)}, calls))
+    r = generate_image(ws, "a dog", http=fake({"gen.pollinations.ai": lambda req: answers.pop(0)}, calls))
     assert r.status == "ok" and len(calls) == 2
     calls = []
-    r = generate_image(ws, "a dog", http=fake({"image.pollinations.ai": lambda req: httpx.Response(400)}, calls))
+    r = generate_image(ws, "a dog", http=fake({"gen.pollinations.ai": lambda req: httpx.Response(400)}, calls))
     assert r.status == "failed" and len(calls) == 1
     assert generate_image(ws, "   ").status == "invalid_arguments"

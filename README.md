@@ -1,4 +1,16 @@
-# AI Business Analyst
+# claude-cloud
+
+> **The project is now a local assistant** (`app/`): Zen, a chat assistant on a local model (Gemma 4 via
+> llama-server) with helpers for the web, your documents, your tables and code, each with its own tools,
+> inside a workspace that is its sandbox. Run it with `uvicorn app.main:app` and open http://localhost:8000.
+> Its design and progress: [docs/TARGET_MAP.md](docs/TARGET_MAP.md) and [docs/ASSISTANT_PLAN.md](docs/ASSISTANT_PLAN.md).
+> A full README for it comes with the docs step.
+>
+> **The first product, below, is kept in [`legacy/`](legacy/README.md)**, working and tested: its API is
+> now `uvicorn legacy.main:app --port 8001` and its UI `cd legacy && streamlit run frontend/app.py`
+> (with `BIZ_API_URL=http://localhost:8001`).
+
+## AI Business Analyst (legacy)
 
 Upload your sales export, ask questions in plain English, and get answers,
 forecasts and charts - running on your own machine.
@@ -89,8 +101,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 export ANTHROPIC_API_KEY=...      # for Ask AI (everything else works without it)
-uvicorn app.main:app              # terminal 1: API on http://localhost:8000 (docs at /docs)
-streamlit run frontend/app.py     # terminal 2: UI on http://localhost:8501
+uvicorn legacy.main:app --port 8001   # terminal 1: API on http://localhost:8001 (docs at /docs)
+cd legacy && streamlit run frontend/app.py   # terminal 2: UI on http://localhost:8501 (BIZ_API_URL=http://localhost:8001)
 ```
 
 Open the UI and click **Load demo data**, or upload one of the files in
@@ -105,12 +117,12 @@ Settings (environment variables): `BIZ_DB_PATH` (default `data/business.duckdb`)
 `BAAI/bge-small-en-v1.5`, downloaded once, ~65 MB) and `BIZ_EMBED_CACHE_DIR` (default `data/models`).
 
 Sample documents for the demo shop: the **Load sample documents** button on the Documents page,
-or `python -m app.rag.samples data/samples/docs` to write them to a folder.
+or `python -m legacy.rag.samples data/samples/docs` to write them to a folder.
 
 Command-line upload, without the UI:
 
 ```bash
-python -m app.ingestion.cli data/samples/retail_pos_messy.csv
+python -m legacy.ingestion.cli data/samples/retail_pos_messy.csv
 ```
 
 ## API

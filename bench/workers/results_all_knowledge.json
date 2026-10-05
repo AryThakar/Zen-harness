@@ -1,0 +1,200 @@
+[
+ {
+  "id": "k_returns",
+  "role": "knowledge",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('14',); sources ['store_policy.md - \"Returns\"']",
+  "seconds": 5.9,
+  "model_calls": 2,
+  "tokens": 367,
+  "tools": [
+   "search_files"
+  ],
+  "calls": [
+   {
+    "name": "search_files",
+    "input": {
+     "query": "return opened phone days"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "Customers may return opened phones within 14 days if the box and all accessories are complete (store_policy.md - \"Returns\").",
+  "sources": [
+   "store_policy.md - \"Returns\""
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "k_note",
+  "role": "knowledge",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('net_sales',); sources [\"note 'Revenue column' (note_1)\"]",
+  "seconds": 8.9,
+  "model_calls": 3,
+  "tokens": 568,
+  "tools": [
+   "recall",
+   "search_files"
+  ],
+  "calls": [
+   {
+    "name": "recall",
+    "input": {
+     "query": "revenue column"
+    }
+   },
+   {
+    "name": "search_files",
+    "input": {
+     "query": "revenue column"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "We decided to use net_sales as the revenue column, excluding refunded orders.",
+  "sources": [
+   "note 'Revenue column' (note_1)"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "k_chat",
+  "role": "knowledge",
+  "split": "dev",
+  "passed": true,
+  "detail": "expects ('6 months',); sources ['conversation old1']",
+  "seconds": 4.1,
+  "model_calls": 2,
+  "tokens": 299,
+  "tools": [
+   "recall"
+  ],
+  "calls": [
+   {
+    "name": "recall",
+    "input": {
+     "query": "forecast horizon"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "In an earlier conversation on 2026-09-20 10:00, it was agreed to forecast 6 months ahead, by month.",
+  "sources": [
+   "conversation old1"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "k_missing",
+  "role": "knowledge",
+  "split": "dev",
+  "passed": true,
+  "detail": "should say it isn't covered; sources []",
+  "seconds": 4.2,
+  "model_calls": 2,
+  "tokens": 288,
+  "tools": [
+   "search_files"
+  ],
+  "calls": [
+   {
+    "name": "search_files",
+    "input": {
+     "query": "CEO salary"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The CEO's salary is not mentioned in the store policy, the employee handbook, or the pinned notes.",
+  "sources": [],
+  "question_for_user": null,
+  "suggestion": "Please specify which document or note might contain the CEO's salary, or if this information was mentioned in a previous conversation.",
+  "trail": "Ran search_files."
+ },
+ {
+  "id": "h_leave",
+  "role": "knowledge",
+  "split": "holdout",
+  "passed": true,
+  "detail": "expects ('24',); sources ['employee_handbook.docx - \"Expenses\"']",
+  "seconds": 3.9,
+  "model_calls": 2,
+  "tokens": 245,
+  "tools": [
+   "search_files"
+  ],
+  "calls": [
+   {
+    "name": "search_files",
+    "input": {
+     "query": "annual leave new employees"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "New employees get 24 days of annual leave, plus public holidays.",
+  "sources": [
+   "employee_handbook.docx - \"Expenses\""
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "h_bulk",
+  "role": "knowledge",
+  "split": "holdout",
+  "passed": true,
+  "detail": "expects ('8%',); sources [\"note 'Revenue column' (note_1)\", 'conversation old2']",
+  "seconds": 4.7,
+  "model_calls": 2,
+  "tokens": 308,
+  "tools": [
+   "recall"
+  ],
+  "calls": [
+   {
+    "name": "recall",
+    "input": {
+     "query": "bulk-order discount"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "Bulk orders of 50 units or more get an 8% discount.",
+  "sources": [
+   "note 'Revenue column' (note_1)",
+   "conversation old2"
+  ],
+  "question_for_user": null
+ },
+ {
+  "id": "h_summary",
+  "role": "knowledge",
+  "split": "holdout",
+  "passed": true,
+  "detail": "mentions at least 3 of: 9:00, laptop, 24 days, 500",
+  "seconds": 10.6,
+  "model_calls": 2,
+  "tokens": 755,
+  "tools": [
+   "read_file"
+  ],
+  "calls": [
+   {
+    "name": "read_file",
+    "input": {
+     "file": "file_2",
+     "part": 1
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "Here is a summary of the employee handbook:\n\n*   **Office Hours:** 9:00 to 18:00 on weekdays.\n*   **Warehouse Opening:** 7:00.\n*   **Equipment:** New employees receive a laptop on their first day, which must be returned when leaving.\n*   **Annual Leave:** Employees receive 24 days of annual leave, plus public holidays.\n*   **Expenses:** Purchases exceeding 500 require manager approval.",
+  "sources": [
+   "file_2"
+  ],
+  "question_for_user": null
+ }
+]

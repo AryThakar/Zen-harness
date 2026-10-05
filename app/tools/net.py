@@ -19,9 +19,9 @@ MAX_RETRY_WAIT = 10.0
 
 
 class NetError(Exception):
-    def __init__(self, code: str, message: str, retryable: bool):
+    def __init__(self, code: str, message: str, retryable: bool, status: int | None = None):
         super().__init__(message)
-        self.code, self.message, self.retryable = code, message, retryable
+        self.code, self.message, self.retryable, self.status = code, message, retryable, status
 
 
 def client(timeout: float = 10.0) -> httpx.Client:
@@ -48,7 +48,7 @@ def get(http: httpx.Client, url: str, params: dict | None = None, attempts: int 
                 return r
             retryable = r.status_code in RETRY_STATUS
             if not retryable or attempt == attempts:
-                raise NetError("http_error", f"{_host(url)} answered HTTP {r.status_code}", retryable)
+                raise NetError("http_error", f"{_host(url)} answered HTTP {r.status_code}", retryable, r.status_code)
             wait = _retry_after(r)
             time.sleep(wait if wait is not None else 0.3 * attempt)
             continue

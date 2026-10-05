@@ -29,7 +29,7 @@ One file type: the **sales line**. One row = one product sold on one bill / invo
 Every business records this, and orders, customers, products and daily revenue can all
 be built from it (not the other way round).
 
-Defined in [`app/ingestion/fields.py`](../app/ingestion/fields.py).
+Defined in [`legacy/ingestion/fields.py`](../legacy/ingestion/fields.py).
 
 ### Required (4)
 
@@ -69,7 +69,7 @@ Columns named like IDs, codes or phone numbers stay text.
 ## 2. Upload and cleaning pipeline ✅
 
 `preview_file()` → user confirms or edits the mapping → `ingest_file()`.
-Code: [`app/ingestion/`](../app/ingestion/).
+Code: [`legacy/ingestion/`](../legacy/ingestion/).
 
 | # | Step | Module | What happens |
 |---|---|---|---|
@@ -114,7 +114,7 @@ different type meanwhile, the file is cleaned again with the stored types.
 
 **Format profiles:** saved mappings, matched when all their mapped columns are in the
 file. Built-in: Shopify orders export, Superstore dataset, UCI Online Retail
-([`profiles.py`](../app/ingestion/profiles.py)). Users save their own with
+([`profiles.py`](../legacy/ingestion/profiles.py)). Users save their own with
 `save_profile_as`, so the next export from the same system loads automatically.
 
 **Upload report example:** `16 loaded · 5 rejected (bad order_date 1, quantity is 0 1,
@@ -127,7 +127,7 @@ missing product 1, bad unit_price 1, summary row 1)`.
 ## 3. DuckDB schema ✅ (ingestion tables)
 
 One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: the numbered files in
-[`app/db/migrations/`](../app/db/migrations/). Chat history lives separately in
+[`legacy/db/migrations/`](../legacy/db/migrations/). Chat history lives separately in
 `data/chat.sqlite` (`BIZ_CHAT_DB_PATH`), written by the LangGraph checkpointer.
 
 | Table | Holds |
@@ -139,7 +139,7 @@ One file, `data/business.duckdb` (`BIZ_DB_PATH`). Schema: the numbered files in
 | `rejected_rows` | upload, file row number, reasons, raw values |
 | `format_profiles` | saved and built-in mappings |
 | `column_registry` | every sales column: type, kind (required/optional/derived/custom), description; example values are computed from a repeatable 20k-row sample when read |
-| `schema_migrations` | which numbered files in `app/db/migrations/` have been applied |
+| `schema_migrations` | which numbered files in `legacy/db/migrations/` have been applied |
 | `ml_runs` | every model run: task, params, status, metrics, message |
 | `forecast_points`, `customer_segments`, `anomaly_days`, `anomaly_lines` | model results per run, plus `latest_*` views |
 | `churn_scores`, `basket_rules` | churn probability, warning signs and value at risk per customer; product and category pairs with support, confidence, lift (+ `latest_*` views) |
@@ -167,7 +167,7 @@ extensions (uploads are parsed in Python, so the app never needs it).
 
 ## 4. ML ✅
 
-Code: [`app/ml/`](../app/ml/). Each task is a function that reads with a cursor and
+Code: [`legacy/ml/`](../legacy/ml/). Each task is a function that reads with a cursor and
 returns a `TaskResult` (metrics, a plain-language message, result rows). The runner
 records every run in `ml_runs` (running → succeeded / failed), computes outside the
 write lock, then saves results in one transaction. The same functions back the
@@ -225,11 +225,11 @@ customer return an opened phone?", "why was 15 April so slow?".
 * **No vector database:** a numpy dot product over a few thousand 384-dim vectors takes
   microseconds; DuckDB stores them with everything else.
 * **Sample documents** for the demo shop, one per format, with an operations log dated
-  to the demo data's planted events ([`samples.py`](../app/rag/samples.py)).
+  to the demo data's planted events ([`samples.py`](../legacy/rag/samples.py)).
 
 ## 6. Model providers ✅ (Claude) · ⏳ (local)
 
-Code: [`app/agent/providers/`](../app/agent/providers/). The graph talks to a small
+Code: [`app/providers/`](../app/providers/). The graph talks to a small
 `Provider` interface: `complete(system, messages, tools) -> ModelTurn` (answer text,
 tool calls, stop reason) with a callback for streamed text. Conversations are stored
 in a provider-neutral format (user / assistant / tool messages); each adapter
@@ -253,7 +253,7 @@ provider; a thin interface of our own is less code than working around a generic
 
 ## 7. Agent (LangGraph) ✅
 
-Code: [`app/agent/graph.py`](../app/agent/graph.py).
+Code: [`legacy/agent/graph.py`](../legacy/agent/graph.py).
 
 ```
 START → agent (model turn: system prompt + conversation) → tool calls? ─ no ─► END
@@ -261,8 +261,8 @@ START → agent (model turn: system prompt + conversation) → tool calls? ─ n
             └──────────── tools (validate → run → results) ◄───┘
 ```
 
-* **System prompt** ([`prompts.py`](../app/agent/prompts.py)), rebuilt every turn
-  with a live **schema card** ([`context.py`](../app/agent/context.py)): the tables,
+* **System prompt** ([`prompts.py`](../legacy/agent/prompts.py)), rebuilt every turn
+  with a live **schema card** ([`context.py`](../legacy/agent/context.py)): the tables,
   every sales column with its meaning and examples (custom columns included), the
   data's date range and which optional columns are missing.
 * **Rules** it gives the model: every number comes from a tool (arithmetic through
@@ -279,7 +279,7 @@ START → agent (model turn: system prompt + conversation) → tool calls? ─ n
 
 ## 8. Tools ✅
 
-Code: [`app/agent/tools.py`](../app/agent/tools.py). Each tool has a pydantic input
+Code: [`legacy/agent/tools.py`](../legacy/agent/tools.py). Each tool has a pydantic input
 model (unknown fields rejected); bad input goes back to the model as an error
 result to fix, never as a crash. Results are text for the model plus an optional
 artifact (chart or table data) for the UI.
@@ -301,7 +301,7 @@ artifact (chart or table data) for the UI.
 
 The ML tools run the same code as the Insights page and store their runs the same way.
 
-**Safety layers for AI-written SQL** ([`sql_guard.py`](../app/agent/sql_guard.py)):
+**Safety layers for AI-written SQL** ([`sql_guard.py`](../app/tools/sql_guard.py)):
 
 1. Parsed with sqlglot: exactly one statement, and it must be a query; any
    insert/update/delete/DDL/COPY/ATTACH/PRAGMA/SET node anywhere is rejected.
@@ -359,7 +359,7 @@ Code: [`app/main.py`](../app/main.py), [`app/api/`](../app/api/). OpenAPI docs a
 
 ## 10. Dashboard and UI ✅
 
-Analytics: [`app/analytics/dashboard.py`](../app/analytics/dashboard.py) - plain
+Analytics: [`legacy/analytics/dashboard.py`](../legacy/analytics/dashboard.py) - plain
 functions over a cursor, so the agent's tools can reuse them.
 
 * **Default period:** the last 90 days *of data* (historical datasets still show something).

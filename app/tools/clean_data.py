@@ -9,10 +9,10 @@ nothing is saved.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Union, get_args
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .core import ToolError, ToolResult, number, ok, tool
 from .values import parse_dates, parse_numbers
@@ -97,10 +97,42 @@ class CleanInput(BaseModel):
     steps: list[Step] = Field(min_length=1, max_length=20)
 
 
+OPS = tuple(get_args(m.model_fields["op"].annotation)[0] for m in (
+    ParseNumbers, ParseDates, DropDuplicates, DropRows, FillMissing, DropMissing, TidyText, FlagOutliers, RemoveOutliers,
+    RenameColumns, DropColumns))
+STEP_SHAPE = ("each step is {'op': ..., its fields}, e.g. {'op': 'drop_rows', 'column': 'store', 'values': ['Total']}; "
+              f"ops: {', '.join(OPS)}. inspect_data's suggested_steps can be passed as they are.")
+
+
+def _shaped(step):
+    """A step written with its op as the key - {'drop_rows': {'column': ..., 'values': [...]}} - in the
+    usual shape (measured: the data helper wrote steps this way twice, and the validator's 'Unable to
+    extract tag using discriminator' told it nothing). Anything else is left for the validator."""
+    if not isinstance(step, dict) or "op" in step:
+        return step
+    named = [k for k in step if k in OPS]
+    if len(named) != 1 or any(k not in (named[0], "why") for k in step):
+        return step
+    op, fields = named[0], step[named[0]]
+    if isinstance(fields, dict):
+        return {"op": op, **fields}
+    if isinstance(fields, list):
+        return {"op": op, "columns": fields}
+    return {"op": op}
+
+
 @tool
 def clean_data(ws: Workspace, data: str, steps: list[dict]) -> ToolResult:
     """Run the steps in order on a copy of the table; save it as a new table with a log."""
-    args = CleanInput(data=data, steps=steps)
+    steps = [_shaped(s) for s in steps] if isinstance(steps, list) else steps
+    try:
+        args = CleanInput(data=data, steps=steps)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        if first["type"] in ("union_tag_not_found", "union_tag_invalid", "model_attributes_type", "dict_type"):
+            where = ".".join(map(str, first["loc"][:2]))
+            raise ToolError(f"{where}: {STEP_SHAPE}", field=where) from exc
+        raise
     df = ws.table(args.data)
     notes = {c: dict(n) for c, n in ws.column_notes(args.data).items()}
     rows_before = len(df)
@@ -258,21 +290,29 @@ def _tidy_text(df, step: TidyText, notes):
     return df, "tidy_text - " + "; ".join(parts)
 
 
-def _fences(x: pd.Series, factor: float) -> tuple[float, float]:
+def _fences(x: pd.Series, factor: float) -> tuple[float, float] | None:
+    """Tukey's fences, or None when the middle half of the values is one value (IQR 0): then the fences
+    would sit on that value and every other value would count as an outlier - inspect_data reports none
+    there, and neither does this."""
     q1, q3 = x.quantile(0.25), x.quantile(0.75)
     iqr = q3 - q1
-    return q1 - factor * iqr, q3 + factor * iqr
+    return (q1 - factor * iqr, q3 + factor * iqr) if iqr > 0 else None
+
+
+def _no_spread(c: str, x: pd.Series) -> str:
+    return f"{c}: none found (half or more of its values are {number(float(x.median()))}, so nothing stands out)"
 
 
 def _flag_outliers(df, step: FlagOutliers, notes):
     df, parts = df.copy(), []
     for c in _cols(df, step.columns):
         x = _numeric(df, c, "flag_outliers")
-        lo, hi = _fences(x, step.factor)
+        fences = _fences(x, step.factor)
         flag = f"{c}_outlier"
-        df[flag] = (x < lo) | (x > hi)
+        df[flag] = (x < fences[0]) | (x > fences[1]) if fences else False
         notes[flag] = {"type": "bool"}
-        parts.append(f"{c}: {int(df[flag].sum()):,} outside {number(lo)} to {number(hi)}, marked in {flag}")
+        parts.append(f"{c}: {int(df[flag].sum()):,} outside {number(fences[0])} to {number(fences[1])}, marked in "
+                     f"{flag}" if fences else _no_spread(c, x))
     return df, "flag_outliers - " + "; ".join(parts)
 
 
@@ -281,9 +321,12 @@ def _remove_outliers(df, step: RemoveOutliers, notes):
     parts = []
     for c in _cols(df, step.columns):
         x = _numeric(df, c, "remove_outliers")
-        lo, hi = _fences(x, step.factor)
-        out = (x < lo) | (x > hi)
-        parts.append(f"{c}: {int(out.sum()):,} outside {number(lo)} to {number(hi)}")
+        fences = _fences(x, step.factor)
+        if fences is None:
+            parts.append(_no_spread(c, x))
+            continue
+        out = (x < fences[0]) | (x > fences[1])
+        parts.append(f"{c}: {int(out.sum()):,} outside {number(fences[0])} to {number(fences[1])}")
         keep &= ~out
     return df[keep], f"remove_outliers - removed {int((~keep).sum()):,} rows ({'; '.join(parts)})"
 

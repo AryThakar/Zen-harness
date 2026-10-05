@@ -1,0 +1,340 @@
+[
+ {
+  "case": "fiscal",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 34.3,
+  "tools": [
+   "save_note({\"content\": \"The fiscal year starts in April.\", \"title\": \"Fiscal Year Start Date\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The fiscal year starts in April.",
+     "title": "Fiscal Year Start Date"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Got it. I have saved a note reminding us that your fiscal year starts in April."
+ },
+ {
+  "case": "fiscal",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.4,
+  "tools": [
+   "save_note({\"content\": \"The user wants me to remember that the fiscal year starts in April.\", \"title\": \"Fiscal Year Start\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user wants me to remember that the fiscal year starts in April.",
+     "title": "Fiscal Year Start"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "OK, I've saved a note reminding me that your fiscal year starts in April. Let me know if you need anything else!"
+ },
+ {
+  "case": "names",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call save_note (called: nothing)",
+  "seconds": 5.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Understood, Ary. I will remember that my name is Zen. How can I help you today?"
+ },
+ {
+  "case": "names",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 41.2,
+  "tools": [
+   "save_note({\"content\": \"User's name is Ary. Assistant's name is Zen.\", \"title\": \"User Names\"}) ok",
+   "save_note({\"content\": \"User's name is Ary. Assistant's name is Zen.\", \"title\": \"User Names\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "User's name is Ary. Assistant's name is Zen.",
+     "title": "User Names"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "User's name is Ary. Assistant's name is Zen.",
+     "title": "User Names"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The names have been successfully saved now. Is there anything else you'd like me to remember or anything else I can help you with?"
+ },
+ {
+  "case": "pin",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.4,
+  "tools": [
+   "save_note({\"content\": \"The user has requested that all answers must be provided in metric units.\", \"title\": \"Metric Units Constraint\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user has requested that all answers must be provided in metric units.",
+     "title": "Metric Units Constraint"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Got it. I've noted that all answers must be provided in metric units moving forward."
+ },
+ {
+  "case": "pin",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 18.5,
+  "tools": [
+   "save_note({\"content\": \"The user has requested that all future answers must be provided in metric units (e.g., meters, kilograms, Celsius).\", \"title\": …) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user has requested that all future answers must be provided in metric units (e.g., meters, kilograms, Celsius).",
+     "title": "Unit Preference"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I apologize for the oversight. I have now saved the preference to keep this in view in every chat. I will always provide answers in metric units."
+ },
+ {
+  "case": "save_code",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.1,
+  "tools": [
+   "files({\"content\": \"import numpy as np\\nx = np.linspace(-5, 5, 100)\\nprint((x ** 2).max())\", \"mode\": \"write\", \"name\": \"y_equals_x_squared.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "import numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())",
+     "mode": "write",
+     "name": "y_equals_x_squared.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The code has been saved as `y_equals_x_squared.py`."
+ },
+ {
+  "case": "save_code",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.9,
+  "tools": [
+   "files({\"content\": \"import numpy as np\\nx = np.linspace(-5, 5, 100)\\nprint((x ** 2).max())\", \"mode\": \"write\", \"name\": \"y_equals_x_squared.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "import numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())",
+     "mode": "write",
+     "name": "y_equals_x_squared.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The code has been saved in a file named `y_equals_x_squared.py`."
+ },
+ {
+  "case": "no_note",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.1,
+  "tools": [
+   "calculate({\"expression\": \"12 * 12\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "12 * 12"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "12 times 12 is 144."
+ },
+ {
+  "case": "no_note",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.3,
+  "tools": [
+   "calculate({\"expression\": \"12 * 12\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "12 * 12"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "12 times 12 is 144."
+ },
+ {
+  "case": "your_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 14.2,
+  "tools": [
+   "ask_knowledge({\"question\": \"What is the assistant's name?\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is the assistant's name?"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "My name is Zen."
+ },
+ {
+  "case": "your_name",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [
+   "ask_knowledge({\"question\": \"What is your name?\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is your name?"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "My name is Zen."
+ },
+ {
+  "case": "my_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.4,
+  "tools": [
+   "ask_knowledge({\"question\": \"what is the user's name?\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "what is the user's name?"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Your name is Ary."
+ },
+ {
+  "case": "my_name",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Your name is Ary."
+ },
+ {
+  "case": "who_talking",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 30.6,
+  "tools": [
+   "ask_knowledge({\"question\": \"what is the user's name and my name\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "what is the user's name and my name"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "You are talking to Zen, and the user's name is Ary."
+ },
+ {
+  "case": "who_talking",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "You are talking to Zen."
+ }
+]

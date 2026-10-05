@@ -16,3 +16,12 @@ data/staging/
 # benchmark data (public downloads) and results scratch
 bench/data/
 bench/work/
+
+# the assistant's workspaces, chats and files (user data)
+data/assistant/
+
+# local secrets (API keys): read by app/config.py, never committed
+.env
+
+# Claude Code settings for this machine (local paths to llama-server and models)
+.claude/

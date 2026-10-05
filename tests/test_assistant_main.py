@@ -1,0 +1,317 @@
+"""The main slot's turn, driven by scripted models on both slots (no LLM)."""
+
+from __future__ import annotations
+
+import json
+
+import pandas as pd
+import pytest
+
+from app.providers.base import ModelTurn
+from app.providers.scripted import ScriptedProvider, call
+from app.assistant import main as main_slot
+from app.assistant import registry
+from app.assistant.main import MAIN, reply, send
+from app.assistant.registry import Tool
+from app.assistant.store import Store
+from app.tools.core import ok
+from app.tools.memory import recall
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Store(tmp_path / "assistant")
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def chat(store):
+    ws = store.create_workspace("Shop")
+    return store.create_chat(ws["id"])
+
+
+def tools_turn(*calls) -> ModelTurn:
+    return ModelTurn(text="", tool_calls=list(calls), stop="tool_use")
+
+
+def answer(text: str) -> ModelTurn:
+    return ModelTurn(text=text, stop="end")
+
+
+def run(events) -> list[dict]:
+    return list(events)
+
+
+def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
+    main = ScriptedProvider([tools_turn(call("calculate", expression="2400 * 0.15")), answer("It is 360.")])
+    events = run(send(store, chat["id"], "What is 15% of 2400?", main, ScriptedProvider([])))
+    kinds = [e["type"] for e in events]
+    assert kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done" and events[-1]["answer"] == "It is 360."
+    saved = store.messages(chat["id"])
+    assert [m["role"] for m in saved] == ["user", "assistant", "tool", "assistant"]
+    assert saved[0]["content"].startswith("[") and saved[0]["text"] == "What is 15% of 2400?"  # stamped once
+    assert '"result": 360' in saved[2]["content"]
+    first = main.requests[0]
+    assert first["system"].startswith(MAIN) and "Now:" not in first["system"]  # no clock in the system prompt
+    assert {t["name"] for t in first["tools"]} == {"get_weather", "generate_image", "view_image", "draw_diagram",
+                                                    "calculate", "save_note", "ask_user", "files", "research_web",
+                                                    "ask_knowledge", "write_code"}  # analyze_data once there is a table
+    assert store.chat(chat["id"])["title"] == "What is 15% of 2400?"
+    _, index = store.open(chat["workspace_id"])
+    other = store.create_chat(chat["workspace_id"])
+    found = recall(index, "15% of 2400", exclude_conversation=other["id"]).result["turns"]
+    assert found and "It is 360." in found[0]["text"] and "calculate" in found[0]["text"]  # remembered
+
+
+def test_ask_user_pauses_the_turn_and_the_answer_continues_it(store, chat):
+    main = ScriptedProvider([tools_turn(call("ask_user", question="Day first or month first?",
+                                             options=["Day first", "Month first"])),
+                             answer("Then February's total is 636.")])
+    paused = run(send(store, chat["id"], "February total?", main, ScriptedProvider([])))
+    assert paused[-1]["type"] == "question" and paused[-1]["options"] == ["Day first", "Month first"]
+    assert any(e["type"] == "artifact" and e["artifact"]["type"] == "question" for e in paused)
+    assert store.chat(chat["id"])["pending"]["question"] == "Day first or month first?"
+    assert not any(e["type"] == "done" for e in paused)
+    done = run(reply(store, chat["id"], "Day first", main, ScriptedProvider([])))
+    assert done[-1] == {"type": "done", "answer": "Then February's total is 636."}
+    assert store.chat(chat["id"])["pending"] is None
+    resumed = main.requests[1]["messages"][-1]
+    assert resumed["role"] == "tool" and json.loads(resumed["content"])["answer"] == "Day first"
+
+
+def test_typing_while_a_question_waits_answers_it(store, chat):
+    main = ScriptedProvider([tools_turn(call("ask_user", question="Which year?")), answer("Done for 2025.")])
+    run(send(store, chat["id"], "Totals please", main, ScriptedProvider([])))
+    done = run(send(store, chat["id"], "2025", main, ScriptedProvider([])))
+    assert done[-1]["answer"] == "Done for 2025."
+    assert [m for m in store.messages(chat["id"]) if m["role"] == "user"][-1]["text"] == "Totals please"
+
+
+def test_a_delegate_runs_the_worker_and_its_progress_is_streamed(store, chat, monkeypatch):
+    page = {"url": "https://news.example.com/rates", "title": "Rates", "text": "The bank raised rates by 0.25."}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool(
+        "read_webpage", "read", registry.ReadPageIn,
+        lambda c, a: ok(page, {"type": "webpage", "url": page["url"], "title": "Rates"})))
+    worker = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                               tools_turn(call("submit_result", answer="Rates rose by 0.25 points.",
+                                               sources=["https://news.example.com/rates"]))])
+    main = ScriptedProvider([tools_turn(call("research_web", task="What did the central bank do?")),
+                             answer("Rates rose by 0.25 points ([source](https://news.example.com/rates)).")])
+    events = run(send(store, chat["id"], "Any rate news?", main, worker))
+    steps = [e["event"] for e in events if e["type"] == "worker"]
+    assert steps[:4] == ["start", "turn", "tool", "result"] and "check" in steps
+    assert "The user's message: Any rate news?" in worker.requests[0]["messages"][0]["content"]
+    result = json.loads([m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"])
+    assert result["answer"] == "Rates rose by 0.25 points." and result["worker"] == "web"
+    shown = [m for m in store.messages(chat["id"]) if m["role"] == "artifact"]
+    assert {a["artifact"]["type"] for a in shown} >= {"webpage", "sources"}  # kept for redisplay, never sent to a model
+    assert all(m["role"] != "artifact" for m in main.requests[1]["messages"])
+
+
+def test_analyze_data_appears_once_there_is_a_table(store, chat):
+    ws, _ = store.open(chat["workspace_id"])
+    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
+    main = ScriptedProvider([answer("ok")])
+    run(send(store, chat["id"], "hi", main, ScriptedProvider([])))
+    assert "analyze_data" in {t["name"] for t in main.requests[0]["tools"]}
+    assert "data_1  t.csv" in main.requests[0]["messages"][-1]["content"]  # the workspace, on the message
+
+
+def test_the_system_prompt_never_changes_and_context_is_appended(store, chat):
+    from app.tools.notes import save_note
+    ws, index = store.open(chat["workspace_id"])
+    main = ScriptedProvider([answer("one"), answer("two"), answer("three")])
+    run(send(store, chat["id"], "first", main, ScriptedProvider([])))
+    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="sales.csv")
+    save_note(ws, "Fiscal year", "The fiscal year starts in April.", index=index)
+    run(send(store, chat["id"], "second", main, ScriptedProvider([])))
+    run(send(store, chat["id"], "third", main, ScriptedProvider([])))
+    assert len({r["system"] for r in main.requests}) == 1 and main.requests[0]["system"] == MAIN
+    first, second, third = (r["messages"][-1]["content"] for r in main.requests)
+    assert "[Workspace now:\nempty" in first and "Pinned" not in first  # a snapshot opens the chat
+    assert "+ data_1  sales.csv - 2 rows" in second and "fiscal year starts in April" in second  # only the changes
+    assert third.endswith("third")  # nothing changed: nothing added
+    earlier = main.requests[2]["messages"]
+    assert [m["content"] for m in earlier if m["role"] == "user"][:2] == [first, second]  # history never rewritten
+
+
+def test_a_copy_of_the_apps_notes_never_reaches_the_user(store, chat):
+    echoed = "Saved plan.md.\n\n[Workspace now:\ndata_1  sales.csv - 3 rows]\n[Pinned notes (your 5 latest notes):\n- A (03 Oct): b]"
+    main = ScriptedProvider([answer(echoed)])
+    events = run(send(store, chat["id"], "save my plan", main, ScriptedProvider([])))
+    assert events[-1]["answer"] == "Saved plan.md." and store.messages(chat["id"])[-1]["text"] == "Saved plan.md."
+
+
+def test_the_rolling_window_cut_is_kept_between_turns(store, chat):
+    long = "x" * 9_000
+    main = ScriptedProvider([answer(f"answer {i} {long}") for i in range(6)])
+    for i in range(6):
+        said = f"from now on always answer in metric units {long}" if i == 0 else f"question {i} {long}"
+        run(send(store, chat["id"], said, main, ScriptedProvider([])))
+    dropped = store.chat(chat["id"])["dropped"]
+    assert dropped > 0
+    last = main.requests[-1]
+    assert last["system"] == MAIN
+    cut_at = next(m["content"] for m in last["messages"] if "earlier turn(s) of this chat are not shown" in m["content"])
+    assert "[Workspace now:" in cut_at and "standing instructions" in cut_at and "always answer in metric" in cut_at
+    first = store.messages(chat["id"])[0]["said"][:19]  # '[Sat 04 Oct 2026, 10:37]': the chat's own first stamp
+    assert f"This chat started {first}" in cut_at  # the start is out of view after a cut; it is said here
+    said = [main_slot.STAMP.sub("", m["content"]) for m in last["messages"] if m["role"] == "user"]
+    assert not any(s.startswith("from now on") for s in said)  # the turn itself was cut; its instruction kept
+
+
+def test_a_reply_cut_off_in_its_text_gets_another_step(store, chat):
+    main = ScriptedProvider([ModelTurn(text="The answer is", stop="max_tokens"), answer("The answer is 42.")])
+    events = run(send(store, chat["id"], "Question?", main, ScriptedProvider([])))
+    assert events[-1]["answer"] == "The answer is 42."
+    hidden = [m for m in store.messages(chat["id"]) if m.get("hidden")]
+    assert len(hidden) == 1 and "cut off by the length limit" in hidden[0]["content"]
+    assert [r["budget"] for r in main.requests] == [None, None]  # no thinking budget
+
+
+def test_thinking_until_the_limit_lets_the_user_try_again_quickly(store, chat):
+    """The user's design: no thinking budget; a reply that thought until the limit and said nothing shows
+    a card, and 'Try again, answer quickly' retries that once with a thinking budget."""
+    main = ScriptedProvider([ModelTurn(text="", stop="max_tokens"), answer("It is 1.")])
+    asked = run(send(store, chat["id"], "Find 7I1 + 12I2.", main, ScriptedProvider([])))
+    card = asked[-1]
+    assert card["type"] == "question" and card["options"] == [main_slot.TRY_AGAIN] and card["retry"]
+    assert store.chat(chat["id"])["pending"]["retry"] and len(main.requests) == 1
+    done = run(reply(store, chat["id"], main_slot.TRY_AGAIN, main, ScriptedProvider([])))
+    assert done[-1]["answer"] == "It is 1."
+    assert main.requests[1]["budget"] == main_slot.QUICK_BUDGET and main.requests[1]["think"]
+    assert main.requests[1]["messages"][-1]["content"] == main_slot.QUICK
+
+
+def test_skipping_try_again_ends_the_turn(store, chat):
+    main = ScriptedProvider([ModelTurn(text="", stop="max_tokens")])
+    run(send(store, chat["id"], "Find 7I1 + 12I2.", main, ScriptedProvider([])))
+    done = run(reply(store, chat["id"], None, main, ScriptedProvider([])))
+    assert done == [{"type": "done", "answer": ""}] and store.chat(chat["id"])["pending"] is None
+    assert len(main.requests) == 1
+
+
+def test_one_turn_at_a_time(store, chat):
+    main_slot._busy.acquire()
+    try:
+        events = run(send(store, chat["id"], "hi", ScriptedProvider([answer("x")]), ScriptedProvider([])))
+    finally:
+        main_slot._busy.release()
+    assert events[0]["type"] == "error" and "still being written" in events[0]["message"]
+
+
+def test_a_model_server_failure_ends_the_turn_with_an_error(store, chat):
+    events = run(send(store, chat["id"], "hi", ScriptedProvider([]), ScriptedProvider([])))
+    assert events[-1]["type"] == "error" and "no more turns" in events[-1]["message"]
+    assert not main_slot._busy.locked()
+
+
+def test_a_copy_of_the_time_stamp_never_reaches_the_user(store, chat):
+    main = ScriptedProvider([answer("[Sat 03 Oct 2026, 00:10] The answer is 7."),
+                             answer("[Brackets] are kept when they are not a stamp.")])
+    first = run(send(store, chat["id"], "Q1", main, ScriptedProvider([])))
+    assert "".join(e["text"] for e in first if e["type"] == "text").strip() == "The answer is 7."
+    assert first[-1]["answer"] == "The answer is 7."
+    second = run(send(store, chat["id"], "Q2", main, ScriptedProvider([])))
+    assert second[-1]["answer"] == "[Brackets] are kept when they are not a stamp."
+
+
+def test_ask_user_options_written_as_one_text_become_buttons(store, chat):
+    main = ScriptedProvider([tools_turn(call("ask_user", question="Which order?",
+                                             options="- Day first (03/04 = 3 April)\n- Month first (03/04 = March 4)"))])
+    events = run(send(store, chat["id"], "Feb total?", main, ScriptedProvider([])))
+    assert events[-1]["options"] == ["Day first (03/04 = 3 April)", "Month first (03/04 = March 4)"]
+
+
+def _ambiguous_dates(store, chat):
+    upload = store.folder(chat["workspace_id"]) / "sales_q1.csv"
+    upload.write_text("\n".join(["date,amount"] + [f"{d:02d}/{m:02d}/2025,{100 + d}" for m in (1, 2, 3)
+                                                   for d in (1, 3, 5, 7, 9, 11)]), encoding="utf-8")
+    ws, _ = store.open(chat["workspace_id"])
+    ws.add_file(upload)
+    return ws
+
+
+FEB = "SELECT sum(amount) AS total FROM data_2 WHERE month(date) = 2"
+
+
+def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_goes_on(store, chat):
+    """inspect_data's date question is asked by the runner at once; the click's cleaning step is applied by
+    code and the same helper task goes on (before: it ended, main asked, and the task started again)."""
+    ws = _ambiguous_dates(store, chat)
+    worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                               tools_turn(call("query_data", sql=FEB)),
+                               tools_turn(call("save_report", question="February 2025 total sales",
+                                               data_used="data_2: data_1 with day-first dates",
+                                               method="Summed amount for February 2025.", results="636",
+                                               caveats="One quarter of data."))])
+    main = ScriptedProvider([tools_turn(call("analyze_data", task="February 2025 total sales", data="data_1")),
+                             answer("February 2025: 636.")])
+    asked = run(send(store, chat["id"], "February total?", main, worker))
+    question = asked[-1]  # this request's stream ends at the question; the turn waits in place
+    assert question["type"] == "question" and question["inplace"] and question["tool"] == "analyze_data"
+    assert question["options"] == ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]
+    assert main_slot.live(chat["id"]) is not None and len(worker.requests) == 1  # waiting, not ended
+    done = run(reply(store, chat["id"], "Day first (03/04/2025 = 3 April)", main, worker))
+    assert done[-1]["type"] == "done" and done[-1]["answer"] == "February 2025: 636."
+    assert len(main.requests) == 2  # one delegation: the helper kept its work
+    seen = worker.requests[1]["messages"][-1]["content"]
+    assert "The user chose 'Day first" in seen and "Use data_2 from now on" in seen
+    cleaned = ws.table("data_2")
+    assert str(cleaned["date"].dtype).startswith("datetime64") and cleaned["date"].dt.month.tolist()[6] == 2
+    stored = [m["artifact"] for m in store.messages(chat["id"]) if m["role"] == "artifact"]
+    assert {"type": "answer", "answer": "Day first (03/04/2025 = 3 April)"} in stored  # a reload closes the card
+
+
+def test_a_typed_answer_also_picks_the_option(store, chat):
+    ws = _ambiguous_dates(store, chat)
+    worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                               tools_turn(call("save_report", question="Feb", data_used="data_2", method="m",
+                                               results="r", caveats="c"))])
+    main = ScriptedProvider([tools_turn(call("analyze_data", task="Feb total", data="data_1")), answer("ok")])
+    run(send(store, chat["id"], "Feb total?", main, worker))
+    run(reply(store, chat["id"], "month first", main, worker))  # typed instead of clicked
+    assert ws.table("data_2")["date"].dt.month.tolist()[0] == 1
+
+
+def test_a_helper_asks_its_own_question_in_place(store, chat):
+    worker = ScriptedProvider([tools_turn(call("ask_user", question="Which language?", options=["Python", "Rust"])),
+                               tools_turn(call("run_code", code="print('hi')")),
+                               tools_turn({"id": "s", "name": "save", "input": {
+                                   "name": "hi.py", "purpose": "Says hi.", "how_it_works": "One print.",
+                                   "inputs_outputs": "Prints hi.", "how_to_run": "Run it.", "limits": "None."}})])
+    main = ScriptedProvider([tools_turn(call("write_code", task="a hello script")), answer("Saved hi.py.")])
+    asked = run(send(store, chat["id"], "write a hello script", main, worker))
+    assert asked[-1]["question"] == "Which language?" and asked[-1]["tool"] == "write_code"
+    done = run(reply(store, chat["id"], "Python", main, worker))
+    assert done[-1]["answer"] == "Saved hi.py."
+    assert '"answer": "Python"' in worker.requests[1]["messages"][-1]["content"]
+
+
+def test_a_skipped_helper_question_goes_on_with_the_recommended_option(store, chat):
+    worker = ScriptedProvider([tools_turn(call("ask_user", question="Which chart?", options=["Line", "Bar"])),
+                               ModelTurn(text="I can't do that.", stop="end"),
+                               ModelTurn(text="I can't do that.", stop="end")])
+    ws, _ = store.open(chat["workspace_id"])
+    ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
+    main = ScriptedProvider([tools_turn(call("analyze_data", task="chart it", data="data_1")), answer("ok")])
+    run(send(store, chat["id"], "chart it", main, worker))
+    run(reply(store, chat["id"], None, main, worker))
+    told = worker.requests[1]["messages"][-1]["content"]
+    assert "The user skipped the question" in told and "recommended option (Line)" in told
+
+
+
+def test_a_message_sent_while_a_helper_waits_in_place_is_its_answer(store, chat, monkeypatch):
+    """Read in the code: a helper asking in place sets no pending question, so a message typed into the
+    normal box went to a new turn - refused, as one is still running. It is the answer."""
+    class Waiting:
+        def waiting(self):
+            return True
+
+    handed = []
+    monkeypatch.setattr(main_slot, "live", lambda chat_id: Waiting())
+    monkeypatch.setattr(main_slot, "reply", lambda st, cid, text, m, w: iter(handed.append(text) or [{"type": "done"}]))
+    events = list(send(store, chat["id"], "the bar chart", ScriptedProvider([]), ScriptedProvider([])))
+    assert handed == ["the bar chart"] and events == [{"type": "done"}]

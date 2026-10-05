@@ -1,0 +1,46 @@
+[
+ {
+  "id": "h_forecast",
+  "role": "data",
+  "split": "holdout",
+  "passed": true,
+  "detail": "forecast made from year + quarter columns",
+  "seconds": 33.1,
+  "model_calls": 4,
+  "tokens": 1781,
+  "tools": [
+   "inspect_data",
+   "query_data",
+   "forecast"
+  ],
+  "calls": [
+   {
+    "name": "inspect_data",
+    "input": {
+     "data": "data_1"
+    }
+   },
+   {
+    "name": "query_data",
+    "input": {
+     "save": true,
+     "sql": "SELECT *, make_date(CAST(\"year\" AS INTEGER), CAST((\"quarter\" - 1) * 3 + 1 AS INTEGER), 1) AS date FROM data_1"
+    }
+   },
+   {
+    "name": "forecast",
+    "input": {
+     "data": "data_2",
+     "date": "date",
+     "horizon": 4,
+     "time_unit": "quarter",
+     "value": "realgdp"
+    }
+   }
+  ],
+  "warnings": [],
+  "answer": "The forecast for real GDP for the next 4 quarters is as follows:\n\n| Period | Forecasted Real GDP |\n| :--- | :--- |\n| 2009-10-01 | 12969.3026 |\n| 2010-01-01 | 12948.2786 |\n| 2010-04-01 | 12927.8156 |\n| 2010-07-01 | 12907.8987 |\n\nThe model used is exponential smoothing (ETS), and it performed well in backtesting, missing by 1% on average. However, please note that the range is based on only 12 past errors, so treat it as rough.",
+  "sources": null,
+  "question_for_user": null
+ }
+]

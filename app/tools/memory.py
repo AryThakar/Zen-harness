@@ -46,14 +46,20 @@ def remember_turn(index: SearchIndex, conversation: str, user: str, answer: str,
 
 
 @tool
-def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str | None = None) -> ToolResult:
-    """Find earlier conversation turns about the query."""
+def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str | None = None,
+           visible_since: str | None = None) -> ToolResult:
+    """Find earlier conversation turns about the query - in every chat of the workspace. Of the current
+    chat (exclude_conversation) only the turns cut from the model's view count: those before
+    visible_since, none when nothing was cut (the rest is already in front of it). Before, the current
+    chat was left out whole, so 'earlier turns of this chat are not shown; find them with ask_knowledge'
+    could never work."""
     query = " ".join(str(query).split())
     if len(query) < 2:
         raise ToolError("query is empty; say what to look for.", field="query")
     k = max(1, min(int(k), 8))
     hits, used_meaning = index.search(query, SOURCE, k + 4)
-    hits = [h for h in hits if h.ref != exclude_conversation][:k]
+    hits = [h for h in hits if h.ref != exclude_conversation
+            or (visible_since is not None and (h.created or "") < visible_since)][:k]
     result = {"query": query, "search": "keywords and meaning" if used_meaning else
               "keywords only (the embedding model is unavailable)"}
     if not hits:
@@ -61,8 +67,10 @@ def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str
         result["note"] = ("No earlier conversation matched. If it may be in a document or saved note, use "
                           "search_files; otherwise say so - don't guess what was said.")
         return ok(result)
+    hits.sort(key=lambda h: h.created)  # relevance picked them; shown in the order they were said
     result["turns"] = [{"when": h.created[:16].replace("T", " "), "conversation": h.ref,
                         "text": h.text if len(h.text) <= MAX_TEXT else h.text[:MAX_TEXT] + " ..."} for h in hits]
-    result["note"] = "These are earlier turns as they were said; mention when, and that things may have changed since."
+    result["note"] = ("Earlier turns as they were said, " + ("oldest first: where they differ, a later one supersedes "
+                      "an earlier one. " if len(hits) > 1 else "") + "Mention when, and that things may have changed since.")
     return ok(result, {"type": "sources", "query": query,
                        "items": [{"source": f"conversation {h.ref}, {h.created[:10]}", "text": h.text} for h in hits]})

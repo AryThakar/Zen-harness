@@ -326,3 +326,39 @@ def test_pages_drawn_by_javascript_give_their_description():
     http = site({"https://docs.example.com/spa": httpx.Response(200, content=page, headers={"content-type": "text/html"})})
     r = read_webpage("https://docs.example.com/spa", http=http, resolve=resolve)
     assert r.status == "ok" and r.result["text"].startswith("Fast analytics for everyone.") and "JavaScript" in r.result["text"]
+
+
+def test_a_bot_check_page_is_reported_not_read():
+    from app.tools.web import _bot_check
+    seen = "##### Verifying your browser…\nThis takes less than a second.\nYour experience on this site will be improved."
+    assert _bot_check("Verifying… — Danielitte", seen, "https://danielitte.com/recaptcha/challenge")
+    assert _bot_check("Just a moment...", "Enable JavaScript and cookies to continue", "https://x.org/a")
+    assert not _bot_check("Short note", "Our newsletter. Subscribe for updates.", "https://x.org/b")
+    article = "A CAPTCHA is a type of challenge-response test. " * 40  # a page about captchas is read
+    assert not _bot_check("CAPTCHA - Wikipedia", article, "https://en.wikipedia.org/wiki/CAPTCHA")
+
+
+# ---------------------------------------------------------------- page age and the files a page offers
+
+DATASETS = b"""<!doctype html><html><head><title>Open data: city bikes</title>
+<meta property="article:published_time" content="2023-05-01T09:00:00Z">
+<meta property="article:modified_time" content="2026-03-02">
+</head><body><article><h1>City bikes</h1><p>Trips per station, updated monthly. Download the data below.</p>
+<p><a href="/files/trips-2025.csv">Trips 2025 (CSV)</a> <a href="/files/stations.xlsx">Stations</a>
+<a href="/files/readme.txt">notes</a> <a href="/about">About us</a>
+<a href="https://github.com/city/bikes/blob/main/clean.py">cleaning script</a>
+<a href="https://github.com/city/bikes">the repository</a></p></article></body></html>"""
+
+
+def test_a_page_says_how_old_it_is_and_which_files_it_offers():
+    from datetime import date
+    assert web.page_age("2023-05-01T09:00:00Z", None, today=date(2026, 10, 5)) == "published 2023-05-01, 3 years ago"
+    assert web.page_age("2023-05-01", "2026-09-20", today=date(2026, 10, 5)) == "updated 2026-09-20, 15 days ago"
+    assert web.page_age("May 2023", None) is None
+    http = site({"https://news.example.com/bikes": httpx.Response(200, content=DATASETS,
+                                                                  headers={"content-type": "text/html"})})
+    r = read_webpage("https://news.example.com/bikes", http=http, resolve=resolve).result
+    assert r["updated"] == "2026-03-02" and r["age"].startswith("updated 2026-03-02, ")
+    assert r["files"] == ["https://news.example.com/files/trips-2025.csv", "https://news.example.com/files/stations.xlsx",
+                          "https://github.com/city/bikes/blob/main/clean.py"]  # tables and GitHub files only
+    assert "give its link in downloads" in r["files_note"]

@@ -1,0 +1,36 @@
+[
+ {
+  "case": "cat",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.6,
+  "tools": [
+   "generate_image({\"prompt\": \"a cat playing the piano\", \"size\": \"square\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "generate_image",
+    "input": {
+     "prompt": "a cat playing the piano",
+     "size": "square"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I have created an image of a cat playing the piano for you."
+ },
+ {
+  "case": "no_image",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "A sunset is a beautiful and often dramatic natural event where the sun appears to sink below the horizon, typically marking the end of the day.\n\nWhat it looks like can vary significantly based on weather, atmospheric conditions, and the time of year, but common elements usually include:\n\n*   **Colors:** The sky often transforms into a vibrant palette of warm colors. Reds, oranges, and golds are the most common, often blending with pinks, purples, and sometimes deep blues at the very top of the atmosphere.\n*   **Light and Shadows:** As the sun drops lower, the light becomes softer, warmer, and more golden (known as the \"golden hour\"). Shadows become longer and more pronounced.\n*   **The Sun's Appearance:** Right before it dips below the horizon, the sun itself often glows intensely, sometimes looking like a brilliant disc of fire as its light travels through more of the Earth's atmosphere.\n*   **Silhouettes:** Trees, buildings, and other objects against the bright backdrop often appear dark and completely black (silhouetted).\n\nIn short, it's a spectacular display of color and changing light as the day transitions into twilight."
+ }
+]

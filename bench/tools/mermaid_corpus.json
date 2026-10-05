@@ -1,0 +1,170 @@
+[
+ {
+  "chat": "ce784e727839",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD\n    A[Browser] -->|1. HTTP Request| B{DNS Lookup/TCP Connection};\n    B -->|2. Connection Established| C[Web Server];\n    C -->|3. Request Received| D[Application/Backend Logic];\n    D -->|4. Query Data| E[Database];\n    E -->|5. Return Data| D;\n    D -->|6. Process & Generate Response| F[Web Server];\n    F -->|7. HTTP Response| A;\n    A --> G[Browser Renders Page];",
+  "mended": "graph TD\n    A[Browser] -->|1. HTTP Request| B{DNS Lookup/TCP Connection};\n    B -->|2. Connection Established| C[Web Server];\n    C -->|3. Request Received| D[Application/Backend Logic];\n    D -->|4. Query Data| E[Database];\n    E -->|5. Return Data| D;\n    D -->|6. Process & Generate Response| F[Web Server];\n    F -->|7. HTTP Response| A;\n    A --> G[Browser Renders Page];",
+  "refused": null
+ },
+ {
+  "chat": "295209bac762",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD;\n    A[Browser] --> B{DNS Lookup};\n    B --> C[DNS Server];\n    C --> D[Web Server IP];\n    A --> E(HTTP Request);\n    E --> F[Reverse Proxy/Load Balancer];\n    F --> G[Web Server Application];\n    G --> H{Process Logic / API Call};\n    H -- Data needed --> I[Database];\n    I --> H(Data Received);\n    H -- Processed Data --> G[Web Server Application];\n    G -- HTTP Response --> F;\n    F --> A[Browser];",
+  "mended": "graph TD;\n    A[Browser] --> B{DNS Lookup};\n    B --> C[DNS Server];\n    C --> D[Web Server IP];\n    A --> E(HTTP Request);\n    E --> F[Reverse Proxy/Load Balancer];\n    F --> G[Web Server Application];\n    G --> H{Process Logic / API Call};\n    H -- Data needed --> I[Database];\n    I --> H(Data Received);\n    H -- Processed Data --> G[Web Server Application];\n    G -- HTTP Response --> F;\n    F --> A[Browser];",
+  "refused": null
+ },
+ {
+  "chat": "2c7f676dae0e",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD\n    A[Clock Rising Edge] --> B{J=0 and K=0?}\n    B -- Yes --> C[Hold: Q(next) = Q(current)]\n    B -- No --> D{J=1 and K=0?}\n    D -- Yes --> E[Set: Q(next) = 1]\n    D -- No --> F{J=0 and K=1?}\n    F -- Yes --> G[Reset: Q(next) = 0]\n    F -- No --> H[Toggle: Q(next) = NOT Q(current)]\n    C --> Z(End of Cycle)\n    E --> Z\n    G --> Z\n    H --> Z",
+  "mended": "graph TD\n    A[Clock Rising Edge] --> B{J=0 and K=0?}\n    B -- Yes --> C[\"Hold: Q(next) = Q(current)\"]\n    B -- No --> D{J=1 and K=0?}\n    D -- Yes --> E[\"Set: Q(next) = 1\"]\n    D -- No --> F{J=0 and K=1?}\n    F -- Yes --> G[\"Reset: Q(next) = 0\"]\n    F -- No --> H[\"Toggle: Q(next) = NOT Q(current)\"]\n    C --> Z(End of Cycle)\n    E --> Z\n    G --> Z\n    H --> Z",
+  "refused": null
+ },
+ {
+  "chat": "2c7f676dae0e",
+  "source": "call",
+  "kind": "stateDiagram",
+  "code": "stateDiagram\n    [*] --> State0: J=0, K=0\n    State0 --> State0: J=0, K=0 (Hold)\n    State0 --> State1: J=1, K=0 (Set)\n    State1 --> State1: J=0, K=0 (Hold)\n    State1 --> State0: J=0, K=1 (Reset)\n    State0 --> State1: J=1, K=1 (Toggle)\n    State1 --> State0: J=1, K=1 (Toggle)\n",
+  "mended": "stateDiagram\n    [*] --> State0: J=0, K=0\n    State0 --> State0: J=0, K=0 (Hold)\n    State0 --> State1: J=1, K=0 (Set)\n    State1 --> State1: J=0, K=0 (Hold)\n    State1 --> State0: J=0, K=1 (Reset)\n    State0 --> State1: J=1, K=1 (Toggle)\n    State1 --> State0: J=1, K=1 (Toggle)",
+  "refused": null
+ },
+ {
+  "chat": "2c7f676dae0e",
+  "source": "call",
+  "kind": null,
+  "code": "digraph JKFF {\n    node [shape=box, style=\"filled\", fillcolor=\"#f9f9f9\"];\n    Clock [shape=circle, label=\"Clock (CLK)\"];\n    J [shape=circle, label=\"J\"];\n    K [shape=circle, label=\"K\"];\n    Set [shape=box, label=\"S\"];\n    Reset [shape=box, label=\"R\"];\n    Hold [shape=box, label=\"Q_current\"];\n    Q_next [shape=box, label=\"Q_next\"];\n    \n    J -> AND_1;\n    NOT_Q [shape=circle, label=\"NOT Q_current\"];\n    NOT_Q -> OR_1;\n\n    AND_1 [shape=diamond, label=\"J AND NOT Q\"];\n    AND_1 -> OR_1;\n\n    K -> AND_2;\n    Q_current -> AND_2;\n\n    AND_2 [shape=diamond, label=\"NOT K AND Q_current\"];\n    AND_2 -> OR_1;\n    \n    OR_1 [shape=hexagon, label=\"OR Gate\"];\n    OR_1 -> Q_next;\n\n    // Connecting the clock to the output via a D-type register/latch is complex, \n    // so we show the input logic that determines the next state Q_next.\n}",
+  "mended": null,
+  "refused": "The first line must name the diagram type (flowchart, graph, sequenceDiagram, classDiagram, stateDiagram-v2, stateDiagram ...), e.g. 'flowchart TD'."
+ },
+ {
+  "chat": "2c7f676dae0e",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "flowchart TD\n    subgraph Inputs\n        J[J]\n        K[K]\n        CLK[Clock (CLK)]\n    end\n    \n    subgraph Logic_Gates\n        J --> AND_J_bar\n        J --> NAND_J_J_bar\n        K --> NAND_K_Q\n        Q_bar[Q_bar]\n        \n        NAND_J_J_bar[NAND]\n        NAND_K_Q[NAND]\n        \n        OR_Gate{OR}\n    end\n    \n    subgraph State_Storage\n        AND_J_J_bar --> OR_Gate\n        NAND_K_Q --> OR_Gate\n        \n        OR_Gate --> Q_next[Q_next]\n        Q_next --> Q_bar\n    end\n    \n    CLK --> Latch_Control[Latch Control]\n    Latch_Control --> OR_Gate\n    Latch_Control --> AND_J_J_bar\n    \n    Q_next -- State Output --> Q[Q_current]\n",
+  "mended": "flowchart TD\n    subgraph Inputs\n        J[J]\n        K[K]\n        CLK[\"Clock (CLK)\"]\n    end\n    \n    subgraph Logic_Gates\n        J --> AND_J_bar\n        J --> NAND_J_J_bar\n        K --> NAND_K_Q\n        Q_bar[Q_bar]\n        \n        NAND_J_J_bar[NAND]\n        NAND_K_Q[NAND]\n        \n        OR_Gate{OR}\n    end\n    \n    subgraph State_Storage\n        AND_J_J_bar --> OR_Gate\n        NAND_K_Q --> OR_Gate\n        \n        OR_Gate --> Q_next[Q_next]\n        Q_next --> Q_bar\n    end\n    \n    CLK --> Latch_Control[Latch Control]\n    Latch_Control --> OR_Gate\n    Latch_Control --> AND_J_J_bar\n    \n    Q_next -- State Output --> Q[Q_current]",
+  "refused": null
+ },
+ {
+  "chat": "2c7f676dae0e",
+  "source": "call",
+  "kind": "sequenceDiagram",
+  "code": "sequenceDiagram\n    participant CLK as Clock (CLK)\n    participant J as Input J\n    participant K as Input K\n    participant Q as Output Q\n    \n    Note over CLK, Q: Initial State: Q=0\n    \n    activate J\n    J->>CLK: Pulse J=1\n    J-->>CLK: J=1\n    deactivate J\n    \n    activate K\n    K->>CLK: Pulse K=1\n    K-->>CLK: K=1\n    deactivate K\n    \n    Note over CLK, Q: At Clock Rising Edge (J=1, K=1)\n    Q-->>CLK: Q flips from 0 to 1 (TOGGLE)\n    \n    Note over CLK, Q: After a short delay, inputs drop\n    deactivate J\n    deactivate K\n    \n    Note over CLK, Q: Inputs settle J=0, K=0 (HOLD)\n    Q-->>CLK: State remains 1 (HOLD)\n    \n    Note over CLK, Q: Next pulse\n    CLK-->>Q: CLK Rising Edge\n    Q-->>CLK: State remains 1 (HOLD)\n",
+  "mended": "sequenceDiagram\n    participant CLK as Clock (CLK)\n    participant J as Input J\n    participant K as Input K\n    participant Q as Output Q\n    \n    Note over CLK, Q: Initial State: Q=0\n    \n    activate J\n    J->>CLK: Pulse J=1\n    J-->>CLK: J=1\n    deactivate J\n    \n    activate K\n    K->>CLK: Pulse K=1\n    K-->>CLK: K=1\n    deactivate K\n    \n    Note over CLK, Q: At Clock Rising Edge (J=1, K=1)\n    Q-->>CLK: Q flips from 0 to 1 (TOGGLE)\n    \n    Note over CLK, Q: After a short delay, inputs drop\n    \n    Note over CLK, Q: Inputs settle J=0, K=0 (HOLD)\n    Q-->>CLK: State remains 1 (HOLD)\n    \n    Note over CLK, Q: Next pulse\n    CLK-->>Q: CLK Rising Edge\n    Q-->>CLK: State remains 1 (HOLD)",
+  "refused": null
+ },
+ {
+  "chat": "8ef420fb1c83",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD\n    A[Inputs: J, K] --> B{J=0 and K=0?};\n    B -- Yes --> C[Hold: Q stays the same];\n    B -- No --> D{J=1 and K=1?};\n    D -- Yes --> E[Toggle: Q flips state];\n    D -- No --> F{J=0 and K=1?};\n    F -- Yes --> G[Reset: Q becomes 0];\n    F -- No --> H{J=1 and K=0?};\n    H -- Yes --> I[Set: Q becomes 1];\n    H -- No --> C; % Should ideally be covered by other conditions, but for completeness if the logic allows.\n",
+  "mended": "graph TD\n    A[Inputs: J, K] --> B{J=0 and K=0?};\n    B -- Yes --> C[Hold: Q stays the same];\n    B -- No --> D{J=1 and K=1?};\n    D -- Yes --> E[Toggle: Q flips state];\n    D -- No --> F{J=0 and K=1?};\n    F -- Yes --> G[Reset: Q becomes 0];\n    F -- No --> H{J=1 and K=0?};\n    H -- Yes --> I[Set: Q becomes 1];\n    H -- No --> C;",
+  "refused": null
+ },
+ {
+  "chat": "abbe3f5fbba9",
+  "source": "answer",
+  "kind": "flowchart",
+  "code": "graph TD\n    subgraph JK Flip-Flop States\n    A[J=0, K=0: Hold] --> A\n    B[J=1, K=0: Set] --> C((Q=1))\n    D[J=0, K=1: Reset] --> E((Q=0))\n    C --> F[J=1, K=1: Toggle]\n    E --> F\n    F --> G[J=1, K=1: Toggle Next]\n    G --> F\n    end\n",
+  "mended": "graph TD\n    subgraph JK Flip-Flop States\n    A[J=0, K=0: Hold] --> A\n    B[J=1, K=0: Set] --> C((Q=1))\n    D[J=0, K=1: Reset] --> E((Q=0))\n    C --> F[J=1, K=1: Toggle]\n    E --> F\n    F --> G[J=1, K=1: Toggle Next]\n    G --> F\n    end",
+  "refused": null
+ },
+ {
+  "chat": "a062800576ff",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "flowchart TD\n    A[Start] --> B{Current State Q and Inputs JK};\n    B --> C{JK=00?};\n    C -- Yes --> D[Q_next = Q (No change)];\n    C -- No --> E{JK=01?};\n    E -- Yes --> F[Q_next = 1 (Set)];\n    E -- No --> G{JK=10?};\n    G -- Yes --> H[Q_next = 0 (Reset)];\n    G -- No --> I[Q_next = NOT Q (Toggle)];\n    D --> J[Update Q = Q_next];\n    F --> J;\n    H --> J;\n    I --> J;\n    J --> K[End];",
+  "mended": "flowchart TD\n    A[Start] --> B{Current State Q and Inputs JK};\n    B --> C{JK=00?};\n    C -- Yes --> D[\"Q_next = Q (No change)\"];\n    C -- No --> E{JK=01?};\n    E -- Yes --> F[\"Q_next = 1 (Set)\"];\n    E -- No --> G{JK=10?};\n    G -- Yes --> H[\"Q_next = 0 (Reset)\"];\n    G -- No --> I[\"Q_next = NOT Q (Toggle)\"];\n    D --> J[Update Q = Q_next];\n    F --> J;\n    H --> J;\n    I --> J;\n    J --> K[End];",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "flowchart TD\n    A[Start] --> B{Is the temperature > 25°C?};\n    B -- Yes --> C{Is humidity > 60%?};\n    B -- No --> D{Is the price > $50?};\n    C -- Yes --> E[Classification: High Risk];\n    C -- No --> F[Classification: Low Risk];\n    D -- Yes --> G[Classification: Moderate Risk];\n    D -- No --> H[Classification: Very Low Risk];\n",
+  "mended": "flowchart TD\n    A[Start] --> B{Is the temperature > 25°C?};\n    B -- Yes --> C{Is humidity > 60%?};\n    B -- No --> D{Is the price > $50?};\n    C -- Yes --> E[Classification: High Risk];\n    C -- No --> F[Classification: Low Risk];\n    D -- Yes --> G[Classification: Moderate Risk];\n    D -- No --> H[Classification: Very Low Risk];",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD\n    A[Start] --> B[Boil Water];\n    B --> C{Do you have a tea bag?};\n    C -- Yes --> D[Place tea bag in cup];\n    C -- No --> E[Stop and get tea bag];\n    E --> D;\n    D --> F[Pour hot water];\n    F --> G[Wait 3 minutes];\n    G --> H[Remove tea bag];\n    H --> I[Add milk/sugar];\n    I --> J[Finish/Serve];\n",
+  "mended": "graph TD\n    A[Start] --> B[Boil Water];\n    B --> C{Do you have a tea bag?};\n    C -- Yes --> D[Place tea bag in cup];\n    C -- No --> E[Stop and get tea bag];\n    E --> D;\n    D --> F[Pour hot water];\n    F --> G[Wait 3 minutes];\n    G --> H[Remove tea bag];\n    H --> I[Add milk/sugar];\n    I --> J[Finish/Serve];",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "sequenceDiagram",
+  "code": "sequenceDiagram\n    User->>Server: Enter username and password\n    Server-->>Server: Validate credentials\n    Server-->>User: Send success/failure response\n",
+  "mended": "sequenceDiagram\n    User->>Server: Enter username and password\n    Server-->>Server: Validate credentials\n    Server-->>User: Send success/failure response",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "classDiagram",
+  "code": "classDiagram\n    class Book {\n        +title: String\n        +author: String\n        +isbn: String\n    }\n    class Patron {\n        -name: String\n        +borrowBook(book)\n    }\n    Book \"1\" -- \"many\" Patron : isBorrowedBy\n",
+  "mended": "classDiagram\n    class Book {\n        +title: String\n        +author: String\n        +isbn: String\n    }\n    class Patron {\n        -name: String\n        +borrowBook(book)\n    }\n    Book \"1\" -- \"many\" Patron : isBorrowedBy",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "stateDiagram-v2",
+  "code": "stateDiagram-v2\n    [*] --> Red\n    Red --> Green: Timer expired\n    Green --> Yellow: Timer expired\n    Yellow --> Red: Timer expired\n",
+  "mended": "stateDiagram-v2\n    [*] --> Red\n    Red --> Green: Timer expired\n    Green --> Yellow: Timer expired\n    Yellow --> Red: Timer expired",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "erDiagram",
+  "code": "erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--o{ LINE_ITEM : contains\n    CUSTOMER {\n        int customer_id PK\n        string name\n    }\n    ORDER {\n        int order_id PK\n        int customer_id FK\n    }\n    LINE_ITEM {\n        int line_item_id PK\n        int order_id FK\n        string product\n    }\n",
+  "mended": "erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--o{ LINE_ITEM : contains\n    CUSTOMER {\n        int customer_id PK\n        string name\n    }\n    ORDER {\n        int order_id PK\n        int customer_id FK\n    }\n    LINE_ITEM {\n        int line_item_id PK\n        int order_id FK\n        string product\n    }",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "gantt",
+  "code": "gantt\n    title Software Development Timeline\n    dateFormat  YYYY-MM-DD\n    section Phase 1\n    Requirements gathering       :a1, 2026-10-01, 5d\n    Design and Architecture      :after a1, 3d\n    section Phase 2\n    Front-end development        :a2, 2026-10-10, 10d\n    Back-end implementation     :after a2, 12d\n    section Phase 3\n    Testing and Bug fixes        :after a2, 5d\n    Deployment                  :2026-11-20, 1d\n",
+  "mended": "gantt\n    title Software Development Timeline\n    dateFormat  YYYY-MM-DD\n    section Phase 1\n    Requirements gathering       :a1, 2026-10-01, 5d\n    Design and Architecture      :after a1, 3d\n    section Phase 2\n    Front-end development        :a2, 2026-10-10, 10d\n    Back-end implementation     :after a2, 12d\n    section Phase 3\n    Testing and Bug fixes        :after a2, 5d\n    Deployment                  :2026-11-20, 1d",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "pie",
+  "code": "pie\n    title Market Share by Category\n    \"Electronics\" : 40\n    \"Clothing\" : 25\n    \"Home Goods\" : 30\n    \"Books\" : 5\n",
+  "mended": "pie\n    title Market Share by Category\n    \"Electronics\" : 40\n    \"Clothing\" : 25\n    \"Home Goods\" : 30\n    \"Books\" : 5",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "mindmap",
+  "code": "mindmap\n  root((Sustainable Home))\n    Energy\n      Solar Panels\n      Smart Thermostat\n    Water\n      Rainwater Harvesting\n      Low-flow Fixtures\n    Materials\n      Recycled Wood\n      Local Sourcing\n    Waste\n      Composting\n      Recycling System\n",
+  "mended": "mindmap\n  root((Sustainable Home))\n    Energy\n      Solar Panels\n      Smart Thermostat\n    Water\n      Rainwater Harvesting\n      Low-flow Fixtures\n    Materials\n      Recycled Wood\n      Local Sourcing\n    Waste\n      Composting\n      Recycling System",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "answer",
+  "kind": "timeline",
+  "code": "timeline\n    title Company Milestones\n    A2010 : Founded\n    A2015 : First product launch\n    A2019 : Expansion into global markets\n    A2023 : Reached 10,000 users\n",
+  "mended": "timeline\n    title Company Milestones\n    A2010 : Founded\n    A2015 : First product launch\n    A2019 : Expansion into global markets\n    A2023 : Reached 10,000 users",
+  "refused": null
+ },
+ {
+  "chat": "f1e15a9a801e",
+  "source": "call",
+  "kind": "flowchart",
+  "code": "graph TD\n    Start((Start Quiz)) --> Q1{1. Parabola y=x^2, x=-3?};\n    Q1 -- A. 9 --> R1A[Correct!];\n    Q1 -- B. -9 --> R1B[Incorrect];\n    Q1 -- C. 3 --> R1C[Incorrect];\n    Q1 -- D. -3 --> R1D[Incorrect];\n\n    R1A --> Q2{2. Integral of 1/x² from 1 to 2?};\n    R1B --> Q2;\n    R1C --> Q2;\n    R1D --> Q2;\n\n    Q2 -- A. 1 --> R2A[Correct!];\n    Q2 -- B. 2 --> R2B[Incorrect];\n    Q2 -- C. 4 --> R2C[Incorrect];\n    Q2 -- D. 0.5 --> R2D[Incorrect];\n\n    R2A --> Q3{3. Constant e?};\n    R2B --> Q3;\n    R2C --> Q3;\n    R2D --> Q3;\n\n    Q3 -- A. Pi --> R3A[Incorrect];\n    Q3 -- B. Euler's constant --> R3B[Incorrect];\n    Q3 -- C. Golden Ratio --> R3C[Incorrect];\n    Q3 -- D. The Natural Base --> R3D[Correct!];\n\n    R3D --> End((Quiz Complete));\n    R3A --> End;\n    R3B --> End;\n    R3C --> End;\n    R1B --> End;\n    R1C --> End;\n    R1D --> End;\n    R2B --> End;\n    R2C --> End;\n    R2D --> End;\n",
+  "mended": "graph TD\n    Start((Start Quiz)) --> Q1{1. Parabola y=x^2, x=-3?};\n    Q1 -- A. 9 --> R1A[Correct!];\n    Q1 -- B. -9 --> R1B[Incorrect];\n    Q1 -- C. 3 --> R1C[Incorrect];\n    Q1 -- D. -3 --> R1D[Incorrect];\n\n    R1A --> Q2{2. Integral of 1/x² from 1 to 2?};\n    R1B --> Q2;\n    R1C --> Q2;\n    R1D --> Q2;\n\n    Q2 -- A. 1 --> R2A[Correct!];\n    Q2 -- B. 2 --> R2B[Incorrect];\n    Q2 -- C. 4 --> R2C[Incorrect];\n    Q2 -- D. 0.5 --> R2D[Incorrect];\n\n    R2A --> Q3{3. Constant e?};\n    R2B --> Q3;\n    R2C --> Q3;\n    R2D --> Q3;\n\n    Q3 -- A. Pi --> R3A[Incorrect];\n    Q3 -- B. Euler's constant --> R3B[Incorrect];\n    Q3 -- C. Golden Ratio --> R3C[Incorrect];\n    Q3 -- D. The Natural Base --> R3D[Correct!];\n\n    R3D --> End((Quiz Complete));\n    R3A --> End;\n    R3B --> End;\n    R3C --> End;\n    R1B --> End;\n    R1C --> End;\n    R1D --> End;\n    R2B --> End;\n    R2C --> End;\n    R2D --> End;",
+  "refused": null
+ }
+]

@@ -1,0 +1,221 @@
+[
+ {
+  "case": "fiscal",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.6,
+  "tools": [
+   "save_note({\"content\": \"The fiscal year starts in April.\", \"title\": \"Fiscal Year Start Date\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The fiscal year starts in April.",
+     "title": "Fiscal Year Start Date"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I'll remember that, Arya. I've made a note of it."
+ },
+ {
+  "case": "fiscal",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.5,
+  "tools": [
+   "save_note({\"content\": \"The user mentioned that our fiscal year starts in April.\", \"title\": \"Fiscal year start date\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user mentioned that our fiscal year starts in April.",
+     "title": "Fiscal year start date"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've noted that our fiscal year starts in April."
+ },
+ {
+  "case": "names",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.0,
+  "tools": [
+   "save_note({\"content\": \"The user's name is Arya and the assistant's name is Zen.\", \"title\": \"Names\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user's name is Arya and the assistant's name is Zen.",
+     "title": "Names"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've noted that, Ary. I'll keep that in mind. Let me know what else I can help you with."
+ },
+ {
+  "case": "names",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.8,
+  "tools": [
+   "save_note({\"content\": \"The user is Arya, and the assistant is Zen. Zen is an assistant running on a local open model on this computer.\", \"title\": \"Use…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user is Arya, and the assistant is Zen. Zen is an assistant running on a local open model on this computer.",
+     "title": "User and Assistant Roles"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've saved that information as a note. I'm ready for whatever you need, Arya."
+ },
+ {
+  "case": "pin",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.0,
+  "tools": [
+   "save_note({\"content\": \"The user requires all answers to be provided in metric units.\", \"title\": \"Metric Units Constraint\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user requires all answers to be provided in metric units.",
+     "title": "Metric Units Constraint"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The note has been saved successfully. From now on, Arya, I will ensure all my answers are presented in metric units."
+ },
+ {
+  "case": "pin",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 10.7,
+  "tools": [
+   "save_note({\"content\": \"The user requires all answers and metrics to be provided in metric units.\", \"title\": \"Unit Constraint\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "save_note",
+    "input": {
+     "content": "The user requires all answers and metrics to be provided in metric units.",
+     "title": "Unit Constraint"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Confirmed, Arya. I've saved the instruction about using metric units into a persistent note, so I'll keep it in view for every chat."
+ },
+ {
+  "case": "save_code",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.1,
+  "tools": [
+   "files({\"content\": \"import numpy as np\\nx = np.linspace(-5, 5, 100)\\nprint((x ** 2).max())\", \"mode\": \"write\", \"name\": \"y_equals_x_squared.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "import numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())",
+     "mode": "write",
+     "name": "y_equals_x_squared.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I'm sorry, I missed the step and didn't actually save the file. It's now saved as `y_equals_x_squared.py` in your workspace."
+ },
+ {
+  "case": "save_code",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.3,
+  "tools": [
+   "files({\"content\": \"import numpy as np\\nx = np.linspace(-5, 5, 100)\\nprint((x ** 2).max())\", \"mode\": \"write\", \"name\": \"y_equals_x_squared.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "import numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())",
+     "mode": "write",
+     "name": "y_equals_x_squared.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've now written that code to `y_equals_x_squared.py`."
+ },
+ {
+  "case": "no_note",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.2,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "144."
+ },
+ {
+  "case": "no_note",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.6,
+  "tools": [
+   "calculate({\"expression\": \"12 * 12\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "12 * 12"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "12 times 12 is 144."
+ }
+]

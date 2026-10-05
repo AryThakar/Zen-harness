@@ -1,0 +1,55 @@
+[
+ {
+  "case": "here_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.7,
+  "tools": [
+   "get_weather({}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {},
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The weather in Ahmedabad, Arya, is clear and quite warm right now.\n\nIt is currently 35.1°C with a clear sky, but please keep in mind the UV index is high today, so sun protection is advised. The air quality is moderate."
+ },
+ {
+  "case": "time_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.1,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "The current time is Mon 05 Oct 2026, 13:57."
+ },
+ {
+  "case": "explain",
+  "run": 1,
+  "ok": false,
+  "problem": "called research_web",
+  "seconds": 11.2,
+  "tools": [
+   "research_web({\"task\": \"how weather forecasts are made\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "research_web",
+    "input": {
+     "task": "how weather forecasts are made"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Weather forecasting is essentially applied physics on a global scale. It follows a structured process that moves from gathering raw information to generating a usable prediction.\n\nHere is a breakdown of the main steps:\n\n### The Process\n\n*   **Data Collection:** Meteorologists gather massive amounts of data from weather stations, satellites, weather balloons, and radar across the globe. This real-time data includes temperature, pressure, humidity, wind speed, and cloud cover.\n*   **Running Models:** This data is fed into complex, powerful computer programs called Numerical Weather Prediction (NWP) models. These models use mathematical equations—derived from the laws of fluid dynamics and thermodynamics—to simulate how the atmosphere will change over time.\n*   **Prediction & Refinement:** The models generate forecasts for different time intervals (e.g., 1 hour, 7 days). Forecasters then analyze these model outputs. Since no model is perfect, they use their expertise to adjust and refine the predictions, often blending multiple model outputs to create the most accurate local forecast.\n\nIn short, it's about inputting the current state of the atmosphere and calculating how that initial state will evolve in the future."
+ }
+]

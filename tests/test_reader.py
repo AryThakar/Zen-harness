@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from app.ingestion.reader import ReadError, normalize_name, read_file, unique_names
+from app.tools.table_reader import ReadError, normalize_name, read_file, unique_names
 
 
 def test_title_lines_above_the_header_are_skipped(write_file):

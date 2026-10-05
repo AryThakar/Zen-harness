@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from app.agent.providers.llamacpp import LlamaCppProvider
+from app.providers.llamacpp import LlamaCppProvider
 from app.assistant.registry import ToolContext
 from app.assistant.workers import PROFILES, run_worker
 from app.rag.embed import FastEmbedder
@@ -56,7 +56,7 @@ def trace(task, embedder) -> str:
 def _describe(e: dict) -> str:
     kind = e["type"]
     if kind == "worker_start":
-        return f"task given; room for history: {e['budget']:,} tokens"
+        return f"task given; the prompt may use {e['limit']:,} tokens (counted exactly by the server)"
     if kind == "worker_turn":
         u = e.get("usage") or {}
         what = f"calls {', '.join(e['calls'])}" if e["calls"] else f"answers in text: {e['text'][:160]!r}"

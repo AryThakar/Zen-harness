@@ -76,9 +76,19 @@ def drop_partial_edges(y: pd.Series, dates: pd.Series, freq: str) -> tuple[pd.Se
     return y, notes
 
 
+MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+def month_numbers(s: pd.Series) -> pd.Series:
+    """1-12 from month numbers or names ('3', 'March', 'Mar'); missing where neither."""
+    numbers = pd.to_numeric(s, errors="coerce")
+    names = s.astype(str).str.strip().str[:3].str.lower().map({m: i for i, m in enumerate(MONTH_NAMES, 1)})
+    return numbers.where(numbers.notna(), names)
+
+
 def split_time(df: pd.DataFrame) -> tuple[str, str, str] | None:
     """(year column, quarter or month column, 'quarter' | 'month') when time is split that way
-    and the table has no date column; None otherwise."""
+    and the table has no date column; None otherwise. Months may be numbers or names."""
     if any(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns):
         return None
     names = {c: re.sub(r"[^0-9a-z]+", "_", str(c).lower()).strip("_") for c in df.columns}
@@ -89,15 +99,14 @@ def split_time(df: pd.DataFrame) -> tuple[str, str, str] | None:
     for c, n in names.items():
         if n in ("quarter", "qtr") and _whole(df[c], 1, 4):
             return year, c, "quarter"
-        if n in ("month", "mon", "mth") and _whole(df[c], 1, 12):
+        if n in ("month", "mon", "mth") and _whole(month_numbers(df[c]), 1, 12):
             return year, c, "month"
     return None
 
 
 def split_dates(df: pd.DataFrame, year: str, part: str, kind: str) -> pd.Series:
     """The first day of each row's quarter or month."""
-    p = pd.to_numeric(df[part], errors="coerce")
-    months = (p - 1) * 3 + 1 if kind == "quarter" else p
+    months = (pd.to_numeric(df[part], errors="coerce") - 1) * 3 + 1 if kind == "quarter" else month_numbers(df[part])
     return pd.to_datetime(pd.DataFrame({"year": pd.to_numeric(df[year], errors="coerce"), "month": months, "day": 1}),
                           errors="coerce")
 
@@ -107,10 +116,16 @@ def split_time_note(df: pd.DataFrame, table: str) -> str | None:
     if not found:
         return None
     year, part, kind = found
-    month = f'("{part}" - 1) * 3 + 1' if kind == "quarter" else f'"{part}"'
-    return (f"Time is split into '{year}' and '{part}' columns, with no date column. forecast combines them itself "
-            f"(date='{year}'). To chart over time, first make a date column with query_data and save=true: "
-            f"SELECT *, make_date(CAST(\"{year}\" AS INTEGER), CAST({month} AS INTEGER), 1) AS date FROM {table}")
+    named = kind == "month" and pd.to_numeric(df[part], errors="coerce").isna().all()
+    if named:  # month names: DuckDB reads them with strptime (%B January, %b Jan)
+        form = "%b" if df[part].dropna().astype(str).str.strip().str.len().max() <= 3 else "%B"
+        date = f"CAST(strptime(CAST(\"{year}\" AS VARCHAR) || ' ' || \"{part}\", '%Y {form}') AS DATE)"
+    else:
+        month = f'("{part}" - 1) * 3 + 1' if kind == "quarter" else f'"{part}"'
+        date = f"make_date(CAST(\"{year}\" AS INTEGER), CAST({month} AS INTEGER), 1)"
+    return (f"Time is split into '{year}' and '{part}' columns, with no date column. forecast and find_patterns combine "
+            f"them themselves (no date needed). To chart over time, first make a date column with query_data and "
+            f"save=true: SELECT *, {date} AS date FROM {table}")
 
 
 def _whole(s: pd.Series, low: int, high: int) -> bool:

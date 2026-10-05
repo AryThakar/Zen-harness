@@ -1,4 +1,4 @@
-"""Direct tests of train_model, predict and forecast - no model involved."""
+"""Direct tests of predict and forecast - no model involved."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from app.tools.forecast import forecast
-from app.tools.ml import predict, train_model
+from app.tools.ml import predict
 from app.tools.workspace import Workspace
 
 
@@ -29,79 +29,118 @@ def customers(n=600, seed=0):
                          "churned": np.where(churned, "yes", "no")})
 
 
-# ---------------------------------------------------------------- train_model / predict
+# ---------------------------------------------------------------- predict
 
-def test_classification_finds_the_planted_signal(ws):
+def test_classification_finds_the_planted_signal_and_its_direction(ws):
     data = ws.add_table(customers(), "customers")
-    r = train_model(ws, data, "churned")
+    r = predict(ws, data, "churned")
     assert r.status == "ok", r.result
     res = r.result
-    assert res["task"] == "classification" and res["metric"] == "AUC" and res["positive_class"] in ("yes", "no")
+    assert res["task"] == "classification" and res["metric"] == "AUC" and res["positive_class"] == "yes"
     assert res["better_than_baseline"] and res["score"] > 0.7
-    assert res["important_predictive_features"][0]["column"] == "tickets"
+    top = res["drivers"][0]
+    assert top["column"] == "tickets" and top["direction"] == "higher values go with higher chance of churned = yes"
+    plan = next(d for d in res["drivers"] if d["column"] == "plan")
+    assert plan["direction"].startswith("highest chance of churned = yes for basic")
     excluded = {e["column"]: e["reason"] for e in res["excluded_columns"]}
     assert excluded == {"customer_id": "unique per row (an id or free text)",
                         "signup_note": "unique per row (an id or free text)"}
-    assert res["model_type"] in res["scores_by_model"]
-    assert "5-fold" in res["tested_on"] and ws.kind(res["model"]) == "model"
+    assert res["model_type"] in res["scores_by_model"] and "5-fold" in res["tested_on"]
+
+
+def test_predictions_are_saved_out_of_sample(ws):
+    """Every row with a known outcome was scored by a model that didn't see it (5-fold): their AUC in the
+    saved table equals the reported score; rows without the outcome get the final model's prediction."""
+    from sklearn.metrics import roc_auc_score
+    df = customers(700, seed=4)
+    df.loc[650:, "churned"] = None
+    data = ws.add_table(df, "customers")
+    res = predict(ws, data, "churned").result
+    saved = ws.table(res["predictions"]["saved_as"])
+    known = saved.iloc[:650]
+    assert roc_auc_score(known.churned == "yes", known.probability_yes) == pytest.approx(res["score"], abs=1e-3)
+    assert res["predictions"]["rows_without_target"] == 50 and saved.probability_yes.iloc[650:].notna().all()
+    assert set(saved.predicted_churned) <= {"yes", "no"} and ws.entry(res["predictions"]["saved_as"])["parent"] == data
 
 
 def test_regression_and_baseline(ws):
     rng = np.random.default_rng(3)
     x = rng.uniform(0, 10, 300)
     df = pd.DataFrame({"x": x, "noise": rng.normal(size=300), "y": 3 * x + rng.normal(0, 1, 300)})
-    r = train_model(ws, ws.add_table(df, "lin"), "y")
+    r = predict(ws, ws.add_table(df, "lin"), "y")
     assert r.result["task"] == "regression" and r.result["score"] > 0.9
     assert r.result["average_error"] < r.result["baseline_average_error"]
+    assert r.result["drivers"][0] == {"column": "x", "share": r.result["drivers"][0]["share"],
+                                      "direction": "higher values go with higher predicted y"}
 
 
 def test_noise_target_is_not_better_than_baseline(ws):
     rng = np.random.default_rng(5)
     df = pd.DataFrame({"a": rng.normal(size=400), "b": rng.choice(["x", "y"], 400),
                        "target": rng.choice(["yes", "no"], 400)})
-    r = train_model(ws, ws.add_table(df, "noise"), "target")
+    r = predict(ws, ws.add_table(df, "noise"), "target")
     assert r.status == "ok" and not r.result["better_than_baseline"]
-    assert r.result["verdict"].startswith("Not clearly better")
-    assert r.result["important_predictive_features"] == []
+    assert r.result["verdict"].startswith("Not clearly better") and r.result["drivers"] == []
+    assert any("no more useful than the average" in n for n in r.result["notes"])
 
 
 def test_time_split_and_leak_warning(ws):
     df = customers(500, seed=1)
     df["signup"] = pd.Timestamp("2024-01-01") + pd.to_timedelta(np.arange(500), unit="D")
     df["refund_issued"] = (df["churned"] == "yes").astype(float) * 10 + np.random.default_rng(0).normal(0, 0.1, 500)
-    r = train_model(ws, ws.add_table(df, "with dates"), "churned")
+    r = predict(ws, ws.add_table(df, "with dates"), "churned")
     assert "latest 20% of the time span" in r.result["tested_on"]
     assert "refund_issued" in r.result["warning"]
     assert r.result["excluded_columns"][0]["column"] == "signup"
 
 
+def test_a_yes_no_copy_of_the_outcome_is_named_as_a_leak(ws):
+    df = customers(400, seed=6)
+    df["still_active"] = df["churned"].map({"yes": "no", "no": "yes"})  # read as yes/no -> True/False
+    r = predict(ws, ws.add_table(df, "copy"), "churned").result
+    assert "still_active predict churned almost perfectly" in r["warning"]
+
+
+def test_directions_hold_the_other_columns_fixed(ws):
+    """Big items tend to have the poor grade, but with size held fixed a better grade sells higher: the
+    driver's direction follows the model, not the raw average."""
+    rng = np.random.default_rng(7)
+    size = rng.uniform(0.5, 1.5, 2000)
+    grade = np.where(rng.random(2000) < size - 0.5, "poor", "good")  # bigger -> more often poor
+    price = 1000 * size ** 2 * np.where(grade == "good", 1.5, 1.0) * rng.lognormal(0, 0.05, 2000)
+    r = predict(ws, ws.add_table(pd.DataFrame({"size": size, "grade": grade, "price": price}), "gems"), "price").result
+    raw = pd.DataFrame({"grade": grade, "price": price}).groupby("grade").price.mean()
+    assert raw["poor"] > raw["good"]  # the raw average says poor sells higher
+    grade_driver = next(d for d in r["drivers"] if d["column"] == "grade")
+    assert grade_driver["direction"] == "highest predicted price for good, lowest for poor"
+
+
 def test_multiclass(ws):
     df = customers(600, seed=2)
-    r = train_model(ws, ws.add_table(df, "plans"), "plan", features=["tickets", "spend", "churned"])
+    r = predict(ws, ws.add_table(df, "plans"), "plan", features=["tickets", "spend", "churned"])
     assert r.result["metric"] == "accuracy" and "baseline" in r.result
 
 
-def test_predict_on_new_rows(ws):
-    model = train_model(ws, ws.add_table(customers(), "train"), "churned").result["model"]
+def test_predict_for_a_table_of_new_rows(ws):
+    data = ws.add_table(customers(), "train")
     new = customers(50, seed=9).drop(columns=["churned"])
-    r = predict(ws, model, ws.add_table(new, "new customers"))
+    r = predict(ws, data, "churned", new_data=ws.add_table(new, "new customers"))
     assert r.status == "ok"
-    out = ws.table(r.result["data"])
-    prob = [c for c in out.columns if c.startswith("probability_")]
-    assert len(out) == 50 and "predicted_churned" in out and len(prob) == 1 and out[prob[0]].between(0, 1).all()
+    out = ws.table(r.result["new_data"]["saved_as"])
+    assert len(out) == 50 and "predicted_churned" in out and out["probability_yes"].between(0, 1).all()
     # a table without one of the inputs still predicts, with a warning
-    r = predict(ws, model, ws.add_table(new.drop(columns=["plan"]), "no plan"))
-    assert r.status == "ok" and "plan" in r.result["warning"]
-    r = predict(ws, model, ws.add_table(pd.DataFrame({"zzz": [1, 2]}), "unrelated"))
+    r = predict(ws, data, "churned", new_data=ws.add_table(new.drop(columns=["plan"]), "no plan"))
+    assert r.status == "ok" and "plan" in r.result["new_data"]["warning"]
+    r = predict(ws, data, "churned", new_data=ws.add_table(pd.DataFrame({"zzz": [1, 2]}), "unrelated"))
     assert r.status == "failed"
 
 
 def test_bad_targets_are_explained(ws):
     data = ws.add_table(customers(), "customers")
-    assert train_model(ws, data, "nope").status == "invalid_arguments"
-    r = train_model(ws, data, "signup_note")
+    assert predict(ws, data, "nope").status == "invalid_arguments"
+    r = predict(ws, data, "signup_note")
     assert r.status == "invalid_arguments" and "at most 10" in r.result["error"]["message"]
-    r = train_model(ws, ws.add_table(customers(30), "small"), "churned")
+    r = predict(ws, ws.add_table(customers(30), "small"), "churned")
     assert r.status == "failed" and "at least 50" in r.result["error"]["message"]
 
 
@@ -130,6 +169,44 @@ def test_forecast_seasonal_series(ws):
     assert dec and dec[0]["forecast"] > np.median([x["forecast"] for x in res["forecast"]])
 
 
+def test_forecast_reports_the_trend_and_the_season(ws):
+    rising = ws.add_table(monthly_sales(), "rising")
+    res = forecast(ws, rising, value="amount", time_unit="month").result  # the date column found by its role
+    assert res["trend"]["direction"] == "rising" and res["trend"]["per_period"] > 0
+    assert res["seasonality"]["strength"] >= 0.6 and res["season_high"] == "December"
+    assert res["change_vs_year_earlier_pct"] > 0
+    flat = ws.add_table(monthly_sales(growth=0.0, seed=3), "flat")
+    trend = forecast(ws, flat, value="amount", time_unit="month").result["trend"]
+    assert trend["direction"] == "no clear trend" and "per_period" not in trend  # no slope of noise to quote
+    short = forecast(ws, ws.add_table(monthly_sales(18), "short"), value="amount", time_unit="month").result
+    assert "can't be told apart from a trend" in short["trend"]["note"]
+
+
+def test_trend_test_false_alarms_and_power():
+    """Monthly series of 48 points: few false alarms on noise, most planted trends found."""
+    from app.tools.forecast import trend_test
+    rng = np.random.default_rng(0)
+    idx = pd.date_range("2020-01-01", periods=48, freq="MS")
+    noise = sum(trend_test(pd.Series(100 + rng.normal(0, 10, 48), idx), "M")["p"] < 0.05 for _ in range(200))
+    found = sum(trend_test(pd.Series(100 + 0.5 * np.arange(48) + rng.normal(0, 10, 48), idx), "M")["p"] < 0.05
+                for _ in range(200))
+    assert noise / 200 <= 0.08 and found / 200 >= 0.85
+
+
+def test_forecast_by_group_and_month_names(ws):
+    a, b = monthly_sales(seed=1), monthly_sales(seed=2, growth=-0.01)
+    both = pd.concat([a.assign(store="A"), b.assign(store="B", amount=b.amount / 2)])
+    r = forecast(ws, ws.add_table(both, "stores"), value="amount", by="store", time_unit="month")
+    groups = {g["group"]: g for g in r.result["groups"]}
+    assert set(groups) == {"A", "B"} and groups["A"]["trend"] == "rising" and groups["B"]["trend"] == "falling"
+    assert [s["name"] for s in r.artifact["series"]] == ["A", "B"]
+    named = pd.DataFrame({"year": np.repeat(np.arange(2010, 2016), 12), "month": ["January", "February", "March",
+                          "April", "May", "June", "July", "August", "September", "October", "November", "December"] * 6,
+                          "passengers": np.arange(72) + 100})
+    r = forecast(ws, ws.add_table(named, "named"), value="passengers")
+    assert r.status == "ok" and r.result["history_points"] == 72 and "made from the 'year' and 'month'" in r.result["notes"][0]
+
+
 def test_forecast_says_when_unreliable(ws):
     rng = np.random.default_rng(1)
     days = pd.date_range("2024-01-01", periods=200, freq="D")
@@ -153,7 +230,7 @@ def test_flag_columns_made_from_the_target_are_never_inputs(ws):
     from app.tools.clean_data import clean_data
     data = ws.add_table(customers(), "customers")
     flagged = clean_data(ws, data, [{"op": "flag_outliers", "columns": ["spend"]}]).result["data"]
-    r = train_model(ws, flagged, "spend")
+    r = predict(ws, flagged, "spend")
     assert {"column": "spend_outlier", "reason": "made from the target (a leak)"} in r.result["excluded_columns"]
 
 
@@ -164,7 +241,7 @@ def test_time_split_into_year_and_quarter_is_combined(ws):
                              "gdp": np.linspace(100, 160, 60).round(1)})
     data = ws.add_table(quarters, name="macro.csv")
     tip = inspect_data(ws, data).result["note"]
-    assert "split into 'year' and 'quarter'" in tip and "forecast combines them itself" in tip
+    assert "split into 'year' and 'quarter'" in tip and "forecast and find_patterns combine them" in tip
     for date in ("year", "quarter", "2009-12-31"):  # whatever the model gives: the split columns are used
         r = forecast(ws, data, date=date, value="gdp", horizon=4, agg="last")
         assert r.status == "ok" and r.result["period"] == "quarter" and r.result["history_points"] == 60, date
@@ -188,7 +265,7 @@ def test_a_target_computed_from_a_column_never_learns_from_it(ws):
     data = ws.add_table(people, name="survey.csv")
     made = query_data(ws, f"SELECT *, CASE WHEN affairs > 0 THEN 'yes' ELSE 'no' END AS had_affair FROM {data}",
                       save=True).result["saved_as"]
-    r = train_model(ws, made, "had_affair", features=["age", "rating", "affairs"]).result  # asked for the leak
+    r = predict(ws, made, "had_affair", features=["age", "rating", "affairs"]).result  # asked for the leak
     assert {"column": "affairs", "reason": "had_affair was computed from it (a leak)"} in r["excluded_columns"]
     assert r["score"] < 0.9  # no longer 'predicts' the answer from the answer
 

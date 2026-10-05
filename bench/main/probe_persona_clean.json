@@ -1,0 +1,24 @@
+[
+ {
+  "case": "hello",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hello Arya. How can I help you today?"
+ },
+ {
+  "case": "missing_file",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.1,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I can't find that file in the workspace, Arya. Could you please upload `budget_2025.xlsx` first, and then I can tell you the total."
+ }
+]

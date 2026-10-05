@@ -107,6 +107,17 @@ def test_invalid_step_saves_nothing(ws, messy):
     assert r.status == "invalid_arguments" and "Columns:" in r.result["error"]["message"]
 
 
+def test_a_step_written_with_its_op_as_the_key_is_understood(ws, messy):
+    """Measured: the data helper wrote {'drop_rows': {...}} twice, and the validator's 'Unable to extract tag
+    using discriminator' told it nothing; it then answered from the raw table (a Total row doubled the sum)."""
+    r = clean_data(ws, messy, [{"drop_duplicates": {}}, {"tidy_text": ["region"]},
+                               {"drop_rows": {"column": "order_id", "values": ["1004"]}}])
+    assert r.status == "ok" and r.result["rows_after"] == r.result["rows_before"] - 2, r.result
+    unknown = clean_data(ws, messy, [{"explode": {"columns": ["region"]}}]).result["error"]["message"]
+    assert "each step is {'op': ..." in unknown and "drop_rows" in unknown and "suggested_steps" in unknown
+    assert "discriminator" not in clean_data(ws, messy, [{"op": "explode"}]).result["error"]["message"]
+
+
 def test_ambiguous_dates_need_an_order(ws, messy):
     r = clean_data(ws, messy, [{"op": "parse_dates", "columns": ["Order Date"]}])
     assert r.status == "invalid_arguments" and "dayfirst" in r.result["error"]["message"]
@@ -131,8 +142,35 @@ def test_summary_row_is_found_and_dropped_first(ws, tmp_path):
     res = inspect_data(ws, data).result
     first = res["suggested_steps"][0]
     assert first["op"] == "drop_rows" and first["column"] == "id" and first["values"] == ["Total"]
-    parse = next(s for s in res["suggested_steps"] if s["op"] == "parse_numbers")
-    assert parse["why"] == "id holds numbers stored as text"  # once the Total row is gone, nothing is lost
+    assert not any(s["op"] == "parse_numbers" for s in res["suggested_steps"])  # an id is a code, not a number
     r = clean_data(ws, data, res["suggested_steps"])
     df = ws.table(r.result["data"])
-    assert len(df) == 40 and df["amount"].sum() == 1220 and str(df["id"].dtype) == "Int64"
+    assert len(df) == 40 and df["amount"].sum() == 1220
+
+
+def test_codes_stay_codes_and_repeats_without_an_id_are_asked_about(ws):
+    import pandas as pd
+    codes = pd.DataFrame({"invoice": [str(489434 + i) for i in range(30)] + ["C489450"],
+                          "customer_id": [f"{i % 7:05d}" for i in range(31)], "amount": [10.0 + i for i in range(31)]})
+    assert not inspect_data(ws, ws.add_table(codes, "codes")).result["suggested_steps"]  # codes are not numbers
+    visits = pd.DataFrame({"customer": ["a", "b", "a", "c"] * 5, "spend": [5.0, 7.5, 5.0, 2.0] * 5})
+    res = inspect_data(ws, ws.add_table(visits, "visits")).result
+    assert not res["suggested_steps"]  # nothing tells a copy from a real repeat: no silent drop
+    question = res["questions"][0]
+    assert question["question"].startswith("17 rows repeat an earlier row exactly")
+    assert [o["step"] for o in question["options"]] == [None, {"op": "drop_duplicates"}]
+    with_id = pd.DataFrame({"line": range(10), "amount": [5.0] * 10})
+    res = inspect_data(ws, ws.add_table(pd.concat([with_id, with_id.tail(1)]), "lines")).result
+    assert res["suggested_steps"][0]["op"] == "drop_duplicates"  # its id repeats too: a copy
+
+
+def test_outliers_in_a_column_without_spread_are_none(ws):
+    """Read in the code: with half the values equal (IQR 0) the fences sat on that value, and
+    remove_outliers dropped every other row."""
+    data = ws.add_table(pd.DataFrame({"qty": [1] * 12 + [2, 3, 1, 1]}), "orders.csv")
+    removed = clean_data(ws, data, [{"op": "remove_outliers", "columns": ["qty"]}])
+    assert removed.status == "ok" and removed.result["rows_after"] == 16 and "none found" in removed.result["log"][0]
+    flagged = clean_data(ws, data, [{"op": "flag_outliers", "columns": ["qty"]}])
+    assert not ws.table(flagged.result["data"])["qty_outlier"].any()
+    spread = ws.add_table(pd.DataFrame({"x": list(range(1, 21)) + [500]}), "x.csv")
+    assert clean_data(ws, spread, [{"op": "remove_outliers", "columns": ["x"]}]).result["rows_after"] == 20

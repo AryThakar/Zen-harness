@@ -128,14 +128,15 @@ class SearchIndex:
     # ------------------------------------------------------------------ searching
 
     def search(self, query: str, sources: tuple[str, ...], k: int = 5) -> tuple[list[Hit], bool]:
-        """Top k passages from these sources; returns (hits, whether meaning was used)."""
+        """Top k passages from these sources; returns (hits, whether meaning was used). Relevance alone
+        picks them; where it ties, the newest and the oldest come first (_ends_first)."""
         keyword = self._keyword(query, sources)
         meaning, used_meaning = self._meaning(query, sources)
         fused: dict[int, float] = defaultdict(float)
         for ranking in (keyword, meaning):
             for rank, rowid in enumerate(ranking):
                 fused[rowid] += 1 / (RRF_K + rank + 1)
-        best = sorted(fused, key=lambda i: (-fused[i], i))[:k]
+        best = _ends_first([(i, -fused[i]) for i in fused])[:k]
         if not best:
             return [], used_meaning
         with self._db() as db:
@@ -150,11 +151,16 @@ class SearchIndex:
         if not words:
             return []
         match = " OR ".join(f'"{w}"' for w in dict.fromkeys(words))  # quoted: no FTS syntax from user text
+        sql = ("SELECT p.id, bm25(passages_fts) FROM passages_fts f JOIN passages p ON p.id = f.rowid "
+               f"WHERE passages_fts MATCH ? AND p.source IN ({_marks(sources)}) ORDER BY bm25(passages_fts), p.id {{}} "
+               "LIMIT ?")
+        # Fetched from both ends of a tie: a word every passage shares scores the same in all of them,
+        # and SQLite returns a tied run oldest first - past the limit the newest would be unreachable
+        # (Unsloth's measured failure, solved the same way: half the candidates from each end).
         with self._db() as db:
-            return [r[0] for r in db.execute(
-                "SELECT p.id FROM passages_fts f JOIN passages p ON p.id = f.rowid "
-                f"WHERE passages_fts MATCH ? AND p.source IN ({_marks(sources)}) ORDER BY bm25(passages_fts) LIMIT ?",
-                (match, *sources, CANDIDATES))]
+            oldest = db.execute(sql.format("ASC"), (match, *sources, CANDIDATES - CANDIDATES // 2)).fetchall()
+            newest = db.execute(sql.format("DESC"), (match, *sources, CANDIDATES // 2)).fetchall()
+        return _ends_first(list(dict(oldest + newest).items()))
 
     def _meaning(self, query: str, sources: tuple[str, ...]) -> tuple[list[int], bool]:
         if self.embedder is None:
@@ -189,6 +195,28 @@ class SearchIndex:
             return self.embedder.embed_documents(texts), self.embedder.name
         except EmbedderUnavailable:
             return None, None
+
+
+def _ends_first(scored: list[tuple[int, float]]) -> list[int]:
+    """Row ids by score (lower is better); inside a run of equal scores the newest, the oldest, the
+    next newest ... (row ids grow with time), so a cut keeps both "what is it now" and "what was it
+    first"."""
+    out, run, run_score = [], [], None
+
+    def flush():
+        run.sort()
+        while run:
+            out.append(run.pop())
+            if run:
+                out.append(run.pop(0))
+
+    for rowid, score in sorted(scored, key=lambda x: (round(x[1], 9), x[0])):
+        if run and round(score, 9) != run_score:
+            flush()
+        run.append(rowid)
+        run_score = round(score, 9)
+    flush()
+    return out
 
 
 def _marks(values) -> str:

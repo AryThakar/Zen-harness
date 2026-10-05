@@ -1,0 +1,96 @@
+[
+ {
+  "q": "Find the value of the following trigonometric product: P = c",
+  "run": 1,
+  "first": "(none)",
+  "calcs": [],
+  "steps": true,
+  "right": true,
+  "seconds": 14.1,
+  "answer": "This is a classic problem involving a product of cosines. The value of the product $P = \\cos(\\pi/7) \\cos(2\\pi/7) \\cos(3\\pi/7)$ is $\\frac{1}{8}$. This result comes from a general mathematical identity: $$\\prod_{k=1}^{(n-1",
+  "full": "This is a classic problem involving a product of cosines. The value of the product $P = \\cos(\\pi/7) \\cos(2\\pi/7) \\cos(3\\pi/7)$ is $\\frac{1}{8}$.\n\nThis result comes from a general mathematical identity:\n$$\\prod_{k=1}^{(n-1)/2} \\cos\\left(\\frac{k\\pi}{n}\\right) = \\frac{1}{2^{(n-1)/2}}$$\n\nIn your case, the denominator is $n=7$. Therefore, the upper limit of the product is $(7-1)/2 = 3$, which matches your expression:\n$$P = \\cos(\\pi/7) \\cos(2\\pi/7) \\cos(3\\pi/7) = \\frac{1}{2^3} = \\frac{1}{8}$$"
+ },
+ {
+  "q": "Find the value of the following trigonometric product: P = c",
+  "run": 2,
+  "first": "research_web",
+  "calcs": [],
+  "steps": false,
+  "right": false,
+  "seconds": 26.8,
+  "answer": "The value of the product $P = \\cos(\\pi/7) \\cos(2\\pi/7) \\cos(3\\pi/7)$ is $\\frac{1}{32}$.",
+  "full": "The value of the product $P = \\cos(\\pi/7) \\cos(2\\pi/7) \\cos(3\\pi/7)$ is $\\frac{1}{32}$."
+ },
+ {
+  "q": "Evaluate the definite integral: I = integral from 0 to pi of",
+  "run": 1,
+  "first": "(none)",
+  "calcs": [],
+  "steps": true,
+  "right": true,
+  "seconds": 28.4,
+  "answer": "This definite integral can be evaluated using the property $\\int_{a}^{b} f(x) dx = \\int_{a}^{b} f(a-x) dx$. Let the integral be $I$: $$I = \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$ Applying the property with $a",
+  "full": "This definite integral can be evaluated using the property $\\int_{a}^{b} f(x) dx = \\int_{a}^{b} f(a-x) dx$.\n\nLet the integral be $I$:\n$$I = \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$\n\nApplying the property with $a = \\pi$:\n$$I = \\int_{0}^{\\pi} \\frac{(\\pi - x) \\sin(\\pi - x)}{1 + \\cos^2(\\pi - x)} dx$$\n\nUsing the identities $\\sin(\\pi - x) = \\sin(x)$ and $\\cos(\\pi - x) = -\\cos(x)$ (so $\\cos^2(\\pi - x) = \\cos^2(x)$):\n$$I = \\int_{0}^{\\pi} \\frac{(\\pi - x) \\sin(x)}{1 + \\cos^2(x)} dx$$\n$$I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx - \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$\n$$I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx - I$$\n\nAdding $I$ to both sides gives:\n$$2I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx$$\n\nNow, we evaluate the remaining integral $J = \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx$ using the substitution $u = \\cos(x)$, which implies $du = -\\sin(x) dx$.\n\nChange the limits:\n*   When $x = 0$, $u = \\cos(0) = 1$.\n*   When $x = \\pi$, $u = \\cos(\\pi) = -1$.\n\n$$J = \\int_{1}^{-1} \\frac{-du}{1 + u^2} = \\int_{-1}^{1} \\frac{du}{1 + u^2}$$\n\nThe antiderivative of $\\frac{1}{1+u^2}$ is $\\arctan(u)$:\n$$J = [\\arctan(u)]_{-1}^{1} = \\arctan(1) - \\arctan(-1)$$\n$$J = \\frac{\\pi}{4} - \\left(-\\frac{\\pi}{4}\\right) = \\frac{\\pi}{2}$$\n\nFinally, substitute $J$ back into the equation for $I$:\n$$2I = \\pi J = \\pi \\left( \\frac{\\pi}{2} \\right) = \\frac{\\pi^2}{2}$$\n$$I = \\frac{\\pi^2}{4}$$\n\nThe definite integral is $\\frac{\\pi^2}{4}$."
+ },
+ {
+  "q": "Evaluate the definite integral: I = integral from 0 to pi of",
+  "run": 2,
+  "first": "(none)",
+  "calcs": [],
+  "steps": true,
+  "right": true,
+  "seconds": 26.6,
+  "answer": "This is a definite integral that can be solved using a property of definite integrals: $\\int_{a}^{b} f(x) dx = \\int_{a}^{b} f(a+b-x) dx$. Let the integral be $I$: $$I = \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$",
+  "full": "This is a definite integral that can be solved using a property of definite integrals: $\\int_{a}^{b} f(x) dx = \\int_{a}^{b} f(a+b-x) dx$.\n\nLet the integral be $I$:\n$$I = \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$\n\nApplying the property with $a=0$ and $b=\\pi$:\n$$I = \\int_{0}^{\\pi} \\frac{(\\pi - x) \\sin(\\pi - x)}{1 + \\cos^2(\\pi - x)} dx$$\n\nWe use the trigonometric identities:\n1. $\\sin(\\pi - x) = \\sin(x)$\n2. $\\cos(\\pi - x) = -\\cos(x)$, so $\\cos^2(\\pi - x) = (-\\cos(x))^2 = \\cos^2(x)$\n\nSubstituting these into the equation for $I$:\n$$I = \\int_{0}^{\\pi} \\frac{(\\pi - x) \\sin(x)}{1 + \\cos^2(x)} dx$$\n$$I = \\int_{0}^{\\pi} \\left( \\frac{\\pi \\sin(x)}{1 + \\cos^2(x)} - \\frac{x \\sin(x)}{1 + \\cos^2(x)} \\right) dx$$\n$$I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx - \\int_{0}^{\\pi} \\frac{x \\sin(x)}{1 + \\cos^2(x)} dx$$\n\nNotice that the second integral is $I$:\n$$I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx - I$$\n\nNow, solve for $2I$:\n$$2I = \\pi \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx$$\n$$I = \\frac{\\pi}{2} \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx$$\n\nLet's evaluate the remaining integral, $J$:\n$$J = \\int_{0}^{\\pi} \\frac{\\sin(x)}{1 + \\cos^2(x)} dx$$\n\nWe use the substitution $u = \\cos(x)$.\nThen $du = -\\sin(x) dx$, which means $\\sin(x) dx = -du$.\nWe change the limits of integration:\nWhen $x=0$, $u = \\cos(0) = 1$.\nWhen $x=\\pi$, $u = \\cos(\\pi) = -1$.\n\n$$J = \\int_{1}^{-1} \\frac{1}{1 + u^2} (-du)$$\n$$J = \\int_{-1}^{1} \\frac{1}{1 + u^2} du$$\n\nThe antiderivative of $\\frac{1}{1+u^2}$ is $\\arctan(u)$:\n$$J = \\left[ \\arctan(u) \\right]_{-1}^{1}$$\n$$J = \\arctan(1) - \\arctan(-1)$$\n$$J = \\frac{\\pi}{4} - \\left(-\\frac{\\pi}{4}\\right) = \\frac{\\pi}{4} + \\frac{\\pi}{4} = \\frac{2\\pi}{4} = \\frac{\\pi}{2}$$\n\nFinally, substitute $J$ back into the expression for $I$:\n$$I = \\frac{\\pi}{2} J$$\n$$I = \\frac{\\pi}{2} \\left( \\frac{\\pi}{2} \\right)$$\n$$I = \\frac{\\pi^2}{4}$$\n\nThe value of the definite integral is $\\frac{\\pi^2}{4}$."
+ },
+ {
+  "q": "Evaluate the definite integral: I = integral from 0 to 1 of ",
+  "run": 1,
+  "first": "(none)",
+  "calcs": [],
+  "steps": true,
+  "right": true,
+  "seconds": 29.2,
+  "answer": "The definite integral $I = \\int_0^1 \\frac{\\ln(1 + x)}{1 + x^2} dx$ can be solved using a substitution and a property of definite integrals. ### 1. Substitution Let $x = \\tan(\\theta)$. Then $dx = \\sec^2(\\theta) d\\theta$. ",
+  "full": "The definite integral $I = \\int_0^1 \\frac{\\ln(1 + x)}{1 + x^2} dx$ can be solved using a substitution and a property of definite integrals.\n\n### 1. Substitution\n\nLet $x = \\tan(\\theta)$. Then $dx = \\sec^2(\\theta) d\\theta$.\nThe denominator $1 + x^2 = 1 + \\tan^2(\\theta) = \\sec^2(\\theta)$.\nThe limits of integration change:\n- When $x = 0$, $\\theta = 0$.\n- When $x = 1$, $\\theta = \\pi/4$.\n\nThe integral becomes:\n$$I = \\int_0^{\\pi/4} \\frac{\\ln(1 + \\tan(\\theta))}{\\sec^2(\\theta)} \\sec^2(\\theta) d\\theta = \\int_0^{\\pi/4} \\ln(1 + \\tan(\\theta)) d\\theta$$\n\n### 2. Applying the King Property\n\nWe use the property $\\int_a^b f(x) dx = \\int_a^b f(a+b-x) dx$. Here, $a=0$ and $b=\\pi/4$.\n$$I = \\int_0^{\\pi/4} \\ln\\left(1 + \\tan\\left(\\frac{\\pi}{4} - \\theta\\right)\\right) d\\theta$$\n\nUsing the tangent subtraction formula $\\tan(A - B) = \\frac{\\tan A - \\tan B}{1 + \\tan A \\tan B}$:\n$$\\tan\\left(\\frac{\\pi}{4} - \\theta\\right) = \\frac{\\tan(\\pi/4) - \\tan(\\theta)}{1 + \\tan(\\pi/4)\\tan(\\theta)} = \\frac{1 - \\tan(\\theta)}{1 + \\tan(\\theta)}$$\n\nSubstitute this back into the integral:\n$$I = \\int_0^{\\pi/4} \\ln\\left(1 + \\frac{1 - \\tan(\\theta)}{1 + \\tan(\\theta)}\\right) d\\theta$$\n\nSimplify the argument of the logarithm:\n$$1 + \\frac{1 - \\tan(\\theta)}{1 + \\tan(\\theta)} = \\frac{(1 + \\tan(\\theta)) + (1 - \\tan(\\theta))}{1 + \\tan(\\theta)} = \\frac{2}{1 + \\tan(\\theta)}$$\n\nSo,\n$$I = \\int_0^{\\pi/4} \\ln\\left(\\frac{2}{1 + \\tan(\\theta)}\\right) d\\theta$$\n\nUsing logarithm properties, $\\ln(a/b) = \\ln(a) - \\ln(b)$:\n$$I = \\int_0^{\\pi/4} [\\ln(2) - \\ln(1 + \\tan(\\theta))] d\\theta$$\n$$I = \\int_0^{\\pi/4} \\ln(2) d\\theta - \\int_0^{\\pi/4} \\ln(1 + \\tan(\\theta)) d\\theta$$\n$$I = \\ln(2) \\left[\\theta\\right]_0^{\\pi/4} - I$$\n$$I = \\ln(2) \\left(\\frac{\\pi}{4}\\right) - I$$\n\n### 3. Solving for $I$\n\n$$2I = \\frac{\\pi}{4} \\ln(2)$$\n$$I = \\frac{\\pi}{8} \\ln(2)$$\n\nThe value of the definite integral is $\\frac{\\pi}{8} \\ln(2)$."
+ },
+ {
+  "q": "Evaluate the definite integral: I = integral from 0 to 1 of ",
+  "run": 2,
+  "first": "(none)",
+  "calcs": [],
+  "steps": true,
+  "right": true,
+  "seconds": 23.3,
+  "answer": "The definite integral is $I = \\int_{0}^{1} \\frac{\\ln(1 + x)}{1 + x^2} dx$. We solve this by using the substitution $x = \\tan \\theta$. 1. **Substitute $x = \\tan \\theta$**: Then $dx = \\sec^2 \\theta d\\theta$. The limits cha",
+  "full": "The definite integral is $I = \\int_{0}^{1} \\frac{\\ln(1 + x)}{1 + x^2} dx$.\n\nWe solve this by using the substitution $x = \\tan \\theta$.\n\n1.  **Substitute $x = \\tan \\theta$**:\n    Then $dx = \\sec^2 \\theta d\\theta$.\n    The limits change:\n    When $x = 0$, $\\tan \\theta = 0 \\implies \\theta = 0$.\n    When $x = 1$, $\\tan \\theta = 1 \\implies \\theta = \\pi/4$.\n    $1 + x^2 = 1 + \\tan^2 \\theta = \\sec^2 \\theta$.\n\n    The integral becomes:\n    $$I = \\int_{0}^{\\pi/4} \\frac{\\ln(1 + \\tan \\theta)}{\\sec^2 \\theta} \\sec^2 \\theta d\\theta = \\int_{0}^{\\pi/4} \\ln(1 + \\tan \\theta) d\\theta$$\n\n2.  **Apply the integral property**:\n    We use the property $\\int_{a}^{b} f(x) dx = \\int_{a}^{b} f(a+b-x) dx$. Here $a=0$ and $b=\\pi/4$.\n    $$I = \\int_{0}^{\\pi/4} \\ln\\left(1 + \\tan\\left(\\frac{\\pi}{4} - \\theta\\right)\\right) d\\theta$$\n\n3.  **Simplify the expression**:\n    Using the tangent subtraction formula, $\\tan(\\pi/4 - \\theta) = \\frac{1 - \\tan \\theta}{1 + \\tan \\theta}$.\n    $$1 + \\tan\\left(\\frac{\\pi}{4} - \\theta\\right) = 1 + \\frac{1 - \\tan \\theta}{1 + \\tan \\theta} = \\frac{(1 + \\tan \\theta) + (1 - \\tan \\theta)}{1 + \\tan \\theta} = \\frac{2}{1 + \\tan \\theta}$$\n    So,\n    $$I = \\int_{0}^{\\pi/4} \\ln\\left(\\frac{2}{1 + \\tan \\theta}\\right) d\\theta$$\n    Using the logarithm property $\\ln(A/B) = \\ln A - \\ln B$:\n    $$I = \\int_{0}^{\\pi/4} (\\ln 2 - \\ln(1 + \\tan \\theta)) d\\theta$$\n    $$I = \\int_{0}^{\\pi/4} \\ln 2 d\\theta - \\int_{0}^{\\pi/4} \\ln(1 + \\tan \\theta) d\\theta$$\n    $$I = [\\theta \\ln 2]_{0}^{\\pi/4} - I$$\n    $$I = \\left(\\frac{\\pi}{4} \\ln 2 - 0\\right) - I$$\n\n4.  **Solve for $I$**:\n    $$2I = \\frac{\\pi}{4} \\ln 2$$\n    $$I = \\frac{\\pi}{8} \\ln 2$$\n\nThe value of the definite integral is $\\frac{\\pi}{8} \\ln 2$."
+ },
+ {
+  "q": "A Decision Tree is evaluating a split on a root node with 10",
+  "run": 1,
+  "first": "calculate",
+  "calcs": [
+   "None -> refused",
+   "-(0.5 * log2(0.5) + 0.3 * log2(0.3) + 0.2 * log2(0.2)) -> 1.48547529723"
+  ],
+  "steps": true,
+  "right": false,
+  "seconds": 72.0,
+  "answer": "The calculation requires finding the Entropy of the parent node, the weighted average entropy of the children, the Information Gain, and finally the Information Gain Ratio. ### 1. Parent Entropy ($E_{parent}$) With 50 Cl",
+  "full": "The calculation requires finding the Entropy of the parent node, the weighted average entropy of the children, the Information Gain, and finally the Information Gain Ratio.\n\n### 1. Parent Entropy ($E_{parent}$)\nWith 50 Class A, 30 Class B, and 20 Class C (Total = 100):\n$$E_{parent} = - \\left( \\frac{50}{100} \\log_2\\left(\\frac{50}{100}\\right) + \\frac{30}{100} \\log_2\\left(\\frac{30}{100}\\right) + \\frac{20}{100} \\log_2\\left(\\frac{20}{100}\\right) \\right)$$\nThe calculation yields:\n$$E_{parent} \\approx 1.4855$$\n\n### 2. Weighted Average Entropy of Children ($E_{split}$)\n**Left Child (40 samples: 30 A, 8 B, 2 C):**\nProportions: A = 30/40 = 0.75; B = 8/40 = 0.2; C = 2/40 = 0.05.\n$$E_{left} = - (0.75 \\log_2(0.75) + 0.2 \\log_2(0.2) + 0.05 \\log_2(0.05))$$\n**Right Child (60 samples: 20 A, 22 B, 18 C):**\nProportions: A = 20/60 $\\approx 0.3333$; B = 22/60 $\\approx 0.3667$; C = 18/60 = 0.3.\n$$E_{right} = - \\left( \\frac{20}{60} \\log_2\\left(\\frac{20}{60}\\right) + \\frac{22}{60} \\log_2\\left(\\frac{22}{60}\\right) + \\frac{18}{60} \\log_2\\left(\\frac{18}{60}\\right) \\right)$$\n\n**Calculating $E_{split}$:**\nThe weighted sum is:\n$$E_{split} = \\frac{40}{100} E_{left} + \\frac{60}{100} E_{right}$$\n\nBased on the calculations:\n*   $E_{left} \\approx 0.7469$\n*   $E_{right} \\approx 1.0660$\n*   $E_{split} = 0.4 \\times 0.7469 + 0.6 \\times 1.0660 \\approx 0.29876 + 0.6396 = 0.9384$\n\n### 3. Information Gain ($IG$)\n$$IG = E_{parent} - E_{split}$$\n$$IG = 1.4855 - 0.9384 = 0.5471$$\n\n### 4. Information Gain Ratio ($IGR$)\nThe Split Information (the denominator) is $\\log_2(k)$, where $k$ is the number of branches (2 in this case).\n$$\\text{Split Info} = \\log_2(2) = 1$$\n$$IGR = \\frac{IG}{\\text{Split Info}} = \\frac{0.5471}{1} = 0.5471$$\n\nThe Information Gain Ratio of the split is **0.5471**."
+ },
+ {
+  "q": "A Decision Tree is evaluating a split on a root node with 10",
+  "run": 2,
+  "first": "write_code",
+  "calcs": [
+   "(0.5*log2(0.5) + 0.3*log2(0.3) + 0.2*log2(0.2)) - ((0.4*(0.75*log2(0.75) + 0.2*log2(0.2) + 0.05*log2(0.05)) + 0.6*(1/3*log2(1/3) + (22/60)*log2(22/60) + 0.3*log2(0.3))) ) / (- (0.4*log2(0.4) + 0.6*log2(0.6))) -> -0.100449788226",
+   "( - (0.5*log2(0.5) + 0.3*log2(0.3) + 0.2*log2(0.2)) - (0.4*(0.75*log2(0.75) + 0.2*log2(0.2) + 0.05*log2(0.05)) + 0.6*(1/3*log2(1/3) + (22/60)*log2(22/60) + 0.3*log2(0.3))) ) / (- (0.4*log2(0.4) + 0.6*log2(0.6))) -> 2.91494402979"
+  ],
+  "steps": false,
+  "right": false,
+  "seconds": 156.1,
+  "answer": "The Information Gain Ratio for this split is **2.9149**. This was calculated using Shannon entropy (log base 2) by: 1. Calculating the Entropy of the Root Node ($H(S)$). 2. Calculating the Weighted Average Entropy of the",
+  "full": "The Information Gain Ratio for this split is **2.9149**.\n\nThis was calculated using Shannon entropy (log base 2) by:\n1.  Calculating the Entropy of the Root Node ($H(S)$).\n2.  Calculating the Weighted Average Entropy of the Children ($H(S|\\text{Split})$).\n3.  Finding the Information Gain ($\\text{Gain} = H(S) - H(S|\\text{Split})$).\n4.  Determining the Split Information ($\\text{SplitInfo}$).\n5.  Calculating the Ratio ($\\text{IGR} = \\text{Gain} / \\text{SplitInfo}$)."
+ }
+]

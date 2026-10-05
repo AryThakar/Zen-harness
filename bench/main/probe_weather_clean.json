@@ -1,0 +1,68 @@
+[
+ {
+  "case": "here_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.1,
+  "tools": [
+   "get_weather({\"days\": 0}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Apologies, the initial information I gave you was wrong. The weather in Ahmedabad right now is 35.0°C under a clear sky.\n\nIt feels like 36.9°C with moderate air quality (AQI 83) and light winds."
+ },
+ {
+  "case": "umbrella",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [
+   "get_weather({\"days\": 0}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "No, you shouldn't need an umbrella today, Arya. The weather is currently clear with no precipitation expected."
+ },
+ {
+  "case": "time_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.8,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "The current time is 14:46 on Monday, October 5th, 2026."
+ },
+ {
+  "case": "explain",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 18.1,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "The basic process is quite fascinating. Essentially, meteorologists use massive computer models to simulate the atmosphere based on current conditions.\n\nHere is a brief overview of how weather forecasts are made:\n\n### 1. Data Collection\nThe process starts with gathering massive amounts of current information about the atmosphere. This data comes from:\n*   **Ground Stations:** Sensors on the surface measuring temperature, pressure, and humidity.\n*   **Weather Balloons (Radiosondes):** These carry instruments into the upper atmosphere to measure conditions vertically.\n*   **Satellites:** Providing imagery and data on cloud cover, temperature, and atmospheric movement over large areas.\n*   **Aircraft and Buoys:** Gathering data from aloft and over the oceans.\n\n### 2. Numerical Weather Prediction (NWP)\nAll this raw data is fed into highly complex computer programs called NWP models. These models solve a huge set of mathematical equations that describe the physics of the atmosphere (like how air moves, how heat transfers, and how moisture condenses).\n\n### 3. Running the Simulation\nThe models run simulations for different future time steps (e.g., 3 hours, 12 hours, 48 hours). They take the current state of the atmosphere (Step 1) and project how it *should* evolve based on the established physical rules (Step 2).\n\n### 4. Interpretation and Output\nA forecast is not a single number; it’s a product of interpretation. Forecasters analyze the model outputs, which often have uncertainties, and combine them with their experience to create the final forecast—providing probabilities for rain, temperature ranges, etc.\n\nIt is an incredibly complex, iterative process that relies heavily on the accuracy of the initial data."
+ }
+]

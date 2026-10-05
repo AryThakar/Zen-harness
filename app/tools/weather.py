@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -40,15 +41,19 @@ _cache: dict[tuple, tuple[float, dict]] = {}
 @tool
 def get_weather(location: str | None = None, days: int = 0, *, http: httpx.Client | None = None) -> ToolResult:
     """Weather for a place (default: the user's location): current conditions, and with days=1..7 a
-    daily forecast from today."""
+    daily forecast for today and that many days ahead (days=1: today and tomorrow)."""
     if not 0 <= days <= MAX_DAYS:
         raise ToolError(f"days must be 0 to {MAX_DAYS}.", field="days")
-    http = http or net.client()
+    with (net.client() if http is None else nullcontext(http)) as client:  # its own client is closed after
+        return _weather(client, location, days)
+
+
+def _weather(http: httpx.Client, location: str | None, days: int) -> ToolResult:
     place = _place(http, location)
     warnings: list[str] = []
     weather, weather_age = _fetch(http, ("weather", place["latitude"], place["longitude"], days), FORECAST, {
         "latitude": place["latitude"], "longitude": place["longitude"], "current": CURRENT, "timezone": "auto",
-        **({"daily": DAILY, "forecast_days": days} if days else {})}, "weather", warnings)
+        **({"daily": DAILY, "forecast_days": days + 1} if days else {})}, "weather", warnings)
     air, air_age = _fetch(http, ("air", place["latitude"], place["longitude"]), AIR, {
         "latitude": place["latitude"], "longitude": place["longitude"], "current": "us_aqi,pm2_5,pm10",
         "timezone": "auto"}, "air quality", warnings)

@@ -1,0 +1,135 @@
+[
+ {
+  "case": "vague",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I'm happy to help you convert something, but you haven't provided any content or mentioned what \"it\" is yet!\n\nCould you please paste the text or describe the item you would like me to convert, and tell me what the desired \"other format\" should be (e.g., JSON, CSV, Markdown, etc.)?"
+ },
+ {
+  "case": "vague",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I'm sorry, but you didn't specify what \"it\" is or what \"the other format\" is. Could you please provide the text you want converted and tell me what format you would like it in?"
+ },
+ {
+  "case": "typo",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.2,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "The capital of France is Paris."
+ },
+ {
+  "case": "typo",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.8,
+  "tools": [
+   "research_web({\"task\": \"capital of France\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "research_web",
+    "input": {
+     "task": "capital of France"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The capital of France is Paris."
+ },
+ {
+  "case": "trip",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.0,
+  "tools": [
+   "ask_user({\"allow_text\": true, \"question\": \"To help me plan your trip, could you please tell me: 1. Where would you like to go (destination)? and 2. W…) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_user",
+    "input": {
+     "allow_text": true,
+     "question": "To help me plan your trip, could you please tell me: 1. Where would you like to go (destination)? and 2. What are your travel dates or desired duration?"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "To help me plan your trip, could you please tell me: 1. Where would you like to go (destination)? and 2. What are your travel dates or desired duration?",
+   "options": [],
+   "via": null,
+   "approval": null
+  },
+  "answer": ""
+ },
+ {
+  "case": "trip",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 19.3,
+  "tools": [
+   "ask_user({\"allow_text\": true, \"question\": \"To help me plan the perfect trip, could you tell me: Where would you like to go, when are you planning to …) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_user",
+    "input": {
+     "allow_text": true,
+     "question": "To help me plan the perfect trip, could you tell me: Where would you like to go, when are you planning to travel, and what kind of vibe are you looking for (e.g., adventure, relaxing, cultural)?"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "To help me plan the perfect trip, could you tell me: Where would you like to go, when are you planning to travel, and what kind of vibe are you looking for (e.g., adventure, relaxing, cultural)?",
+   "options": [],
+   "via": null,
+   "approval": null
+  },
+  "answer": ""
+ },
+ {
+  "case": "clear",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Pitter patter falls,\nWashing the world clean and new,\nGreen leaves start to shine."
+ },
+ {
+  "case": "clear",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.2,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Silver drops descend,\nWashing the thirsty green earth,\nFresh scent in the air."
+ }
+]

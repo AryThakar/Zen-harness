@@ -1,4 +1,4 @@
-"""Direct tests of query_data, make_chart and stats_test - no model involved."""
+"""Direct tests of query_data, make_chart and compare - no model involved."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 
 from app.tools.make_chart import make_chart
 from app.tools.query_data import query_data
-from app.tools.stats_test import stats_test
+from app.tools.compare import compare
 from app.tools.workspace import Workspace
 
 
@@ -95,19 +95,19 @@ def test_chart_argument_errors_explain(ws, sales):
     assert r.status == "ok"
 
 
-# ---------------------------------------------------------------- stats_test
+# ---------------------------------------------------------------- compare
 
 def test_planted_difference_is_found(ws):
     rng = np.random.default_rng(0)
     df = pd.DataFrame({"group": ["a"] * 60 + ["b"] * 60,
                        "value": np.r_[rng.normal(10, 2, 60), rng.normal(12, 2, 60)]})
     d = ws.add_table(df, "planted")
-    r = stats_test(ws, d, "difference", ["value", "group"])
+    r = compare(ws, d, "difference", ["value", "group"])
     assert r.result["test"] == "Mann-Whitney U" and r.result["p_value"] < 0.01
     assert r.result["tends_higher"] == "b" and r.result["effect_label"] in ("medium", "large")
     df3 = pd.DataFrame({"g": ["a"] * 40 + ["b"] * 40 + ["c"] * 40,
                         "v": np.r_[rng.normal(0, 1, 40), rng.normal(0, 1, 40), rng.normal(1.5, 1, 40)]})
-    r = stats_test(ws, ws.add_table(df3, "three"), "difference", ["g", "v"])
+    r = compare(ws, ws.add_table(df3, "three"), "difference", ["g", "v"])
     assert r.result["test"] == "Kruskal-Wallis" and r.result["p_value"] < 0.01
 
 
@@ -120,27 +120,28 @@ def test_no_false_discoveries_on_random_data(ws):
         df = pd.DataFrame({"g": rng.choice(["a", "b", "c"], 90), "h": rng.choice(["x", "y"], 90),
                            "u": rng.normal(size=90), "v": rng.exponential(size=90)})
         d = ws.add_table(df, "null")
-        hits["difference"] += stats_test(ws, d, "difference", ["u", "g"]).result["p_value"] < 0.05
-        hits["correlation"] += stats_test(ws, d, "correlation", ["u", "v"]).result["p_value"] < 0.05
-        hits["association"] += stats_test(ws, d, "association", ["g", "h"]).result["p_value"] < 0.05
+        hits["difference"] += compare(ws, d, "difference", ["u", "g"]).result["p_value"] < 0.05
+        hits["correlation"] += compare(ws, d, "correlation", ["u", "v"]).result["p_value"] < 0.05
+        hits["association"] += compare(ws, d, "association", ["g", "h"]).result["p_value"] < 0.05
     for kind, n in hits.items():
         assert n / runs <= 0.09, (kind, n)  # 5% expected; 9% leaves room for sampling noise
 
 
 def test_correlation_and_association(ws, sales):
-    r = stats_test(ws, sales, "correlation", ["units", "amount"])
-    assert r.result["rho"] > 0.8 and r.result["range_95"][0] < r.result["rho"] < r.result["range_95"][1]
+    r = compare(ws, sales, "correlation", ["units", "amount"])
+    assert r.result["rho"] > 0.8 and r.result["range"][0] < r.result["rho"] < r.result["range"][1]
+    assert r.result["confidence"] == "95%"  # said as a number, so "a 95% range" in an answer is grounded
     assert "larger than chance" in r.result["verdict"]
-    r = stats_test(ws, sales, "association", ["region", "returned"])
+    r = compare(ws, sales, "association", ["region", "returned"])
     assert r.result["test"].startswith("chi-square") and r.result["p_value"] > 0.01
 
 
 def test_wrong_question_for_the_columns_is_explained(ws, sales):
-    r = stats_test(ws, sales, "correlation", ["region", "amount"])
+    r = compare(ws, sales, "correlation", ["region", "amount"])
     assert r.status == "invalid_arguments" and "association" in r.result["error"]["message"]
-    r = stats_test(ws, sales, "difference", ["price", "amount"])
+    r = compare(ws, sales, "difference", ["price", "amount"])
     assert r.status == "invalid_arguments" and "correlation" in r.result["error"]["message"]
-    r = stats_test(ws, sales, "difference", ["units", "amount"])  # units has 5 values: used as groups
+    r = compare(ws, sales, "difference", ["units", "amount"])  # units has 5 values: used as groups
     assert r.status == "ok" and r.result["group_column"] == "units"
 
 
@@ -161,7 +162,7 @@ def test_partial_edge_periods_need_90_percent_of_their_days():
 
 
 def test_tiny_p_values_are_quoted_as_a_bound(ws, sales):
-    r = stats_test(ws, sales, "correlation", ["units", "amount"])
+    r = compare(ws, sales, "correlation", ["units", "amount"])
     assert r.result["p_text"] == "p < 0.0001"
 
 
@@ -193,3 +194,85 @@ def test_a_line_chart_with_only_empty_periods_says_so(ws):
     empty = ws.add_table(pd.DataFrame({"day": pd.date_range("2025-01-01", periods=60), "v": [float("nan")] * 60}), name="e")
     r = make_chart(ws, empty, "line", x="day", y="v", agg="mean")
     assert r.status == "failed" and "every period is empty" in r.result["error"]["message"]
+
+
+def test_a_table_is_inspected_once(ws, sales, monkeypatch):
+    from app.tools import inspect_data as module
+    first = module.inspect_data(ws, sales)
+    monkeypatch.setattr(module, "_column", lambda *a: (_ for _ in ()).throw(AssertionError("computed again")))
+    again = module.inspect_data(ws, sales)
+    assert again.status == "ok" and again.result == first.result and again.artifact == first.artifact
+
+
+
+def test_ab_rates_match_an_independent_implementation(ws):
+    """Newcombe's range and the z-test p, checked against statsmodels on the same counts."""
+    from statsmodels.stats.proportion import confint_proportions_2indep, proportions_ztest
+    rng = np.random.default_rng(1)
+    variant = rng.choice(["control", "new page"], 4000)
+    converted = rng.random(4000) < np.where(variant == "new page", 0.12, 0.09)
+    d = ws.add_table(pd.DataFrame({"variant": variant, "converted": np.where(converted, "yes", "no")}), "ab")
+    r = compare(ws, d, "ab", ["variant", "converted"]).result
+    assert r["control"] == "control" and r["outcome_counted"] == "yes"
+    (a, b) = r["groups"]
+    lo, hi = confint_proportions_2indep(b["successes"], b["rows"], a["successes"], a["rows"], method="newcomb")
+    assert r["difference_range"] == [round(100 * lo, 2), round(100 * hi, 2)]
+    p = proportions_ztest([b["successes"], a["successes"]], [b["rows"], a["rows"]])[1]
+    assert abs(r["p_value"] - p) / p < 0.01 and "more than chance" in r["verdict"]
+
+
+def test_ab_on_a_number_and_its_mistakes(ws, sales):
+    rng = np.random.default_rng(2)
+    d = ws.add_table(pd.DataFrame({"arm": rng.choice(["A", "B"], 300), "spend": rng.gamma(2, 20, 300)}), "spend")
+    r = compare(ws, d, "ab", ["arm", "spend"]).result
+    assert r["test"] == "Welch's t-test" and r["control"] == "A" and "chance" in r["verdict"]
+    assert compare(ws, sales, "ab", ["region", "amount"]).result["error"]["message"].startswith("An A/B test compares 2")
+
+
+# ---------------------------------------------------------------- chart kinds
+
+def test_line_and_bar_split_by_a_group_match_the_data(ws, sales):
+    df = ws.table(sales)
+    r = make_chart(ws, sales, "line", "date", "amount", by="region", time_unit="month")
+    months = df.assign(m=df.date.dt.to_period("M")).groupby(["m", "region"]).amount.sum().unstack()
+    for s in r.artifact["series"]:
+        assert s["y"] == [round(v, 4) for v in months[s["name"]]]
+    assert [s["group"] for s in r.result["series"]] == ["North", "South", "East"]  # largest first
+    r = make_chart(ws, sales, "bar", "region", by="returned", stacked=True)
+    counts = pd.crosstab(df.region, df.returned.astype(str))
+    assert r.artifact["stacked"] and r.artifact["x"][0] == "North"
+    for s in r.artifact["series"]:
+        assert s["y"] == [counts.loc[k, s["name"]] for k in r.artifact["x"]]
+
+
+def test_scatter_box_heatmap_and_pie(ws, sales):
+    r = make_chart(ws, sales, "scatter", "units", "amount", by="region")
+    assert r.result["trend"]["slope"] == pytest.approx(100, rel=0.1) and r.artifact["groups"][0] == "North"
+    assert len(r.artifact["group"]) == len(r.artifact["x"])
+    r = make_chart(ws, sales, "box", "region", "amount")
+    df = ws.table(sales)
+    assert r.artifact["boxes"][0]["median"] == round(df[df.region == "North"].amount.median(), 4)
+    assert make_chart(ws, sales, "box", "amount").result["groups"][0]["group"] == "all rows"
+    d = ws.add_table(pd.DataFrame({"day": ["Tue", "Mon", "Mon", "Sun"], "hour": [9, 9, 10, 9], "v": [1, 2, 3, 4]}), "t")
+    r = make_chart(ws, d, "heatmap", "day", "v", by="hour")
+    assert r.artifact["x"] == ["Mon", "Tue", "Sun"] and r.artifact["rows"] == ["9", "10"]
+    assert r.artifact["values"] == [[2.0, 1.0, 4.0], [3.0, 0.0, 0.0]] and r.result["highest"][1] == 4
+    r = make_chart(ws, sales, "pie", "region", "amount")
+    assert sum(sl[2] for sl in r.result["slices"]) == pytest.approx(1, abs=0.01)
+
+
+def test_chart_kinds_say_how_to_fix_a_wrong_call(ws, sales):
+    assert "use type='box'" in make_chart(ws, sales, "histogram", "amount", by="region").result["error"]["message"]
+    assert "sum or count" in make_chart(ws, sales, "pie", "region", "amount", agg="mean").result["error"]["message"]
+    assert "needs x and by" in make_chart(ws, sales, "heatmap", "region").result["error"]["message"]
+    same = make_chart(ws, sales, "bar", "region", "amount", by="region", agg="mean")  # by = x: no split, no error
+    assert same.status == "ok" and "series" not in same.artifact and same.artifact["y_label"] == "mean of amount"
+
+
+def test_a_difference_in_a_yes_no_outcome_between_two_groups_is_an_ab_test(ws):
+    rng = np.random.default_rng(3)
+    variant = rng.choice(["A", "B"], 3000)
+    d = ws.add_table(pd.DataFrame({"variant": variant, "signed_up": np.where(rng.random(3000) < 0.1, "yes", "no")}),
+                     "ab")
+    r = compare(ws, d, "difference", ["variant", "signed_up"]).result
+    assert r["question"] == "ab" and r["outcome_counted"] == "yes" and "two rates" in r["note"]

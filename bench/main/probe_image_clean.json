@@ -1,0 +1,36 @@
+[
+ {
+  "case": "cat",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.7,
+  "tools": [
+   "generate_image({\"prompt\": \"a cat playing the piano\", \"size\": \"square\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "generate_image",
+    "input": {
+     "prompt": "a cat playing the piano",
+     "size": "square"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've created the image for you. Here is a picture of a cat playing the piano."
+ },
+ {
+  "case": "circuit",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 20.8,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I can certainly help you visualize that. Since you are looking for an image of a circuit, I will use the image generation tool to create a schematic illustration of a JK flip-flop.\n\n{\n  \"tool_calls\": [\n    {\n      \"tool_name\": \"generate_image\",\n      \"tool_args\": {\n        \"prompt\": \"A clear, professional schematic illustration of a JK flip-flop circuit, showing the inputs J and K, the clock input, and the outputs Q and Q-bar, drawn in a clean electronic style.\",\n        \"size\": \"square\"\n      }\n    }\n  ]\n}"
+ }
+]

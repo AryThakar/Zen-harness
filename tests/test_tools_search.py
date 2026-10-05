@@ -69,9 +69,32 @@ def test_notes_are_searchable_and_updates_replace_old_text(ws, index):
     save_note(ws, "Revenue column", "Use net_sales as revenue.", index=index)
     save_note(ws, "Revenue column", "Use gross_sales as revenue from now on.", index=index)
     r = search_files(index, "which sales column is revenue")
-    texts = [p["text"] for p in r.result["passages"]]
-    assert texts == ["Use gross_sales as revenue from now on."]
-    assert r.result["passages"][0]["source"] == "note 'Revenue column' (note_1)"
+    texts = [p["text"] for p in r.result["notes"]]  # notes come apart, after the document passages
+    assert texts == ["Use gross_sales as revenue from now on."] and r.result["passages"] == []
+    assert r.result["notes"][0]["source"] == "note 'Revenue column' (note_1)"
+
+
+def test_notes_never_push_out_documents_and_come_oldest_first(ws, index, policy):
+    for n in range(6):
+        save_note(ws, f"Refund note {n}", f"Refund rule number {n} for returns.", index=index)
+    r = search_files(index, "refund returns", k=2)
+    assert r.result["passages"] and all("note" not in p["source"] for p in r.result["passages"])  # the document stays
+    shown = r.result["notes"]
+    assert len(shown) == 2 and shown[0]["saved"] <= shown[1]["saved"]
+    assert "a later one supersedes an earlier one" in r.result["notes_order"]
+
+
+def test_a_tie_keeps_the_newest_and_the_oldest(index):
+    from app.tools import search_index
+    for n in range(search_index.CANDIDATES + 20):  # more equal matches than the keyword leg keeps
+        remember_turn(index, f"c{n}", "what is the budget", f"The budget is {n} thousand.",
+                      when=f"2026-01-01T00:{n // 60:02d}:{n % 60:02d}")
+    turns = recall(index, "budget", k=4).result["turns"]
+    said = [t["text"] for t in turns]
+    assert any("is 0 thousand" in s for s in said) and any(f"is {search_index.CANDIDATES + 19} thousand" in s
+                                                          for s in said)  # both ends survive the cut
+    assert [t["when"] for t in turns] == sorted(t["when"] for t in turns)  # shown oldest first
+    assert "a later one supersedes an earlier one" in recall(index, "budget", k=4).result["note"]
 
 
 # ---------------------------------------------------------------- recall
@@ -88,6 +111,22 @@ def test_recall_returns_question_with_answer_and_skips_retrieval_calls(index):
     assert "user: What is total revenue" in turn["text"] and "817,860.05" in turn["text"]
     assert "assistant called query_data" in turn["text"] and "secret passage" not in turn["text"]
     assert recall(index, "total revenue 2015", exclude_conversation="c1").result["turns"] == []
+
+
+def test_recall_reaches_the_current_chats_cut_turns_only(index):
+    """The note 'N earlier turns of this chat are not shown; find them with ask_knowledge' must work: of the
+    current chat, the turns cut from view are found; the ones in view are not repeated."""
+    remember_turn(index, "this", "Which budget did we pick?", "We picked the 40 thousand budget.",
+                  when="2026-10-04T10:37:00.000+05:30")
+    remember_turn(index, "this", "Is the budget still fine?", "Yes, the budget is still fine.",
+                  when="2026-10-04T12:20:00.000+05:30")
+    remember_turn(index, "other", "Budget for the trip?", "The trip budget is 5 thousand.",
+                  when="2026-10-02T09:00:00.000+05:30")
+    nothing_cut = recall(index, "budget", exclude_conversation="this").result["turns"]
+    assert {t["conversation"] for t in nothing_cut} == {"other"}
+    cut = recall(index, "budget", exclude_conversation="this", visible_since="2026-10-04T12:00:00.000+05:30")
+    found = {(t["conversation"], t["when"]) for t in cut.result["turns"]}
+    assert found == {("other", "2026-10-02 09:00"), ("this", "2026-10-04 10:37")}  # not the turn still in view
 
 
 def test_documents_and_chats_do_not_mix(index, policy):

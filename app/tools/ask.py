@@ -41,5 +41,7 @@ def answer_result(question: str, answer: str | None) -> dict:
     """What the model receives once the user has answered (None = skipped)."""
     if answer is None or not answer.strip():
         return {"question": question, "skipped": True,
-                "note": "The user skipped the question: continue with the most reasonable default and say which one."}
+                "note": "The user skipped the question: they want you to decide. Take the most likely meaning, "
+                        "say in a few words which one you took, and answer it now (with tools if needed) - "
+                        "don't ask again and don't refuse."}
     return {"question": question, "answer": answer.strip()}

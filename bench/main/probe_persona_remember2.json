@@ -1,0 +1,47 @@
+[
+ {
+  "case": "hello",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hi Arya. I'm here and ready to help with whatever you need. What's on your mind?"
+ },
+ {
+  "case": "bad_place",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.3,
+  "tools": [
+   "get_weather({\"days\": 0, \"location\": \"Qwxzplorvia\"}) invalid_arguments"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0,
+     "location": "Qwxzplorvia"
+    },
+    "status": "invalid_arguments"
+   }
+  ],
+  "asked": null,
+  "answer": "I couldn't find the weather for Qwxzzplorvia. Could you please check the spelling or provide the country for that location?"
+ },
+ {
+  "case": "you_were_wrong",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "You're right, my mistake. 12 times 12 is 144."
+ }
+]

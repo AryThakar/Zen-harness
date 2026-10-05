@@ -1,0 +1,216 @@
+[
+ {
+  "case": "write_md",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.9,
+  "tools": [
+   "files({\"content\": \"Sales rose from 120 in January to 150 in March.\", \"mode\": \"write\", \"name\": \"sales_report.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "Sales rose from 120 in January to 150 in March.",
+     "mode": "write",
+     "name": "sales_report.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I have saved the sales report to a file named `sales_report.md`."
+ },
+ {
+  "case": "write_md",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.4,
+  "tools": [
+   "files({\"content\": \"Sales rose from 120 in January to 150 in March.\", \"mode\": \"write\", \"name\": \"sales_report.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "content": "Sales rose from 120 in January to 150 in March.",
+     "mode": "write",
+     "name": "sales_report.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I have saved that content as `sales_report.md`."
+ },
+ {
+  "case": "delete",
+  "run": 1,
+  "ok": false,
+  "problem": "mode='find'",
+  "seconds": 7.5,
+  "tools": [
+   "files({\"mode\": \"find\", \"name\": \"old.txt\"}) ok",
+   "files({\"mode\": \"delete\", \"name\": \"file_2\"}) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "name": "old.txt"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "delete",
+     "name": "file_2"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "Delete file_2 (old.txt) from this workspace? This can't be undone.",
+   "options": [
+    "Delete",
+    "Cancel"
+   ],
+   "via": null,
+   "approval": {
+    "action": "delete_files",
+    "items": [
+     "file_2"
+    ],
+    "named": [
+     "file_2 (old.txt)"
+    ]
+   }
+  },
+  "answer": ""
+ },
+ {
+  "case": "delete",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.9,
+  "tools": [
+   "files({\"mode\": \"delete\", \"name\": \"old.txt\"}) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "delete",
+     "name": "old.txt"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "Delete file_2 (old.txt) from this workspace? This can't be undone.",
+   "options": [
+    "Delete",
+    "Cancel"
+   ],
+   "via": null,
+   "approval": {
+    "action": "delete_files",
+    "items": [
+     "file_2"
+    ],
+    "named": [
+     "file_2 (old.txt)"
+    ]
+   }
+  },
+  "answer": ""
+ },
+ {
+  "case": "download",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.6,
+  "tools": [
+   "files({\"link\": \"https://github.com/psf/requests/blob/main/src/requests/__version__.py\", \"mode\": \"download\"}) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "link": "https://github.com/psf/requests/blob/main/src/requests/__version__.py",
+     "mode": "download"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "Download __version__.py (435 bytes) from GitHub into this workspace?",
+   "options": [
+    "Download",
+    "Cancel"
+   ],
+   "via": null,
+   "approval": {
+    "action": "download_file",
+    "url": "https://raw.githubusercontent.com/psf/requests/main/src/requests/__version__.py",
+    "name": "__version__.py",
+    "type": "text/plain",
+    "bytes": 435,
+    "host": "raw.githubusercontent.com",
+    "github": true
+   }
+  },
+  "answer": ""
+ },
+ {
+  "case": "download",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.4,
+  "tools": [
+   "files({\"link\": \"https://github.com/psf/requests/blob/main/src/requests/__version__.py\", \"mode\": \"download\"}) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "link": "https://github.com/psf/requests/blob/main/src/requests/__version__.py",
+     "mode": "download"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "Download __version__.py (435 bytes) from GitHub into this workspace?",
+   "options": [
+    "Download",
+    "Cancel"
+   ],
+   "via": null,
+   "approval": {
+    "action": "download_file",
+    "url": "https://raw.githubusercontent.com/psf/requests/main/src/requests/__version__.py",
+    "name": "__version__.py",
+    "type": "text/plain",
+    "bytes": 435,
+    "host": "raw.githubusercontent.com",
+    "github": true
+   }
+  },
+  "answer": ""
+ }
+]

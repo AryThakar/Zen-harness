@@ -1,0 +1,112 @@
+[
+ {
+  "case": "vague",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't ask",
+  "seconds": 5.2,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I need something to convert! Please provide the text or data you want me to change the format of."
+ },
+ {
+  "case": "vague",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.3,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I can definitely help with that, but I need you to provide the specific format you want me to convert the text *from* and *to*.\n\nAlso, what is the text you want me to convert? (It looks like you might have pasted a timestamp)."
+ },
+ {
+  "case": "typo",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.7,
+  "tools": [
+   "research_web({\"task\": \"what is the capital of France\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "research_web",
+    "input": {
+     "task": "what is the capital of France"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The capital of France is Paris."
+ },
+ {
+  "case": "typo",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.0,
+  "tools": [
+   "research_web({\"task\": \"what is the capital of France\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "research_web",
+    "input": {
+     "task": "what is the capital of France"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The capital of France is Paris."
+ },
+ {
+  "case": "trip",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I’d love to help you plan a trip! To give you the best suggestions, I need a little more information.\n\nCould you let me know:\n1.  **Where** do you want to go?\n2.  **When** are you planning to travel (dates or duration)?\n3.  What is your **budget** like (e.g., luxury, mid-range, budget)?\n4.  What kind of **activities** are you interested in (e.g., sightseeing, relaxing, hiking, food tours)?"
+ },
+ {
+  "case": "trip",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "What kind of trip are you planning? To help me put together a great itinerary, could you tell me:\n\n1.  **Where** do you want to go (or what kind of place, like a city or beach)?\n2.  **How long** should the trip be?\n3.  **What is your budget** like (e.g., luxury, mid-range, budget-friendly)?\n4.  **What are your interests** (e.g., hiking, history, food, relaxation)?\n5.  **When** are you planning to travel?"
+ },
+ {
+  "case": "clear",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Silver drops descend,\nWashing the dusty green leaves,\nEarth drinks the cool rain."
+ },
+ {
+  "case": "clear",
+  "run": 2,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Pitter patter falls,\nWashing the green world below,\nFresh scent fills the air."
+ }
+]

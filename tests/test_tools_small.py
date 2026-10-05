@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 
+from app.tools import notes
 from app.tools.ask import answer_result, ask_user
 from app.tools.diagram import draw_diagram
-from app.tools.notes import MAX_PINNED, pinned_text, save_note, set_pin
+from app.tools.notes import pinned, pinned_text, save_note
 from app.tools.workspace import Workspace
 
 
@@ -25,23 +28,39 @@ def test_same_title_updates_instead_of_duplicating(ws):
     assert "exclude refunds" in ws.path("note_1").read_text("utf-8")
 
 
-def test_pin_needs_approval_and_has_a_size_limit(ws):
-    r = save_note(ws, "Plan", "1. Clean data_1. 2. Forecast monthly revenue.", pin=True)
-    assert r.result["pin"] == "waiting for the user's approval" and r.artifact["pin_request"]
-    assert pinned_text(ws) == ""  # not pinned until the user approves
-    set_pin(ws, "note_1", True)
-    assert "Forecast monthly revenue" in pinned_text(ws) and "(note_1)" in pinned_text(ws)
-    assert save_note(ws, "Plan", "Changed plan.").result["pin"] == "pinned"  # an update keeps the pin
-    big = save_note(ws, "Big", "x" * (MAX_PINNED - 5), pin=True)
-    assert big.status == "invalid_arguments" and "limited to" in big.result["error"]["message"]
-    set_pin(ws, "note_1", False)
-    assert pinned_text(ws) == ""
+def test_the_five_latest_notes_are_pinned_oldest_first(ws):
+    for n in range(7):
+        save_note(ws, f"Fact {n}", f"Fact number {n}.")
+    save_note(ws, "Fact 1", "Fact number 1, corrected.")  # an update makes it the latest again
+    assert [p["title"] for p in pinned(ws)] == ["Fact 3", "Fact 4", "Fact 5", "Fact 6", "Fact 1"]
+    text = pinned_text(ws)
+    assert "a later one supersedes an earlier one" in text and "Fact number 1, corrected." in text
+    assert "Fact number 0" not in text and "Fact 2" not in text
+    long = save_note(ws, "Long", "y" * (notes.PINNED_CHARS + 50)).result["note"]
+    assert next(p for p in pinned(ws) if p["id"] == long)["text"].endswith(" ...")  # cut in view, whole in search
+
+
+def test_notes_are_pruned_oldest_first_past_the_limits(ws, monkeypatch):
+    monkeypatch.setattr(notes, "MAX_NOTES", 10)
+    for n in range(10):
+        save_note(ws, f"Fact {n}", f"Fact number {n}.")
+    assert len(ws.ids("note")) == 10
+    r = save_note(ws, "Fact 10", "Fact number 10.").result  # past the count: 20% freed, oldest first
+    assert r["pruned"] == "3 oldest note(s) removed to make room"
+    assert [ws.entry(i)["meta"]["title"] for i in ws.ids("note")] == [f"Fact {n}" for n in range(3, 11)]
+    monkeypatch.setattr(notes, "MAX_NOTES_CHARS", 100)
+    save_note(ws, "Big", "z" * 60)  # past the total length
+    assert sum(len(notes.body(ws, i)) for i in ws.ids("note")) <= 80
+    later = datetime.now() + notes.MAX_AGE + timedelta(days=1)
+    save_note(ws, "New", "Fresh.", now=later)  # a year later every other note is too old
+    assert [ws.entry(i)["meta"]["title"] for i in ws.ids("note")] == ["New"]
 
 
 def test_note_arguments(ws):
     assert save_note(ws, "", "x").status == "invalid_arguments"
     assert save_note(ws, "t", "   ").status == "invalid_arguments"
-    assert save_note(ws, "t", "x" * 20_001).status == "invalid_arguments"
+    assert save_note(ws, "t", "x" * (notes.MAX_NOTE + 1)).status == "invalid_arguments"
+    assert "a few lines" in save_note(ws, "t", "x" * (notes.MAX_NOTE + 1)).result["error"]["message"]
 
 
 # ---------------------------------------------------------------- ask_user
@@ -52,7 +71,7 @@ def test_question_shape_and_answers():
                           "options": ["churned", "status"], "allow_text": True, "allow_skip": True}
     assert answer_result("q", " status ") == {"question": "q", "answer": "status"}
     skipped = answer_result("q", None)
-    assert skipped["skipped"] and "default" in skipped["note"]
+    assert skipped["skipped"] and "want you to decide" in skipped["note"] and "don't ask again" in skipped["note"]
 
 
 def test_bad_questions():
@@ -88,3 +107,20 @@ def test_valid_diagrams_pass(code):
 def test_broken_diagrams_are_explained(code, message):
     r = draw_diagram(code)
     assert r.status == "invalid_arguments" and message in r.result["error"]["message"]
+
+
+def test_diagrams_are_mended_the_way_mermaid_needs():
+    # From a real chat: brackets inside labels, a trailing % comment, an inactive deactivation.
+    flow = draw_diagram("graph TD\n  A[Clock] --> C[Hold: Q(next) = Q(current)]; % note\n"
+                        "  C -->|J=1 (set)| D{J=1 (set)?}\n  // a comment\n  D --> E[\"kept (quoted)\"]")
+    assert flow.artifact["mermaid"] == ('graph TD\n  A[Clock] --> C["Hold: Q(next) = Q(current)"];\n'
+                                        '  C -->|"J=1 (set)"| D{"J=1 (set)?"}\n  %% a comment\n'
+                                        '  D --> E["kept (quoted)"]')
+    seq = draw_diagram("sequenceDiagram\n  A->>+B: hi\n  B-->>-A: bye\n  B-->>-A: again\n  deactivate A")
+    assert seq.artifact["mermaid"] == "sequenceDiagram\n  A->>+B: hi\n  B-->>-A: bye\n  B-->>A: again"
+
+
+def test_mermaid_blocks_in_an_answer_are_mended_too():
+    from app.tools.diagram import mend_blocks
+    text = "See:\n```mermaid\ngraph TD\n  A[x (y)] --> B\n```\n```python\nprint(1)\n```"
+    assert mend_blocks(text) == 'See:\n```mermaid\ngraph TD\n  A["x (y)"] --> B\n```\n```python\nprint(1)\n```'

@@ -1,17 +1,20 @@
 """inspect_data: a first look at a table, and what could be cleaned.
 
 It reports and suggests; it never changes the data. Every suggestion is a ready clean_data step
-with the reason. Where the data itself can't decide (03/04/2025: 3 April or 4 March?), it
-returns a question whose options each carry the step to run - the agent shows it with ask_user,
-so the choice is the user's, not a guess.
+with the reason. Where the data itself can't decide (03/04/2025: 3 April or 4 March? rows that repeat
+exactly, with no id to tell a copy from a real repeat), it returns a question whose options each carry
+the step to run, or none - the helper's runner asks it, so the choice is the user's, not a guess. Codes
+(ids, order numbers, leading zeros) are never suggested as numbers. It also names the columns' roles (date, order, item, amount ...,
+app/tools/roles.py): the defaults the other data tools use, and how money columns combine.
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-from .core import ToolResult, number, ok, tool
+from .core import ToolResult, jsonable, number, ok, tool
 from .periods import split_time_note
+from .roles import CODE_WORDS, ID, ORDER, role_notes, table_roles, tokens
 from .values import as_text, is_missing, parse_dates, parse_numbers
 from .workspace import Workspace
 
@@ -25,7 +28,12 @@ STEP_ORDER = {"drop_duplicates": 0, "drop_rows": 1}
 
 @tool
 def inspect_data(ws: Workspace, data: str) -> ToolResult:
-    """Columns, types, missing values, duplicates, outliers, and suggested cleaning steps."""
+    """Columns, types, missing values, duplicates, outliers, and suggested cleaning steps.
+    Computed once per table and kept on it: a stored table never changes (cleaning makes a new one),
+    and on 50,000 rows the inspection takes seconds."""
+    cached = ws.entry(data).get("meta", {}).get("inspection")
+    if cached and "roles" in cached["result"]:  # (older inspections, before roles, are redone)
+        return ok(cached["result"], cached["artifact"])
     df = ws.table(data)
     notes = ws.column_notes(data)
     columns, steps, questions = [], [], []
@@ -36,24 +44,32 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
         questions += col_questions
     steps.sort(key=lambda st: STEP_ORDER.get(st["op"], 2))  # remove rows first, then fix values
     duplicates = int(df.duplicated().sum())
-    if duplicates:
-        steps.insert(0, {"op": "drop_duplicates", "why": f"{_n(duplicates, 'row')} exact copies of an earlier row"})
+    if duplicates and _has_row_id(df):  # the repeated rows repeat an id too: copies
+        steps.insert(0, {"op": "drop_duplicates", "why": f"{_n(duplicates, 'row')} exact copies of an earlier row "
+                                                         "(their id repeats too)"})
+    elif duplicates:  # no id: two identical orders and a copied line look the same - the user knows
+        questions.insert(0, _duplicates_question(duplicates))
     if any(c.get("missing") for c in columns):
         missing_note = ("Missing values are left as they are: fill or drop them (fill_missing / drop_missing) "
                         "only when an analysis needs it, with a method that fits the column.")
     else:
         missing_note = None
     sample = df.head(SAMPLE_ROWS).astype(object).where(df.head(SAMPLE_ROWS).notna(), None).to_dict("records")
-    # Remembered on the table, so tools working on it can warn until a cleaned copy is used.
-    ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions])
-    result = {"data": data, "name": ws.entry(data)["name"], "rows": len(df), "columns": columns,
+    # Remembered on the table, so tools working on it can warn until a cleaned copy is used. (Repeats that
+    # may be real are not a problem until the user says they are copies.)
+    ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions if not q.get("optional")])
+    roles = table_roles(ws, data, df)
+    result = {"data": data, "name": ws.entry(data)["name"], "rows": len(df), "columns": columns, "roles": roles,
               "duplicate_rows": duplicates, "sample_rows": sample, "suggested_steps": steps, "questions": questions}
-    note = " ".join(filter(None, [missing_note, split_time_note(df, data)]))
+    note = " ".join(filter(None, [missing_note, split_time_note(df, data), *role_notes(df, roles)]))
     if note:
         result["note"] = note
+    role_of = {column: role for role, column in roles.items()}
     artifact = {"type": "table", "title": f"Columns of {ws.describe(data)}",
-                "columns": ["column", "type", "missing", "unique", "summary"],
-                "rows": [[c["name"], c["type"], c.get("missing", 0), c["unique"], _summary(c)] for c in columns]}
+                "columns": ["column", "type", "role", "missing", "unique", "summary"],
+                "rows": [[c["name"], c["type"], role_of.get(c["name"], ""), c.get("missing", 0), c["unique"], _summary(c)]
+                         for c in columns]}
+    ws.set_meta(data, "inspection", {"result": jsonable(result), "artifact": jsonable(artifact)})
     return ok(result, artifact)
 
 
@@ -95,7 +111,7 @@ def _column(name: str, s: pd.Series, note: dict, rows: int) -> tuple[dict, list[
                           "why": f"{_n(int(summary.sum()), 'row')} labelled {', '.join(map(repr, found))} look like "
                                  "summary rows, not data; they would distort totals"})
             present = present[~summary.to_numpy()]
-        pending = note.get("pending") or _almost(present)
+        pending = note.get("pending") or _almost(present, code=_code_column(name, present))
         if pending:
             p["almost"] = pending
             if pending.get("ambiguous_order"):
@@ -134,17 +150,44 @@ def _far_outliers(x: pd.Series) -> int:
     return int(((x < q1 - OUTLIER_FACTOR * iqr) | (x > q3 + OUTLIER_FACTOR * iqr)).sum())
 
 
-def _almost(present: pd.Series) -> dict | None:
-    """A text column that is mostly numbers or dates (the rest typos, notes, codes)."""
+def _almost(present: pd.Series, code: bool = False) -> dict | None:
+    """A text column that is mostly numbers or dates (the rest typos, notes, codes). A code column
+    (C489449 among 489434, 00012) is never one of numbers."""
     t = as_text(present)
     t = t[~is_missing(t)]
     if len(t) < 5:
         return None
     for kind, parse in (("number", parse_numbers), ("date", parse_dates)):
+        if kind == "number" and code:
+            continue
         bad = parse(t)[1]
         if 1 - bad.mean() >= ALMOST:
             return {"as": kind, "unreadable": int(bad.sum()), "examples": t[bad].drop_duplicates().head(3).tolist()}
     return None
+
+
+def _code_column(name: str, present: pd.Series) -> bool:
+    """Ids and codes: named so (invoice, stockcode, customer_id ...) or written with leading zeros."""
+    t = as_text(present)
+    return bool(set(tokens(name)) & CODE_WORDS) or t.str.fullmatch(r"0\d+").mean() > 0.2
+
+
+def _has_row_id(df: pd.DataFrame) -> bool:
+    """An id: a column that tells every distinct row apart, and is named as one (order_id, invoice no) or
+    tells nearly every row apart (90%) - then rows that repeat exactly repeat their id too, so are copies.
+    (A customer column over few distinct rows is no id.)"""
+    distinct = df.drop_duplicates()
+    return any(distinct[c].notna().all() and distinct[c].nunique() == len(distinct) > 1
+               and (set(tokens(c)) & (ID | ORDER) or len(distinct) >= 0.9 * len(df)) for c in df.columns)
+
+
+def _duplicates_question(count: int) -> dict:
+    repeat, they = ("repeats", "Is it a copy") if count == 1 else ("repeat", "Are they copies")
+    return {"question": f"{_n(count, 'row')} {repeat} an earlier row exactly, and no column tells them apart. {they} "
+                        "to remove, or real repeats (e.g. the same order placed twice)?",
+            "optional": True,
+            "options": [{"label": "Keep them (real repeats)", "step": None},
+                        {"label": "Remove the copies", "step": {"op": "drop_duplicates"}}]}
 
 
 def _variants(present: pd.Series) -> list[list[str]]:

@@ -1,0 +1,87 @@
+[
+ {
+  "case": "web_news",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.1,
+  "tools": [
+   "research_web({\"task\": \"most recent cricket world cup winner\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "research_web",
+    "input": {
+     "task": "most recent cricket world cup winner"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I asked my helper to look up the winner of the most recent cricket world cup for you."
+ },
+ {
+  "case": "doc",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 43.5,
+  "tools": [
+   "ask_knowledge({\"question\": \"can a customer return an opened laptop\"}) ok",
+   "ask_knowledge({\"question\": \"Can a customer return an opened laptop based on store policy?\"}) ok",
+   "ask_knowledge({\"question\": \"What is the policy regarding the return of opened laptops?\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "can a customer return an opened laptop"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "Can a customer return an opened laptop based on store policy?"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is the policy regarding the return of opened laptops?"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I understand, Arya. My apologies for the delay and repeating the query. I will try to locate the precise policy now.\n\nI am searching the `store_policy.md` for the rules regarding opened laptops."
+ },
+ {
+  "case": "table",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 14.4,
+  "tools": [
+   "analyze_data({\"data\": \"data_1\", \"task\": \"Calculate the total sales amount for February.\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_data",
+    "input": {
+     "data": "data_1",
+     "task": "Calculate the total sales amount for February."
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've asked the data analyst to calculate the total sales for February from the pizza sales data. I'll let you know as soon as they provide the total."
+ }
+]

@@ -1,0 +1,24 @@
+[
+ {
+  "case": "hello",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hi! I'm Zen, and I'm here to help with anything you need on this computer. \n\nWhat can I do for you today?"
+ },
+ {
+  "case": "you_were_wrong",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "My mistake, Arya. I should have known better.\n\n12 times 12 is 144."
+ }
+]

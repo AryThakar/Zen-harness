@@ -6,9 +6,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from app.agent.providers import LlamaCppProvider, ProviderError
-from app.agent.providers.llamacpp import parse_turn, to_openai_messages
-from app.agent.tools import TOOL_SPECS
+from app.providers import LlamaCppProvider, ProviderError
+from app.providers.llamacpp import parse_turn, to_openai_messages
+from app.assistant.registry import TOOLS
+
+TOOL_SPECS = [TOOLS[n].spec() for n in ("calculate", "get_weather")]
 
 
 def tool_result(call_id, content="ok", is_error=False):
@@ -116,7 +118,7 @@ def test_streams_text_and_assembles_tool_calls(fake):
         delta(tool_calls=[{"index": 0, "function": {"arguments": '"SELECT 1"}'}}]),
         delta(tool_calls=[{"index": 1, "function": {"name": "calculate", "arguments": '{"expression": "2*3"}'}}]),
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
-         "timings": {"prompt_n": 3500, "predicted_n": 42, "predicted_per_second": 13.4}},
+         "timings": {"prompt_n": 3500, "cache_n": 1200, "predicted_n": 42, "predicted_per_second": 13.4}},
     ])
     events = []
     provider = LlamaCppProvider("qwen3.5-9b", server.url)
@@ -126,7 +128,8 @@ def test_streams_text_and_assembles_tool_calls(fake):
     assert [(c["id"], c["name"], c["input"]) for c in turn.tool_calls][0] == ("call_1", "run_sql", {"sql": "SELECT 1"})
     assert turn.tool_calls[1]["input"] == {"expression": "2*3"} and turn.tool_calls[1]["id"].startswith("call_")
     assert events == [("text", "Let me "), ("text", "check.")]
-    assert turn.usage == {"output_tokens": 42, "prompt_tokens": 3500, "tokens_per_second": 13.4}
+    assert turn.usage == {"output_tokens": 42, "prompt_tokens": 3500, "cached_tokens": 1200, "tokens_per_second": 13.4,
+                          "thinking_chars": 0}
 
     body = server.requests[0]
     assert body["messages"][0] == {"role": "system", "content": "system"} and body["stream"] is True
@@ -142,6 +145,20 @@ def test_round_limit_and_thinking_settings(fake):
     body = server.requests[0]
     assert body["tool_choice"] == "none" and body["chat_template_kwargs"] == {"enable_thinking": True}
     assert body["messages"][-1]["role"] == "user" and "tool limit" in body["messages"][-1]["content"]
+    assert "reasoning_budget_tokens" not in body  # no thinking budget by default (the user's call)
+
+
+def test_a_call_can_cap_its_own_thinking_or_switch_it_off(fake):
+    done = {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    server = fake(chunks=[delta(reasoning_content="Let me "), delta(reasoning_content="think."),
+                          delta(content="Answer."), done])
+    model = LlamaCppProvider("m", server.url, thinking=True)
+    turn = model.complete("s", [{"role": "user", "content": "q"}], TOOL_SPECS, budget=2048)
+    assert server.requests[0]["reasoning_budget_tokens"] == 2048
+    assert turn.text == "Answer." and turn.thinking == "Let me think."  # kept apart, never in the answer
+    model.complete("s", [{"role": "user", "content": "q"}], TOOL_SPECS, think=False)
+    body = server.requests[1]
+    assert body["chat_template_kwargs"] == {"enable_thinking": False} and "reasoning_budget_tokens" not in body
 
 
 def test_tool_calls_written_as_text_are_removed():
@@ -164,3 +181,46 @@ def test_ready_reports_loading_and_missing_server(fake):
     assert not loading[0] and "loading" in loading[1]
     missing = LlamaCppProvider("m", "http://127.0.0.1:9").ready()
     assert not missing[0] and "Start llama-server" in missing[1]
+
+
+def test_a_call_gemma_wrote_into_its_text_becomes_a_real_call():
+    # Seen in a real chat: an answer in prose, then the submit call in Gemma's syntax as text.
+    text = ('The repository is for Zen.\n\nsubmit_result{answer: "Zen is a voice assistant (Q4\\_K).",'
+            'sources:[<|"|>https://github.com/AryThakar/zen<|"|>]}')
+    turn = parse_turn(text, [], "stop", True, "m", {"submit_result", "web_search"})
+    assert turn.text == "The repository is for Zen." and turn.stop == "tool_use"
+    assert turn.tool_calls[0]["name"] == "submit_result"
+    assert turn.tool_calls[0]["input"] == {"answer": "Zen is a voice assistant (Q4_K).",
+                                           "sources": ["https://github.com/AryThakar/zen"]}
+    assert turn.raw["tool_calls"][0]["function"]["name"] == "submit_result"  # replayed like a parsed call
+    json_call = ('I will use the image generation tool.\n\n{\n  "tool_calls": [\n    {\n      "tool_name": "generate_image",\n'
+                 '      "tool_args": {"prompt": "A JK flip-flop", "size": "square"}\n    }\n  ]\n}')
+    turn = parse_turn(json_call, [], "stop", True, "m", {"generate_image", "draw_diagram"})
+    assert turn.text == "I will use the image generation tool." and turn.stop == "tool_use"  # seen in a real reply
+    assert [(c["name"], c["input"]) for c in turn.tool_calls] == [("generate_image", {"prompt": "A JK flip-flop",
+                                                                                      "size": "square"})]
+    fenced = 'Saving it.\n```json\n{"name": "save_note", "arguments": "{\\"title\\": \\"T\\", \\"content\\": \\"C\\"}"}\n```'
+    turn = parse_turn(fenced, [], "stop", True, "m", {"save_note"})
+    assert turn.text == "Saving it." and turn.tool_calls[0]["input"] == {"title": "T", "content": "C"}
+    data = 'The table:\n{"name": "Ada", "arguments": {"x": 1}}'  # a JSON answer, not a tool offered: left alone
+    assert parse_turn(data, [], "stop", True, "m", {"save_note"}).text == data
+    mention = "Use submit_result{answer} when done."
+    assert parse_turn(mention, [], "stop", True, "m", {"submit_result"}).text == mention  # prose is left alone
+    cut = parse_turn("Half\nsubmit_result{answer:<|\"|>unfinished", [], "length", True, "m", {"submit_result"})
+    assert cut.text == "Half" and cut.tool_calls == []  # a cut-off call is dropped, never run
+    off = parse_turn("Done.\ncall:web_search{query:<|\"|>x<|\"|>}", [], "stop", False, "m", {"web_search"})
+    assert off.text == "Done." and off.tool_calls == []  # tools off: removed from the text only
+    # Also seen: the same call written Python-style, read by ast (literals only, nothing evaluated).
+    py = parse_turn('It ran.\nsubmit_result(answer="0.2722 (numeric)", code=\'print("a)")\', options=None)',
+                    [], "stop", True, "m", {"submit_result"})
+    assert py.text == "It ran." and py.tool_calls[0]["input"] == {"answer": "0.2722 (numeric)",
+                                                                  "code": 'print("a)")', "options": None}
+
+
+def test_quoted_keys_inside_arguments_are_unquoted():
+    """Seen in a real run: the keys of the objects in a list arrived as '"op"', and clean_data refused them."""
+    from app.providers.llamacpp import _arguments
+    raw = json.dumps({"data": "data_1", "steps": [{'"op"': "drop_duplicates"}, {'<|"|>op<|"|>': "tidy_text",
+                                                                               "'columns'": ["a"]}]})
+    assert _arguments(raw) == {"data": "data_1", "steps": [{"op": "drop_duplicates"},
+                                                           {"op": "tidy_text", "columns": ["a"]}]}

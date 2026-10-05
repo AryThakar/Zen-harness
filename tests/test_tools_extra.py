@@ -7,7 +7,7 @@ import pytest
 
 from app.tools.calc import calculate
 from app.tools.notes import save_note
-from app.tools.read_file import PART_CHARS, read_file
+from app.tools.read_file import HELPER_CHARS, read_file
 from app.tools.sandbox import run_python
 from app.tools.workspace import Workspace
 
@@ -30,15 +30,34 @@ def test_calculate_refuses(expr):
     assert calculate(expr).status == "invalid_arguments"
 
 
-def test_read_code_with_line_numbers_in_parts(ws):
+# Written by the real model in bench/main/calc_probe (its own notation).
+@pytest.mark.parametrize("expr, value", [("10!", 3628800), ("12! / (3! * 9!)", 220), ("(2+3)!", 120),
+                                         ("sin(30 degrees)", 0.5), ("tan(35°)$", 0.7002075382),
+                                         ("tan(35\\u00b0)", 0.7002075382), ("asin(0.5) * 180 / pi", 30),
+                                         ("ln(50)", 3.9120230054), ("log2(1024)", 10), ("e^-0.5", 0.6065306597),
+                                         ("2197^(1/3)", 13), ("(pi * ln(2)) / 8", 0.2721982613)])
+def test_calculate_takes_the_models_notation(expr, value):
+    r = calculate(expr)
+    assert r.status == "ok" and r.result["result"] == pytest.approx(value) and "note" not in r.result
+
+
+def test_a_plain_angle_is_said_to_be_radians():
+    r = calculate("tan(35)")  # meant as degrees in the probe: the note lets the model correct it
+    assert r.result["result"] == pytest.approx(0.4738147204) and "35°" in r.result["note"]
+    assert "note" not in calculate("sin(pi/6)").result
+    assert calculate("1001!").status == "invalid_arguments" and calculate("3 != 4").status == "invalid_arguments"
+
+
+def test_read_code_with_line_numbers_from_a_line_on(ws):
     lines = [f"value_{i} = {i} * 2  # " + "x" * 60 for i in range(400)]
     fid = ws.add_bytes("file", "\n".join(lines).encode(), "py", name="big.py")
     first = read_file(ws, fid).result
-    assert first["parts"] > 1 and first["text"].startswith("  1| value_0 = 0 * 2")
-    assert len(first["text"]) <= PART_CHARS and "read part 2" in first["note"]
-    last = read_file(ws, fid, part=first["parts"]).result
-    assert last["text"].rstrip().endswith("value_399 = 399 * 2  # " + "x" * 60) and "note" not in last
-    assert read_file(ws, fid, part=99).status == "invalid_arguments"
+    assert first["text"].startswith("  1| value_0 = 0 * 2") and len(first["text"]) <= HELPER_CHARS
+    shown = int(first["lines"].split("-")[1].split()[0])
+    assert first["next"] == f"read_file(file='big.py', start={shown + 1})"
+    last = read_file(ws, fid, start=390).result
+    assert last["text"].rstrip().endswith("value_399 = 399 * 2  # " + "x" * 60) and last["next"] == "end of file"
+    assert read_file(ws, fid, start=999).status == "invalid_arguments"
 
 
 def test_read_documents_and_notes_without_numbers(ws):
@@ -55,9 +74,18 @@ def test_read_documents_and_notes_without_numbers(ws):
     assert "forecast" in read_file(ws, note).result["text"]
 
 
-def test_read_file_refuses_tables_and_binaries(ws):
+def test_reading_what_isnt_text_says_which_tool_reads_it(ws):
+    import io
+
+    from PIL import Image
     t = ws.add_table(pd.DataFrame({"a": [1]}), "t")
-    assert "inspect_data" in read_file(ws, t).result["error"]["message"]
+    said = read_file(ws, t).result  # what it is, and what reads it instead
+    assert said["kind"] == "table" and "table('data_1')" in said["note"]
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 20), "red").save(buf, format="PNG")
+    img = ws.add_image(buf.getvalue(), "red.png")
+    note = read_file(ws, img).result["note"]
+    assert note.startswith("An image (40x20)") and f"view_image(image='{img}'" in note
     b = ws.add_bytes("file", b"\x00\x01\x02binary", "bin", name="blob.bin")
     assert read_file(ws, b).status == "failed"
 
@@ -111,6 +139,12 @@ def test_a_workspace_id_used_as_a_variable_gets_the_fix(ws):
     assert "Workspace items" not in run_python(ws, "1 / 0").result["error"]["message"]
 
 
+def test_a_workspace_id_queried_with_duckdb_in_a_script_gets_the_fix(ws):
+    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
+    message = run_python(ws, "import duckdb\nduckdb.query('SELECT * FROM data_1').df()").result["error"]["message"]
+    assert "df = table('data_1')" in message
+
+
 def test_an_id_given_to_a_library_that_opens_files_itself_gets_the_fix(ws):
     ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
     message = run_python(ws, "import pandas as pd; pd.read_parquet('data_1')").result["error"]["message"]
@@ -119,11 +153,28 @@ def test_an_id_given_to_a_library_that_opens_files_itself_gets_the_fix(ws):
 
 def test_a_script_never_changes_a_stored_file(ws):
     fid = ws.add_bytes("file", b"ORIGINAL", "py", name="average.py")
-    stored = ws.root / ws.entry(fid)["file"]
-    code = f"print(open('{fid}').read())\nwith open('{fid}', 'w') as f:\n    f.write('CHANGED')"
-    r = run_python(ws, code)
-    assert r.result["output"].strip() == "ORIGINAL" and stored.read_text() == "ORIGINAL"
-    assert r.result["files"][0]["id"] != fid  # the written copy is a new item
-    again = run_python(ws, f"print(open('{fid}').read())")  # the id still means the stored file
-    assert again.result["output"].strip() == "ORIGINAL"
+    note = save_note(ws, "Plan", "Forecast by month.").result["note"]
+    table = ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
+    for item in (fid, note, table):  # by id: refused, with what to do instead
+        r = run_python(ws, f"open('{item}', 'w').write('x')")
+        assert r.status == "invalid_arguments" and "write the result under a new file name" in r.result["errors"]
+    by_name = run_python(ws, "print(open('average.py').read())\nopen('average.py', 'w').write('CHANGED')")
+    assert by_name.result["output"].strip() == "ORIGINAL"
+    assert ws.path(fid).read_bytes() == b"ORIGINAL" and by_name.result["files"][0]["id"] != fid  # a new file
+    assert "Forecast by month" in read_file(ws, note).result["text"] and ws.table(table)["a"].tolist() == [1]
 
+
+def test_env_file_fills_the_environment_without_overriding(tmp_path, monkeypatch):
+    from app.config import load_env_file
+    env = tmp_path / ".env"
+    env.write_text('# secrets\nCC_TEST_KEY="sk_abc"\nexport CC_TEST_OTHER = plain\nCC_TEST_SET=from-file\nnot a line\n')
+    monkeypatch.delenv("CC_TEST_KEY", raising=False)
+    monkeypatch.delenv("CC_TEST_OTHER", raising=False)
+    monkeypatch.setenv("CC_TEST_SET", "from-environment")
+    load_env_file(env)
+    import os
+    assert os.environ["CC_TEST_KEY"] == "sk_abc" and os.environ["CC_TEST_OTHER"] == "plain"
+    assert os.environ["CC_TEST_SET"] == "from-environment"  # a variable already set wins
+    load_env_file(tmp_path / "missing.env")  # no file: nothing happens
+    monkeypatch.delenv("CC_TEST_KEY")
+    monkeypatch.delenv("CC_TEST_OTHER")
