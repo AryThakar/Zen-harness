@@ -76,6 +76,7 @@ class LlamaCppProvider:
         self.slot = slot
         self.max_tokens = max_tokens or (MAX_TOKENS_THINKING if thinking else MAX_TOKENS)
         self.thinking_budget = thinking_budget  # None: unlimited (only for comparisons)
+        self._vision: bool | None = None  # whether the server has the vision part loaded (sees_images)
 
     def ready(self) -> tuple[bool, str]:
         try:
@@ -88,6 +89,17 @@ class LlamaCppProvider:
         except (urllib.error.URLError, OSError):
             return False, f"Start llama-server (address {self.base_url}), then reload this page."
         return True, f"{self.loaded_model()} (local, llama.cpp)"
+
+    def sees_images(self) -> bool:
+        """Whether llama-server has the model's vision part loaded (--mmproj; /props says so), asked once.
+        A helper is shown images only then: sent to a server without it, an image fails the call."""
+        if self._vision is None:
+            try:
+                with urllib.request.urlopen(f"{self.base_url}/props", timeout=3) as response:
+                    self._vision = bool((json.loads(response.read()).get("modalities") or {}).get("vision"))
+            except (urllib.error.URLError, OSError, ValueError):
+                return False  # not remembered: the server may still be starting
+        return self._vision
 
     def loaded_model(self) -> str:
         """The model file llama-server has loaded, e.g. 'gemma-4-E4B-it-qat-UD-Q4_K_XL'."""
@@ -214,7 +226,11 @@ def to_openai_messages(messages: list[dict]) -> list[dict]:
     out: list[dict] = []
     for i, msg in enumerate(messages):
         role = msg["role"]
-        if role == "user":
+        if role == "user" and msg.get("images"):  # pictures a helper is shown: its note, then each image
+            out.append({"role": "user", "content": [{"type": "text", "text": msg["content"]}] + [
+                {"type": "image_url", "image_url": {"url": f"data:{image['mime']};base64,{image['data']}"}}
+                for image in msg["images"]]})
+        elif role == "user":
             out.append({"role": "user", "content": msg["content"]})
         elif role == "assistant":
             turn = _assistant_message(msg, answered_ids(messages, i))

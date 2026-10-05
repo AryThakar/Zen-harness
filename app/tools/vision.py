@@ -1,12 +1,16 @@
-"""view_image: look at an image item and answer a question about it.
+"""view_image: main looks at an image item and gets an answer to a question about it.
 
 The model can't read pixels from a file; this asks Gemma's own vision encoder (the projector loaded in
 llama-server, docs/TARGET_MAP.md section 8) one question about one image, with thinking off, and
-returns its answer as text. It runs on the helpers' slot: inside a helper's task that is the helper's
-own slot, waiting for the tool; for main it is idle while main works. Measured on a real chart (air
-passengers, 3 lines): 3-4 s a question, about 140 image tokens; it named the lines and the legend and
-read a peak as 'roughly 600' (622) - right for what a picture shows, not for exact values, which is
-said with every answer.
+returns its answer as text. It runs on the helpers' slot, idle while main works. Measured on a real
+chart (air passengers, 3 lines): 3-4 s a question, about 140 image tokens; it named the lines and the
+legend and read a peak as 'roughly 600' (622) - right for what a picture shows, not for exact values,
+which is said with every answer. main keeps a text answer rather than the image: a chat runs for many
+turns, and an image would sit in its window (and every request) for all of them.
+
+A helper doesn't use it: a helper that sees images (the coder) is shown them in its own conversation
+(workers._pictures) - 9 of 10 known-answer questions right there vs 8 of 10 here, with the task in
+mind, and without replacing the slot's cached prompt.
 
 Images are sent at most MAX_SIDE pixels on their longer side (PNG, or JPEG for photos), so a large
 photo costs no more than a chart.

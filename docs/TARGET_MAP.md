@@ -132,6 +132,11 @@ that helper's conversation instead. The projector stays loaded (230 MB, +330 MiB
 | UI: drop or paste an image | stored as an image item; main sees "[user attached image_3]" in the note and can look |
 | data helper | not needed: make_chart returns the chart's numbers, which are what the answer needs |
 
+Changed 2026-10-05 (the user's question: why a tool, when the model takes images as input?): the coder no
+longer calls view_image - what its script draws, an image it reads and one the task names are shown in its
+own conversation (measured: 9 of 10 known answers there vs 8 of 10 with the separate call; the slot keeps
+its cached prompt). main keeps view_image: its chat is long, and an image would ride along every turn.
+
 Built (steps 3.5-3.6, 2026-10-04): all rows above except the UI's drop/paste (step 4). generate_image's
 check runs inside the tool (the picture's description comes back with its result) rather than as a
 separate call the model could skip. Detail: --image-min-tokens 280 --image-max-tokens 560, measured

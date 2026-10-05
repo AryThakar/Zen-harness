@@ -85,7 +85,9 @@ def test_reading_what_isnt_text_says_which_tool_reads_it(ws):
     Image.new("RGB", (40, 20), "red").save(buf, format="PNG")
     img = ws.add_image(buf.getvalue(), "red.png")
     note = read_file(ws, img).result["note"]
-    assert note.startswith("An image (40x20)") and f"view_image(image='{img}'" in note
+    assert note == "An image (40x20): it has no text to read."  # a helper that sees images is shown it instead
+    from app.tools.file_ops import files
+    assert f"view_image(image='{img}'" in files(ws, None, "read", name=img, start=1).result["note"]  # main looks
     b = ws.add_bytes("file", b"\x00\x01\x02binary", "bin", name="blob.bin")
     assert read_file(ws, b).status == "failed"
 

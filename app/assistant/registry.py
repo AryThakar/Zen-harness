@@ -41,7 +41,8 @@ class ToolContext:
     # there is no user to ask (tests, benchmarks). call_id: main's call the helper runs under.
     ask: Callable[[dict], dict] | None = None
     call_id: str | None = None
-    # Looking at an image (view_image): the helpers' provider's vision call; None when no vision is loaded.
+    # Looking at an image (main's view_image, generate_image's self-check): a vision call on the helpers' slot;
+    # None when there is no vision. Helpers that see images get them in their conversation instead.
     look: Callable[[bytes, str, str], str] | None = None
 
 

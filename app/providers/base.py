@@ -47,10 +47,16 @@ class ModelTurn:
     thinking: str = ""
 
 
+IMAGE_TOKENS = 560  # an image's most (llama-server --image-max-tokens 560; a chart measured about 290)
+
+
 def estimate_tokens(system: str, messages: list[dict], tools: list[dict]) -> int:
     """A guess (3.5 characters a token) for providers that cannot count: a scripted model, or an
-    API that bills by its own count. llama-server counts exactly (LlamaCppProvider.count_tokens)."""
-    return int(len(json.dumps([system, messages, tools], ensure_ascii=False, default=str)) / 3.5) + 1
+    API that bills by its own count. llama-server counts exactly (LlamaCppProvider.count_tokens).
+    An image counts as IMAGE_TOKENS, not as the length of its base64 text."""
+    images = sum(len(m.get("images") or []) for m in messages)
+    plain = [{k: v for k, v in m.items() if k != "images"} for m in messages] if images else messages
+    return int(len(json.dumps([system, plain, tools], ensure_ascii=False, default=str)) / 3.5) + 1 + images * IMAGE_TOKENS
 
 
 def answered_ids(messages: list[dict], index: int) -> set[str]:

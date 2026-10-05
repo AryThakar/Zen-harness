@@ -157,8 +157,8 @@ automatically: mention them, don't repeat them. If the tools can't answer, say s
 from memory. Finish by calling save_report exactly once: main answers from it, and the next task on this table \
 starts from it."""
 
-# The coder's craft. What a script can open and write is in run_code's description; looking at a picture it
-# drew is said by the run's result and checked before save; changing a given file is said with the file.
+# The coder's craft. What a script can open and write is in run_code's description; a picture it draws, reads
+# or the task names is shown to it with a note (PICTURES); changing a given file is said with the file.
 CODER = """You write or change one file for the user and keep it with save. Work like an expert:
 
 1. Before writing, decide the inputs (which file, table or image, or none), the output (what it prints, which \
@@ -186,3 +186,10 @@ STEPS_LEFT = {2: "[2 steps left: finish soon with {finish}.]",
 # After a result failed its checks: one chance to fix it (the problems follow).
 FIX_ANSWER = "Fix this and answer again: "
 FIX_FINISH = "Fix these and call {finish} again: "
+# Pictures a helper that sees images is shown, as a message with the images (workers._pictures). Measured: in
+# the coder's conversation 9 of 10 known-answer questions right, vs 8 of 10 for a separate vision call; and
+# with view_image still on offer the coder called it 8 times of 10 instead of reading the picture it had.
+PICTURES = {"drawn": "[The picture your script made: {names}. Check it shows what the task asked before you describe "
+                     "or save it.]",
+            "read": "[The picture you read: {names}.]",
+            "task": "[The picture the task names: {names}.]"}

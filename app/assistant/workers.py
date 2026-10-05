@@ -7,7 +7,7 @@ slot, and returns a short structured result instead of raw pages or tables:
     web        web_search, read_webpage                                 -> answer + the URLs it read
     knowledge  search_files, recall, read_file                          -> answer + the sources it was given
     data       the 9 data tools, run_code, fix_code, ask_user           -> save_report: answer + report
-    coder      run_code, fix_code, read_file, view_image, ask_user      -> save: the file + its report
+    coder      run_code, fix_code, read_file, ask_user                  -> save: the file + its report
 (run_code / fix_code: the helper's one scratch script, written whole or changed by lines; it is new
 for every task - app/tools/scratch.py. Each helper's craft - how an expert works - is a short block in
 its own prompt, the user's design: a small model follows a few fundamentals it reads every task more
@@ -21,6 +21,10 @@ report's facts say it fails). On a failed check the worker gets one chance to fi
 the result goes back with the problem stated as a warning. The coder hands main its report, never
 the code: the file itself goes to the UI as a card (docs/ASSISTANT_PLAN.md, section 5).
 Charts, tables and images from worker tools go straight to the UI, not through the summary.
+
+The coder sees pictures: what its script draws, an image it reads and an image the task names are put
+into its own conversation as images (llama-server's vision part; at most IMAGES_SHOWN in view), so it
+looks at them with everything it knows about the task - no separate vision call (view_image is main's).
 
 The data and coder helpers can ask the user directly (ask_user, at most MAX_ASKS a task): the
 card shows in the chat and the helper waits in place for the answer, keeping its work (main.Turn.ask).
@@ -40,6 +44,7 @@ calls are answered with what to do instead, and the last two steps say so.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from collections.abc import Callable
@@ -56,10 +61,12 @@ from app.tools.notes import pinned, source
 from app.tools.reports import DATA_SECTIONS, assemble, section_problems
 from app.tools.scratch import SECTIONS, Scratch, report_problems
 from app.tools.scratch import save as save_file
+from app.tools.vision import prepare
+from app.tools.workspace import ITEM_REF
 
 from . import prompts
-from .context import context_block, counter, now_line, prompt_limit, shorten_tool_results
-from .prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, STEPS_LEFT
+from .context import IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_tool_results
+from .prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT
 from .registry import (TOOLS, AskIn, CodeTaskIn, DataTaskIn, QuestionIn, TaskIn, Tool, ToolContext, execute,
                        typed_optionals)
 
@@ -263,6 +270,7 @@ class Profile:
     check: Callable[[_Out, Trace, str], list[str]]
     finish: str = SUBMIT  # the tool that hands in the result (the coder's is save)
     asks: bool = False  # may ask the user directly (ask_user, in place)
+    sees_images: bool = False  # is shown pictures in its conversation (when the server has vision)
 
     def own_tools(self) -> dict[str, Tool]:
         tools = {n: TOOLS[n] for n in self.tools}
@@ -419,8 +427,8 @@ def _check_save(result: SaveResult, trace: Trace, context: str) -> list[str]:
     report says the file does or prints that isn't in the code, the task or what a tool returned (a run's
     output, a file read, an image looked at). Measured on 14 real reports: those sections had no such
     number; 'How to run or change it' had one, a legitimate example ('print(fibonacci(45))'), so change
-    examples and limits are not checked. A picture the runs made must have been looked at (view_image):
-    in a real run the coder saved a chart unseen although the run's result said to look."""
+    examples and limits are not checked. (A picture the runs made is shown to the coder by the runner, so
+    it needs no check that it was looked at.)"""
     if result.question_for_user:
         return []
     scratch = trace.scratch
@@ -430,10 +438,6 @@ def _check_save(result: SaveResult, trace: Trace, context: str) -> list[str]:
     name = result.name.strip().lower()
     python = name.endswith(".py") or "." not in name
     problems = report_problems(result.model_dump(), code, python)
-    drawn = scratch.images if scratch and scratch.can_look else []
-    if drawn and not trace.counts.get("view_image"):  # seen: a chart saved unseen though the run said to look
-        problems.append(f"you made {', '.join(drawn)} but never looked at it: check with view_image(image='{drawn[0]}', "
-                        "question=...) that it shows what the task asked, then call save again")
     claims = " ".join(str(getattr(result, k) or "") for k in CLAIMS)
     missing = ungrounded_numbers(claims, trace.outputs + [code, context] + [c for c, _ in trace.python_runs])
     if missing:
@@ -457,8 +461,8 @@ PROFILES = {p.name: p for p in [
             ("inspect_data", "clean_data", "query_data", "make_chart", "compare", "forecast", "predict",
              "find_patterns", "analyze_text", "run_code", "fix_code"), 10, DataReport, _check_data,
             finish="save_report", asks=True),
-    Profile("coder", prompts.CODER, ("run_code", "fix_code", "read_file", "view_image"), 10, SaveResult, _check_save,
-            finish="save", asks=True),
+    Profile("coder", prompts.CODER, ("run_code", "fix_code", "read_file"), 10, SaveResult, _check_save,
+            finish="save", asks=True, sees_images=True),
 ]}
 
 
@@ -472,14 +476,18 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     is about - its report shown first, the new one kept on it."""
     progress = progress or (lambda event: None)
     system = profile.instructions  # the same for every task of this role, so llama.cpp keeps it cached
-    # A new scratch script for every task: the helper keeps nothing between tasks. A helper that can look at
-    # images is pointed to view_image when a run draws one.
-    ctx.scratch = Scratch(can_look="view_image" in profile.tools and ctx.look is not None)
+    # A new scratch script for every task: the helper keeps nothing between tasks.
+    ctx.scratch = Scratch()
+    sees = profile.sees_images and bool(getattr(provider, "sees_images", lambda: False)())
     table = table if table and table in ctx.ws.ids("table") else None
     given = _load(ctx, file) if file else _table_report(ctx, table) if table else ""
     opening = (f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given
                + (f"The user's message: {user_message}\n\n" if user_message else "") + f"Your task: {task}")
     messages: list[dict] = [{"role": "user", "content": opening}]
+    named = _task_images(ctx, task) if sees else []
+    if named:  # on the opening itself: one user turn, not two in a row
+        shown = _pictures(ctx, named, "task")
+        messages[0] = {**messages[0], "content": f"{opening}\n\n{shown['content']}", "images": shown["images"]}
     own = profile.own_tools()
     tool_specs = [t.spec() for t in own.values()] + [_submit_spec(profile)]
     trace = Trace(existing=set(ctx.ws.ids()), scratch=ctx.scratch, table=table)
@@ -491,7 +499,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     progress({"type": "worker_start", "worker": profile.name, "task": task, "limit": limit})
     for step in range(profile.max_steps + 1):
         last = step == profile.max_steps
-        visible, shortened = shorten_tool_results(messages, limit, count, shortened)
+        visible, shortened = shorten_tool_results(fewer_images(messages), limit, count, shortened)
         try:
             turn = provider.complete(system, visible, tool_specs, allow_tools=not last)
         except ProviderError as exc:
@@ -537,6 +545,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                 messages.append({"role": "user", "content": FIX_ANSWER + "; ".join(problems)})
                 continue
             return _done(ctx, profile, result, trace, problems, note=note)
+        drawn_before, read = len(ctx.scratch.images), []
         for call in turn.tool_calls:
             if call["name"] == profile.finish:
                 outcome = _submitted(profile, call["input"], trace, opening)
@@ -593,6 +602,8 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                     trace.not_run += 1  # arguments that were not JSON
                 if profile.result_model is SaveResult and call["name"] == "read_file":
                     _adopt(ctx, result)
+                if call["name"] == "read_file" and result.result.get("kind") == "image":
+                    read.append(result.result["file"])
             content = result.for_model()
             messages.append({"role": "tool", "tool_call_id": call["id"], "name": call["name"],
                              "content": content, "is_error": result.status not in ("ok", "partial")})
@@ -603,7 +614,45 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             hint = STEPS_LEFT[left].format(finish=profile.finish)
             messages[-1]["content"] += "\n\n" + hint
             progress({"type": "worker_hint", "worker": profile.name, "text": hint})
+        for kind, items in (("drawn", ctx.scratch.images[drawn_before:]), ("read", read)):
+            if sees and items:  # after this step's results: the helper sees them on its next step
+                messages.append(_pictures(ctx, items, kind))
+                progress({"type": "worker_hint", "worker": profile.name, "text": messages[-1]["content"]})
     return _done(ctx, profile, {"answer": ""}, trace, ["the worker ran out of steps without an answer"])
+
+
+def _pictures(ctx: ToolContext, items: list[str], kind: str) -> dict:
+    """A message showing these images to the helper - the newest IMAGES_SHOWN; any more are named only."""
+    images, names = [], []
+    for item in list(dict.fromkeys(items)):
+        e = ctx.ws.entry(item)
+        meta = e.get("meta", {})
+        size = f", {meta['width']}x{meta['height']}" if meta.get("width") else ""
+        if len(images) < IMAGES_SHOWN:
+            try:
+                data, mime = prepare(ctx.ws.path(item).read_bytes())
+            except ToolError:
+                names.append(f"{item} ({e['name']}{size}, not a readable image)")
+                continue
+            images.append({"mime": mime, "data": base64.b64encode(data).decode()})
+            names.append(f"{item} ({e['name']}{size})")
+        else:
+            names.append(f"{item} ({e['name']}{size}, not shown)")
+    return {"role": "user", "content": PICTURES[kind].format(names=", ".join(names)), "images": images}
+
+
+def _task_images(ctx: ToolContext, task: str) -> list[str]:
+    """Images the task names - by id (image_3), or by its file name or the name without its extension
+    ('the passengers chart' for passengers.png) - at most IMAGES_SHOWN."""
+    images = ctx.ws.ids("image")
+    named = [i for i in ITEM_REF.findall(task) if i in images]
+    for item in reversed(images):  # the newest first
+        name = ctx.ws.entry(item)["name"]
+        stem = PurePath(name).stem
+        if item not in named and (name.lower() in task.lower() or (
+                len(stem) >= 4 and re.search(rf"\b{re.escape(stem)}\b", task, re.I))):
+            named.append(item)
+    return named[:IMAGES_SHOWN]
 
 
 def _adopt(ctx: ToolContext, result: ToolResult) -> None:
@@ -684,6 +733,13 @@ def _repair(profile: Profile, result: dict, trace: Trace) -> dict:
                   "options": [o["label"] if isinstance(o, dict) else str(o) for o in q.get("options", [])] or None}
     if profile.name == "knowledge":
         return _attribute(result, trace)
+    if profile.result_model is SaveResult and result.get("name") and not result.get("code"):
+        from app.tools.file_ops import BINARY
+        name = PurePath(str(result["name"]).strip())
+        if name.suffix.lower() in BINARY:
+            # save keeps the script; the picture (or file) its run wrote is kept already. Seen: the coder named
+            # its save after the image it made ('passengers_modified.png') and the save was refused.
+            result = {**result, "name": f"{name.stem}.py"}
     if (profile.name == "web" and not result.get("sources") and trace.read_urls
             and not NOTHING_FOUND.search(result.get("answer", ""))):
         # The pages it read, credited when it listed none (3 of 5 web warnings in the user's chats: an answer

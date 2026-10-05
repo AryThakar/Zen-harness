@@ -46,7 +46,7 @@ def read(ws: Workspace, item: str, start: int | None, budget: int, tool: str = "
     if report and report_alone and start is None:  # what a helper did with it: enough for most questions
         return ok({"file": item, "name": name, "report": report, "next": _call(tool, name, 1)})
     if kind != "file" and kind != "note":
-        return ok({"file": item, "name": name, **_not_text(ws, item, e)})
+        return ok({"file": item, "name": name, **_not_text(ws, item, e, tool)})
     start = max(1, start or 1)  # start=0: counting from zero means the first line
     path = ws.path(item)
     if path.stat().st_size > MAX_FILE:
@@ -77,13 +77,15 @@ def _call(tool: str, name: str, start: int) -> str:
             else f"read_file(file='{name}', start={start})")
 
 
-def _not_text(ws: Workspace, item: str, e: dict) -> dict:
-    """What an item without text is, and which tool reads it."""
+def _not_text(ws: Workspace, item: str, e: dict, tool: str = "files") -> dict:
+    """What an item without text is, and which tool reads it (main: view_image; a helper that sees images
+    is shown it by its runner)."""
     meta = e.get("meta", {})
     if e["kind"] == "image":
         size = f" ({meta['width']}x{meta['height']})" if meta.get("width") else ""
-        return {"kind": "image", "note": f"An image{size}: it has no text to read. view_image(image='{item}', "
-                                         "question=...) looks at it and answers what it shows or says."}
+        look = (f" view_image(image='{item}', question=...) looks at it and answers what it shows or says."
+                if tool == "files" else "")
+        return {"kind": "image", "note": f"An image{size}: it has no text to read.{look}"}
     if e["kind"] == "table":
         head = ws.table(item).head(10)
         return {"kind": "table", "rows": e["rows"], "columns": list(map(str, head.columns)),

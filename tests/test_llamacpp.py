@@ -224,3 +224,14 @@ def test_quoted_keys_inside_arguments_are_unquoted():
                                                                                "'columns'": ["a"]}]})
     assert _arguments(raw) == {"data": "data_1", "steps": [{"op": "drop_duplicates"},
                                                            {"op": "tidy_text", "columns": ["a"]}]}
+
+
+def test_a_helper_is_shown_pictures_as_image_parts():
+    from app.providers.base import IMAGE_TOKENS, estimate_tokens
+    shown = {"role": "user", "content": "[The picture your script made: image_1]",
+             "images": [{"mime": "image/png", "data": "iVBORw0KGgo" * 2000}]}
+    out = to_openai_messages([shown])[0]
+    assert out["content"][0] == {"type": "text", "text": "[The picture your script made: image_1]"}
+    assert out["content"][1]["image_url"]["url"].startswith("data:image/png;base64,iVBORw0KGgo")
+    # an image counts as an image, not as 22,000 characters of base64
+    assert estimate_tokens("s", [shown], []) < IMAGE_TOKENS + 100

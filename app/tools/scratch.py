@@ -44,8 +44,7 @@ class Scratch:
     item: str | None = None
     last: dict | None = None  # the last run: code, ok, seconds, output, errors, files
     made: list[str] = field(default_factory=list)
-    can_look: bool = False  # the helper has view_image: a run that draws a picture points to it
-    images: list[str] = field(default_factory=list)  # images the runs made (the coder looks before it saves)
+    images: list[str] = field(default_factory=list)  # images the runs made (a helper that sees images is shown them)
 
     @property
     def runs(self) -> bool:
@@ -90,11 +89,7 @@ def _run(ws: Workspace, scratch: Scratch, timeout: int = DEFAULT_TIMEOUT) -> Too
                     "files": [f["id"] for f in res.get("files", []) if f.get("id")]}
     scratch.made += scratch.last["files"]
     res["lines"] = len(scratch.code.splitlines())
-    drawn = [i for i in scratch.last["files"] if ws.kind(i) == "image"]
-    scratch.images += drawn
-    if drawn and scratch.can_look:  # the model can't see the picture in the result: it looks before it describes
-        res["next"] = (f"It made {', '.join(drawn)}: look with view_image(image='{drawn[0]}', question=...) that it "
-                       "shows what the task asked before you describe or save it.")
+    scratch.images += [i for i in scratch.last["files"] if ws.kind(i) == "image"]  # the runner shows them
     found = ERROR_LINE.findall(res.get("errors", "")) if result.status != "ok" else []
     if found:  # the script's own line the error ends in: the last of its frames
         at = int(found[-1])

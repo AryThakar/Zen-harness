@@ -533,6 +533,22 @@ benchmark's measured times.
     Known and left: the public-address check resolves a name once (a hostile DNS could answer
     differently on the connection - local, single-user app); view_image on the helpers' slot replaces
     that slot's cached prompt (two slots); the sandbox folder keeps old scripts' files. Tests: 635 pass.
+- **Helpers see pictures directly** (2026-10-05, the user's question: the model takes images as input -
+  why a tool?). Checked on the real server first: an image in a user message inside a tool conversation
+  is accepted, the token count includes it (+290 for a chart) and the next call reuses the cache (2,092
+  tokens cached, 11 new). On the step 3.6 set (10 known answers): in the coder's own conversation 9/10
+  (the miss: "1284" for "1,284"), the separate view_image call 8/10. With view_image still among its tools
+  the coder called it 8 times of 10 instead of reading the picture it had - so it left the helpers.
+  - The runner shows the coder what its script drew, an image it read with read_file and an image the
+    task names (by id or name), as images in its conversation with a one-line note (prompts.PICTURES);
+    at most 2 in view (context.fewer_images), older ones named. Only when the server has vision
+    (LlamaCppProvider.sees_images: /props). The "never looked at it" save check went with view_image.
+  - main keeps view_image: a long chat would carry an image through every later turn.
+  - Real coder, end to end: the chart task 24 s, clean (69 and 92 s before); the image-caption task 30 s
+    (298 and 566 s before, with 4 view_image calls) - but it named its save after the picture
+    ('passengers_modified.png') and the save was refused. A save named after a picture or other binary
+    file now keeps the script as name.py (the picture is kept already): re-run 41 s, clean, image 1600 px
+    wide with the caption, script and report saved. Tests: 639 pass.
 - From the user's own test chat: `main` refused 8 times to list workspace files ("I can't list
   files"), misled by its line "You can't read, list or change files on the user's computer"; the line
   now says what is allowed. The real fix is `files(list)` (step 3). The coder can't run non-Python

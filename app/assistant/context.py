@@ -171,6 +171,27 @@ def shorten_tool_results(messages: list[dict], limit: int, count: Count, shorten
     return cut(n), n
 
 
+IMAGES_SHOWN = 2  # pictures a helper keeps in view: the newest; an older one is a line saying what it was
+
+
+def fewer_images(messages: list[dict], keep: int = IMAGES_SHOWN) -> list[dict]:
+    """The messages with only the newest ``keep`` images still attached (each costs up to 560 tokens of
+    a 16K slot); an older picture's message keeps its text, which names it."""
+    seen, out = 0, list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        images = out[i].get("images")
+        if not images:
+            continue
+        if seen + len(images) <= keep:
+            seen += len(images)
+            continue
+        left = max(0, keep - seen)
+        seen = keep
+        out[i] = {**out[i], "images": images[len(images) - left:],
+                  "content": out[i]["content"] + f" [{len(images) - left} of its pictures no longer shown]"}
+    return out
+
+
 def _fewest(low: int, high: int, fits: Callable[[int], bool]) -> int:
     """The smallest n in [low, high] for which fits(n) holds (fits only gets truer as n grows);
     high when none does - the most that can go."""
