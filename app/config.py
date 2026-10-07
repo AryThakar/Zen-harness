@@ -57,6 +57,9 @@ class Settings:
     llamacpp_model: str = os.environ.get("BIZ_LLAMACPP_MODEL", "local")  # the --alias; the UI shows the loaded file
     # Let the local model think before answering: better on hard questions, much slower on a laptop GPU.
     llm_thinking: bool = os.environ.get("BIZ_LLM_THINKING", "off").lower() in ("1", "on", "true", "yes")
+    # The assistant on Groq's cloud instead (BIZ_LLM_PROVIDER=groq): for testing the app with a large model.
+    groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
+    groq_model: str = os.environ.get("BIZ_GROQ_MODEL", "openai/gpt-oss-120b")
     # Conversation memory (LangGraph checkpoints).
     chat_db_path: str = os.environ.get("BIZ_CHAT_DB_PATH", "data/chat.sqlite")
     # Document search: the embedding model (run locally by fastembed, downloaded once).

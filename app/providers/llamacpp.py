@@ -58,8 +58,16 @@ LOOK_TIMEOUT = 120
 TEXT_TOOL_CALL = re.compile(r"<tool_call>.*?(?:</tool_call>|$)", re.DOTALL)
 
 
+def template_switches(thinking: bool) -> dict:
+    """Thinking on or off, in each chat template's own words; a template reads its own and ignores the
+    other. Gemma and Qwen: enable_thinking. gpt-oss always reasons, at a reasoning_effort (its default,
+    medium, on every step makes a laptop slow): low when thinking is off."""
+    return {"enable_thinking": thinking, "reasoning_effort": "medium" if thinking else "low"}
+
+
 class LlamaCppProvider:
     name = "llamacpp"
+    where = "the local model"  # in error messages
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:8080", thinking: bool = False,
                  slot: int | None = None, max_tokens: int | None = None, sampling: dict | None = None,
@@ -119,7 +127,7 @@ class LlamaCppProvider:
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *to_openai_messages(messages)],
             "max_tokens": self.max_tokens,
-            "chat_template_kwargs": {"enable_thinking": thinking},
+            "chat_template_kwargs": template_switches(thinking),
             **({"reasoning_budget_tokens": budget} if thinking and budget else {}),
             "cache_prompt": True,
             **({"id_slot": self.slot} if self.slot is not None else {}),
@@ -150,10 +158,20 @@ class LlamaCppProvider:
         except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
             return estimate_tokens(system, messages, tools)
 
+    def _headers(self) -> dict:
+        return {"Content-Type": "application/json"}
+
+    def _open(self, path: str, body: dict, timeout: float, stream: bool = False):
+        """POST a request to the server; the open response."""
+        headers = {**self._headers(), **({"Accept": "text/event-stream"} if stream else {})}
+        request = urllib.request.Request(f"{self.base_url}{path}", data=json.dumps(body).encode(), headers=headers)
+        return urllib.request.urlopen(request, timeout=timeout)
+
+    def _unreachable(self) -> str:
+        return f"Could not reach the local model at {self.base_url}; is llama-server running?"
+
     def _post(self, path: str, body: dict, timeout: int = 30) -> dict:
-        request = urllib.request.Request(f"{self.base_url}{path}", data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with self._open(path, body, timeout) as response:
             return json.loads(response.read())
 
     def look(self, image: bytes, mime: str, question: str) -> str:
@@ -161,7 +179,7 @@ class LlamaCppProvider:
         this provider's slot, thinking off: a description, not a reasoning task (view_image)."""
         url = f"data:{mime};base64," + base64.b64encode(image).decode()
         body = {"model": self.model, "max_tokens": LOOK_TOKENS, "cache_prompt": True,
-                "chat_template_kwargs": {"enable_thinking": False},
+                "chat_template_kwargs": template_switches(False),
                 "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}},
                                                           {"type": "text", "text": question}]}],
                 **({"id_slot": self.slot} if self.slot is not None else {}), **self.sampling}
@@ -177,19 +195,15 @@ class LlamaCppProvider:
                  allow_tools: bool = True, on_event: EventCallback | None = None, think: bool = True,
                  budget: int | None = None) -> ModelTurn:
         body = {**self._body(system, messages, tools, allow_tools, think, budget), "stream": True}
-        request = urllib.request.Request(
-            f"{self.base_url}/v1/chat/completions", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
-        )
         try:
-            with urllib.request.urlopen(request, timeout=READ_TIMEOUT) as response:
+            with self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
                 text, calls, finish, timings, thinking = _read_stream(response, on_event, self.cancel)
         except urllib.error.HTTPError as exc:
-            raise ProviderError(f"The local model returned an error ({exc.code}): {_error_message(exc)}") from exc
+            raise ProviderError(f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}") from exc
         except (socket.timeout, TimeoutError) as exc:
-            raise ProviderError("The local model took too long to respond; try a simpler question.") from exc
+            raise ProviderError(f"{self.where.capitalize()} took too long to respond; try a simpler question.") from exc
         except (urllib.error.URLError, ConnectionError) as exc:
-            raise ProviderError(f"Could not reach the local model at {self.base_url}; is llama-server running?") from exc
+            raise ProviderError(self._unreachable()) from exc
         turn = parse_turn(text, calls, finish, allow_tools, self.model, {t["name"] for t in tools or []})
         turn.thinking = thinking
         if timings:
@@ -242,8 +256,11 @@ def to_openai_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
+OPENAI_STYLE = {"llamacpp", "groq"}  # providers whose raw tool calls are already in this format
+
+
 def _assistant_message(msg: dict, answered: set[str]) -> dict | None:
-    raw = msg.get("raw") if msg.get("provider") == LlamaCppProvider.name else None
+    raw = msg.get("raw") if msg.get("provider") in OPENAI_STYLE else None
     if raw is not None:
         calls = [c for c in raw.get("tool_calls", []) if c["id"] in answered]
     else:  # written by another provider: rebuild the calls
@@ -262,7 +279,8 @@ def _assistant_message(msg: dict, answered: set[str]) -> dict | None:
 def _read_stream(response, on_event: EventCallback | None,
                  cancel: threading.Event | None = None) -> tuple[str, list[dict], str | None, dict | None, str]:
     """Server-sent events -> (answer text, complete tool calls, finish reason, llama-server's timings,
-    the thinking - llama-server sends it apart as reasoning_content)."""
+    the thinking - llama-server sends it apart as reasoning_content, a cloud server as reasoning). A
+    server without timings reports usage instead; it is read into the same shape."""
     text, finish, timings, thinking = "", None, None, ""
     partial: dict[int, dict] = {}  # tool call index -> {"id", "type", "function": {"name", "arguments"}}
     for line in response:
@@ -277,10 +295,10 @@ def _read_stream(response, on_event: EventCallback | None,
         chunk = json.loads(data)
         if "error" in chunk:
             raise ProviderError(f"The local model stopped with an error: {chunk['error'].get('message', chunk['error'])}")
-        timings = chunk.get("timings") or timings  # sent with the last chunk
+        timings = chunk.get("timings") or timings or _usage_timings(chunk.get("usage"))  # with the last chunk
         for choice in chunk.get("choices", []):
             delta = choice.get("delta") or {}
-            thinking += delta.get("reasoning_content") or ""
+            thinking += delta.get("reasoning_content") or delta.get("reasoning") or ""
             if delta.get("content"):
                 text += delta["content"]
                 if on_event:
@@ -297,6 +315,16 @@ def _read_stream(response, on_event: EventCallback | None,
     for call in calls:
         call["id"] = call["id"] or f"call_{uuid.uuid4().hex[:24]}"
     return text, calls, finish, timings, thinking
+
+
+def _usage_timings(usage: dict | None) -> dict | None:
+    """An OpenAI-style usage report in llama-server's timings shape."""
+    if not usage:
+        return None
+    out, seconds = usage.get("completion_tokens"), usage.get("completion_time")
+    return {"prompt_n": usage.get("prompt_tokens"), "predicted_n": out,
+            "cache_n": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
+            "predicted_per_second": out / seconds if out and seconds else None}
 
 
 def _arguments(arguments: str):

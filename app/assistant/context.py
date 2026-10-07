@@ -119,8 +119,9 @@ def standing_instructions(messages: list[dict]) -> list[str]:
 
 
 def prompt_limit(provider) -> int:
-    """Tokens the prompt may use: the slot less the room the reply needs."""
-    return SLOT_TOKENS - (getattr(provider, "max_tokens", None) or OUTPUT_RESERVE)
+    """Tokens the prompt may use: the slot (a provider's own, e.g. a cloud plan's limit) less the room the
+    reply needs."""
+    return getattr(provider, "slot_tokens", SLOT_TOKENS) - (getattr(provider, "max_tokens", None) or OUTPUT_RESERVE)
 
 
 def counter(provider, system: str, tools: list[dict]) -> Count:

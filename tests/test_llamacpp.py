@@ -134,7 +134,7 @@ def test_streams_text_and_assembles_tool_calls(fake):
     body = server.requests[0]
     assert body["messages"][0] == {"role": "system", "content": "system"} and body["stream"] is True
     assert body["tools"][0]["function"]["name"] == TOOL_SPECS[0]["name"] and body["tool_choice"] == "auto"
-    assert body["chat_template_kwargs"] == {"enable_thinking": False} and body["max_tokens"] == 4096
+    assert body["chat_template_kwargs"] == {"enable_thinking": False, "reasoning_effort": "low"} and body["max_tokens"] == 4096
 
 
 def test_round_limit_and_thinking_settings(fake):
@@ -143,7 +143,7 @@ def test_round_limit_and_thinking_settings(fake):
         "s", [{"role": "user", "content": "q"}], TOOL_SPECS, allow_tools=False)
     assert turn.text == "Answer." and turn.stop == "end" and turn.raw is None
     body = server.requests[0]
-    assert body["tool_choice"] == "none" and body["chat_template_kwargs"] == {"enable_thinking": True}
+    assert body["tool_choice"] == "none" and body["chat_template_kwargs"] == {"enable_thinking": True, "reasoning_effort": "medium"}
     assert body["messages"][-1]["role"] == "user" and "tool limit" in body["messages"][-1]["content"]
     assert "reasoning_budget_tokens" not in body  # no thinking budget by default (the user's call)
 
@@ -158,7 +158,7 @@ def test_a_call_can_cap_its_own_thinking_or_switch_it_off(fake):
     assert turn.text == "Answer." and turn.thinking == "Let me think."  # kept apart, never in the answer
     model.complete("s", [{"role": "user", "content": "q"}], TOOL_SPECS, think=False)
     body = server.requests[1]
-    assert body["chat_template_kwargs"] == {"enable_thinking": False} and "reasoning_budget_tokens" not in body
+    assert body["chat_template_kwargs"] == {"enable_thinking": False, "reasoning_effort": "low"} and "reasoning_budget_tokens" not in body
 
 
 def test_tool_calls_written_as_text_are_removed():

@@ -6,7 +6,8 @@ styles, scripts, fonts and sound served from web/ under /static).
     open http://localhost:8000/docs   (API)
 
 Both model slots are served by one llama-server (settings.llamacpp_url): slot 0 is main, slot 1 the
-helpers. The legacy product has its own app (legacy/main.py).
+helpers - or, with BIZ_LLM_PROVIDER=groq, by a model on Groq's cloud (for testing). The legacy product
+has its own app (legacy/main.py).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from app.assistant import main as main_slot
 from app.assistant.store import Store
 from app.config import settings
 from app.providers import LlamaCppProvider, Provider
+from app.providers.groq import GroqProvider
 from app.rag.embed import make_embedder
 
 from .api import assistant
@@ -48,6 +50,9 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
         own_store = assistant_parts is None
         if own_store:
             def slot(n: int) -> LlamaCppProvider:
+                if settings.llm_provider == "groq":
+                    return GroqProvider(settings.groq_model, settings.groq_api_key, thinking=settings.assistant_thinking,
+                                        cancel=main_slot.STOP)
                 return LlamaCppProvider(settings.llamacpp_model, settings.llamacpp_url, settings.assistant_thinking,
                                         slot=n, max_tokens=settings.assistant_max_tokens, cancel=main_slot.STOP,
                                         thinking_budget=settings.assistant_thinking_budget or None)
