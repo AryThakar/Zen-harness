@@ -52,11 +52,14 @@ ANNOUNCED = re.compile(
 OFFER = re.compile(r"\b(?:if|let me know|would you|do you want|want me|shall I|should I|feel free|once|when you|"
                    r"as soon as|after you|until)\b", re.I)
 SENTENCES = re.compile(r"(?<=[.!?])\s+|\n+")
-# A claim, in the first person or passive, that something was done.
-DONE = ("saved|stored|noted|remembered|created|written|wrote|downloaded|deleted|removed|renamed|updated|changed|"
-        "added|generated|drew|drawn|plotted|ran|run|executed|printed")
-CLAIMED = re.compile(rf"\bI(?:'ve| have)? (?:now |just |also |successfully |already )?({DONE})\b"
-                     rf"|\b(?:has|have) (?:now )?been (?:successfully )?({DONE})\b", re.I)
+# A claim, in the first person or passive, that something was done. "run", "written" and "drawn" are past
+# only after have/been: "I run on a local clock" (measured, answering "what year is it?") is not a claim.
+DONE = ("saved|stored|noted|remembered|created|wrote|downloaded|deleted|removed|renamed|updated|changed|"
+        "added|generated|drew|plotted|ran|executed|printed")
+PARTICIPLES = "written|drawn|run"
+CLAIMED = re.compile(rf"\bI (?:now |just |also |successfully |already )?({DONE})\b"
+                     rf"|\bI(?:'ve| have) (?:now |just |also |successfully |already )?({DONE}|{PARTICIPLES})\b"
+                     rf"|\b(?:has|have) (?:now )?been (?:successfully )?({DONE}|{PARTICIPLES})\b", re.I)
 
 
 # The user asking to keep something ("remember that ...", "note this down", "keep in mind ..."); a question
@@ -140,5 +143,5 @@ def nudge_for(text: str, turn: list[dict]) -> str | None:
     claim = CLAIMED.search(text)
     worked = any(m["role"] == "tool" and not m.get("is_error") for m in turn)
     if claim and not worked:
-        return CLAIM_NUDGE.format(verb=(claim.group(1) or claim.group(2)).lower())
+        return CLAIM_NUDGE.format(verb=next(g for g in claim.groups() if g).lower())
     return None

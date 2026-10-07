@@ -145,6 +145,7 @@ class Trace:
     tried_urls: set[str] = field(default_factory=set)  # every page read_webpage was asked for, read or not
     failed_urls: dict[str, str] = field(default_factory=dict)  # page -> why it could not be read
     counts: dict[str, int] = field(default_factory=dict)  # tool -> calls that ran
+    charts: int = 0  # charts the user saw (a failed forecast shows none)
     failures: list[str] = field(default_factory=list)  # "tool target: why", for the briefing
     not_run: int = 0  # calls refused: repeats, tools outside the profile
     existing: set[str] = field(default_factory=set)  # workspace ids before the task, to tell what it made
@@ -157,6 +158,8 @@ class Trace:
     def add(self, name: str, args: dict, result: ToolResult) -> None:
         self.calls[_call_key(name, args)] = result
         self.counts[name] = self.counts.get(name, 0) + 1
+        if name in ("make_chart", "forecast") and result.status in ("ok", "partial") and result.artifact:
+            self.charts += 1
         self.outputs.append(json.dumps(result.result, ensure_ascii=False, default=str))
         if result.status not in ("ok", "partial"):
             target = next((str(args[k]) for k in ("url", "query", "data", "file", "table") if args.get(k)), "")
@@ -792,12 +795,15 @@ def _source_keys(source: str) -> list[str]:
 
 FINISH_TAG = re.compile(r"<(?:submit_result|save_report|save)\b(.*)", re.S)
 TAG_VALUE = re.compile(r'\b(?:answer|results)\s*=\s*"(.*?)"\s*(?:/?>|$|\w+\s*=)', re.S)
+# The finish tool's bare name as the answer's last line (measured: a web answer ended "...\n\nsubmit_result")
+BARE_FINISH = re.compile(r"\n\s*`?(?:submit_result|save_report)(?:\(\))?`?\s*$")
 
 
 def _without_finish_markup(text: str) -> str:
     """A finish call written into the text as markup - '<submit_result answer="...">' after the same
     answer in prose (measured: it reached the user as it was) - comes off; with no prose before it, the
     answer inside it is the answer."""
+    text = BARE_FINISH.sub("", text)
     m = FINISH_TAG.search(text)
     if not m:
         return text
@@ -899,9 +905,8 @@ def _keep_report(ctx: ToolContext, result: dict, trace: Trace) -> dict:
         facts.append("Tables made: " + ", ".join(
             f"{i} ({ctx.ws.entry(i)['name']}" + (f", from {ctx.ws.entry(i)['parent']})" if ctx.ws.entry(i).get("parent")
                                                   else ")") for i in made))
-    charts = trace.counts.get("make_chart", 0) + trace.counts.get("forecast", 0)
-    if charts:
-        facts.append(f"Charts shown: {charts}")
+    if trace.charts:
+        facts.append(f"Charts shown: {trace.charts}")
     facts.append(_trail(trace))
     report = assemble(DATA_SECTIONS, result, facts)
     if target:
