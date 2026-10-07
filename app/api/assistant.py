@@ -1,6 +1,6 @@
 """The assistant's API: workspaces, chats, the conversation itself, uploads and what the UI shows.
 
-    GET    /assistant/status                                  is the model server up
+    GET    /assistant/status                                  is the model server up; the assistant's and the user's names
     GET    /assistant/workspaces                              list (newest first)
     POST   /assistant/workspaces              {name}          create
     PATCH  /assistant/workspaces/{ws}         {name}          rename
@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from app.assistant import main as main_slot
 from app.assistant.store import Store
+from app.config import settings
 from app.tools import files as files_tool
 from app.tools import notes as notes_tool
 from app.tools import web
@@ -90,7 +91,8 @@ def assistant_status(request: Request) -> dict:
     main = request.app.state.assistant_main
     ready, message = main.ready()
     loaded = getattr(main, "loaded_model", None)
-    return {"ready": ready, "message": message, "model": (loaded() if ready and loaded else None) or main.name}
+    return {"ready": ready, "message": message, "model": (loaded() if ready and loaded else None) or main.name,
+            "assistant": settings.assistant_name, "user": settings.assistant_user_name}
 
 
 @router.get("/workspaces")

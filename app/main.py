@@ -1,4 +1,5 @@
-"""The assistant's web app: its API (app/api/assistant.py) and its chat page (web/index.html).
+"""The assistant's web app: its API (app/api/assistant.py) and its chat page (web/index.html, with its
+styles, scripts, fonts and sound served from web/ under /static).
 
     uvicorn app.main:app --reload
     open http://localhost:8000        (chat)
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.assistant import main as main_slot
 from app.assistant.store import Store
@@ -24,7 +26,18 @@ from app.rag.embed import make_embedder
 
 from .api import assistant
 
-WEB_PAGE = Path(__file__).resolve().parent.parent / "web" / "index.html"
+WEB = Path(__file__).resolve().parent.parent / "web"
+WEB_PAGE = WEB / "index.html"
+
+
+class PageFiles(StaticFiles):
+    """The page's styles, scripts, fonts and sound: checked again on every load (a 304 when unchanged), so
+    an updated script is never run from the browser's cache alongside a newer page."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) -> FastAPI:
@@ -52,6 +65,7 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
                   description="Chat, workspaces, helpers (web, knowledge, data, code) and their tools.",
                   version="0.6.0", lifespan=lifespan)
     app.include_router(assistant.router)
+    app.mount("/static", PageFiles(directory=WEB), name="static")
 
     @app.get("/", include_in_schema=False)
     def chat_page() -> FileResponse:

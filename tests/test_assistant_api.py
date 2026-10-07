@@ -52,7 +52,10 @@ def test_the_chat_page_and_health_are_served(app_and_slots):
     client, _, _ = app_and_slots
     r = client.get("/")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    assert "<title>Assistant</title>" in r.text and 'const API = "/assistant"' in r.text
+    assert "<title>Zen</title>" in r.text and 'src="/static/js/app.js"' in r.text
+    for path in ("/static/app.css", "/static/js/app.js", "/static/fonts/fonts.css", "/static/sounds/startup.ogg"):
+        assert client.get(path).status_code == 200, path
+    assert 'export const API = "/assistant"' in client.get("/static/js/api.js").text
     assert client.get("/health").json() == {"status": "ok"}
 
 
