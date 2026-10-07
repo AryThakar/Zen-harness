@@ -226,21 +226,41 @@ export function fillDrawer() {
 
 /* ═══ Attachments ═══════════════════════════════════════════════════════ */
 // Files wait in the message box until the message is sent (removable till then); on sending they go into
-// the project, their progress shown on the message, and Zen hears of them with that message.
+// the project, their progress shown on the message, and the message keeps them, so they show on it again.
 const waiting = [];
+let sent = [];  // ids uploaded and not yet sent with a message (files alone go with the next one)
 export const attachedCount = () => waiting.length;
-const typeLine = file => `${(ext(file.name) || "file").toUpperCase()} · ${fileSize(file.size)}`;
-function chip(entry, remove) {
-  const { file, url } = entry;
-  const el = h("div", { class: `chip${url ? " is-pic" : ""}`, title: file.name },
-    url ? h("img", { class: "chip-thumb", src: url, alt: "" }) : fileTile(file.name),
-    url ? null : h("div", { class: "chip-text" }, h("b", {}, file.name), h("small", {}, typeLine(file))));
-  if (remove) el.append(h("button", { class: "chip-x", type: "button", title: "Remove", "aria-label": `Remove ${file.name}`, html: svg("cross"), onclick: remove }));
+export const takeSent = () => sent.splice(0);
+export const forgetSent = () => { sent = []; };
+const typeLine = (name, size) => `${(ext(name) || "file").toUpperCase()} · ${size}`;
+// A file as a chip: a picture's thumbnail, or its icon, name and type (as a picture no longer there is shown)
+function chip({ name, line, url }, remove) {
+  const text = () => h("div", { class: "chip-text" }, h("b", {}, name), h("small", {}, line));
+  const thumb = url && h("img", { class: "chip-thumb", src: url, alt: "", onerror: () => {
+    el.classList.remove("is-pic");
+    thumb.replaceWith(fileTile(name), text());
+  } });
+  const el = h("div", { class: `chip${url ? " is-pic" : ""}`, title: name }, thumb || fileTile(name), url ? null : text());
+  if (remove) el.append(h("button", { class: "chip-x", type: "button", title: "Remove", "aria-label": `Remove ${name}`, html: svg("cross"), onclick: remove }));
   return el;
 }
+const waitingChip = ({ file, url }, remove) => chip({ name: file.name, line: typeLine(file.name, fileSize(file.size)), url }, remove);
+// A sent file's chip opens it, as the Files panel would
+function opens(el, item) {
+  if (!canView(item)) return el;
+  el.setAttribute("role", "button");
+  el.tabIndex = 0;
+  el.addEventListener("click", () => openItem(item, el.querySelector("img.chip-thumb")));
+  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } });
+  return el;
+}
+// The files a saved message was sent with, as they were then
+export const sentFiles = files => h("div", { class: "user-files" }, files.map(f => opens(chip({
+  name: f.name || f.id, url: f.kind === "image" ? itemUrl(f.id) : null,
+  line: typeLine(f.name, f.rows != null ? plural(f.rows, "row") : f.bytes != null ? fileSize(f.bytes) : f.kind) }), f)));
 function renderTray() {
   const tray = $("#tray");
-  tray.replaceChildren(...waiting.map(entry => chip(entry, () => {
+  tray.replaceChildren(...waiting.map(entry => waitingChip(entry, () => {
     waiting.splice(waiting.indexOf(entry), 1);
     if (entry.url) URL.revokeObjectURL(entry.url);
     renderTray();
@@ -265,7 +285,7 @@ export async function sendFiles(bubble) {
   const row = h("div", { class: "user-files" });
   bubble.prepend(row);
   const marks = entries.map(entry => {
-    const c = chip(entry), mark = h("span", { class: "chip-state" });
+    const c = waitingChip(entry), mark = h("span", { class: "chip-state" });
     c.classList.add("sending");
     c.style.setProperty("--p", "0");
     c.append(mark);
@@ -284,6 +304,9 @@ export async function sendFiles(bubble) {
       c.classList.remove("sending", "reading");
       c.classList.add("done");
       mark.innerHTML = svg("check");
+      const id = r.id ?? r.file;  // a document answers with its id as "file"
+      sent.push(id);
+      opens(c, { id, kind: r.kind === "document" ? "file" : r.kind, name: r.name });
       c.title = r.kind === "table" ? `${entry.file.name}: ${count(r.rows)} rows, saved as ${r.id}`
         : r.kind === "document" ? `${entry.file.name}: ${plural(r.passages, "passage")} searchable` : `${entry.file.name}: saved as ${r.id}`;
       if (r.kind === "table") follow.push(`Give me an overview of ${r.name}`);

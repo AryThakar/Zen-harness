@@ -131,6 +131,24 @@ def test_uploads_go_where_they_belong(app_and_slots):
     assert client.get(f"/assistant/workspaces/{ws_id}/items/data_9/rows").status_code == 404
 
 
+def test_files_sent_with_a_message_are_shown_on_it_again(app_and_slots):
+    client, slots, _ = app_and_slots
+    ws_id, chat_id = workspace_and_chat(client)
+    client.post(f"/assistant/workspaces/{ws_id}/files",
+                files={"file": ("sales.csv", b"region,amount\nNorth,10\nSouth,20\n", "text/csv")})
+    slots.main.turns = [ModelTurn(text="Two regions.", stop="end"), ModelTurn(text="Hello.", stop="end")]
+    sent = events(client.post(f"/assistant/chats/{chat_id}/messages",
+                              json={"text": "What is in it?", "files": ["data_1", "data_1", "data_7"]}))
+    assert sent[-1][0] == "done"
+    events(client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Thanks"}))
+    users = [m for m in client.get(f"/assistant/chats/{chat_id}/messages").json()["messages"] if m["role"] == "user"]
+    # once each, and only what is in the project
+    assert users[0]["files"] == [{"id": "data_1", "kind": "table", "name": "sales.csv", "rows": 2}]
+    assert "files" not in users[1]
+    bad = client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Hi", "files": ["../../etc/passwd"]})
+    assert bad.status_code == 422
+
+
 def test_upload_size_is_limited(app_and_slots):
     client, _, _ = app_and_slots
     ws_id, _ = workspace_and_chat(client)

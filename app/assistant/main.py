@@ -40,7 +40,7 @@ import operator
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, TypedDict
@@ -328,8 +328,18 @@ def stamp(now: datetime | None = None) -> str:
     return f"[{now:%a %d %b %Y, %H:%M}]"
 
 
-def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider) -> Iterator[dict]:
-    """The user's message (or, when a question is waiting, their typed answer to it): the turn's events."""
+def _attached(ws: Workspace, item: str) -> dict:
+    """An attached file as its message shows it, as it was when sent (a later rename leaves it)."""
+    e = ws.entry(item)
+    size = {"rows": e["rows"]} if "rows" in e else {"bytes": e.get("bytes")}
+    return {"id": item, "kind": e["kind"], "name": e.get("name"), **size}
+
+
+def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider,
+         files: Sequence[str] = ()) -> Iterator[dict]:
+    """The user's message (or, when a question is waiting, their typed answer to it): the turn's events.
+    files: the ids of what the user attached to it - kept on the message so the page can show them on it
+    again; the model hears of new files from the workspace note, as before."""
     chat = store.chat(chat_id)
     if chat is None:
         yield {"type": "error", "message": "No such chat."}
@@ -346,8 +356,9 @@ def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider
                        if m["role"] == "user" and m.get("seen") is not None), None)
         note, seen = message_context(ws, before)
         said = f"{stamp()} {text}"
+        attached = [_attached(ws, i) for i in dict.fromkeys(files) if i in ws.ids()]
         store.append(chat_id, {"role": "user", "content": f"{said}\n\n{note}" if note else said, "said": said,
-                               "text": text, "seen": seen})
+                               "text": text, "seen": seen, **({"files": attached} if attached else {})})
         return text
 
     yield from _run(store, chat_id, record, main, worker)

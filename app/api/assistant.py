@@ -10,7 +10,7 @@
     DELETE /assistant/chats/{chat}                            delete (and forget it in recall)
     GET    /assistant/chats/{chat}/messages                   the chat, for redisplay (rows of a running turn marked live)
     GET    /assistant/chats/{chat}/stream                     the running turn's events from its start - events
-    POST   /assistant/chats/{chat}/messages   {text}          send - server-sent events while it works
+    POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
     POST   /assistant/chats/{chat}/answer     {answer|null}   answer the waiting question - events
     POST   /assistant/chats/{chat}/stop                       stop its running turn (the Stop button)
     GET    /assistant/workspaces/{ws}/items                   files, tables, images, models, the 5 pinned notes
@@ -31,6 +31,7 @@ import logging
 import re
 import tempfile
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -60,6 +61,8 @@ class NameIn(BaseModel):
 
 class TextIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    files: list[Annotated[str, Field(pattern=ITEM.pattern)]] = Field(
+        default_factory=list, max_length=20, description="ids of the files uploaded with this message, shown on it")
 
 
 class AnswerIn(BaseModel):
@@ -150,12 +153,13 @@ def chat_messages(chat_id: str, request: Request) -> dict:
     for m in _store(request).messages(chat_id):
         if m.get("hidden"):
             continue
+        attached = {"files": m["files"]} if m["role"] == "user" and m.get("files") else {}
         if turn is not None and m["id"] > turn.after_id:  # the page follows these through /stream
             out.append({"role": m["role"], "live": True, **({"text": m.get("text", "")} if m["role"] == "user" else {}),
-                        **(_answered(m["name"], m["content"]) if m["role"] == "tool" else {})})
+                        **attached, **(_answered(m["name"], m["content"]) if m["role"] == "tool" else {})})
             continue
         if m["role"] == "user":
-            out.append({"role": "user", "text": m.get("text", m.get("content", "")), "at": m["at"]})
+            out.append({"role": "user", "text": m.get("text", m.get("content", "")), "at": m["at"], **attached})
         elif m["role"] == "assistant":
             out.append({"role": "assistant", "text": m.get("text", ""), "at": m["at"],
                         "tools": [{"id": c["id"], "name": c["name"], "input": c["input"]} for c in m.get("tool_calls", [])]})
@@ -186,7 +190,7 @@ def send_message(chat_id: str, body: TextIn, request: Request) -> StreamingRespo
     _chat(request, chat_id)
     app = request.app
     return _stream(main_slot.send(_store(request), chat_id, body.text, app.state.assistant_main,
-                                  app.state.assistant_worker))
+                                  app.state.assistant_worker, body.files))
 
 
 @router.post("/chats/{chat_id}/answer")

@@ -5,7 +5,7 @@ import { api, detail, KEYS, send, serverEvents, state, API } from "./api.js";
 import { closeAsk, decision, openAsk } from "./ask.js";
 import { CARD_TYPES, addRun, artifactCard, codeCard, finishAnswer, onDrawn, passagesEl, redrawDiagrams, resultsCard, webSourcesEl } from "./cards.js";
 import { forgetCharts, redrawCharts } from "./charts.js";
-import { attachedCount, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, hooks, offerFollowUps, openDrawer, sendFiles, wireFiles } from "./files.js";
+import { attachedCount, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
 import { activityEl } from "./steps.js";
 import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, svg, toast, copyText, projectHue } from "./util.js";
 import { wireViewer } from "./viewer.js";
@@ -270,7 +270,7 @@ async function openChat(id, again = false) {
         view.resume(said?.skipped ? null : said?.answer ?? null, said?.id);
       } else {
         const user = live.find(m => m.role === "user");
-        if (user) addUser(user.text);
+        if (user) addUser(user.text, user.files);
         view = assistantView();
       }
       run(`/chats/${id}/stream`, null, view);
@@ -336,7 +336,7 @@ function renderHello() {
 }
 
 /* ═══ The thread ════════════════════════════════════════════════════════ */
-function clearThread() { forgetCharts(); thread.replaceChildren(); }
+function clearThread() { forgetCharts(); forgetSent(); thread.replaceChildren(); }
 const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 140;
 function stick(force = false) { if (force || state.stick) scroller.scrollTop = scroller.scrollHeight; }
 scroller.addEventListener("scroll", () => {
@@ -346,9 +346,9 @@ scroller.addEventListener("scroll", () => {
 $("#jump").addEventListener("click", () => { scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }); state.stick = true; });
 onDrawn(() => stick());
 
-function addUser(text) {
+function addUser(text, files = null) {  // files: those a saved message was sent with
   hideHello();
-  const el = h("div", { class: "user enter" }, text ? h("p", {}, text) : null);
+  const el = h("div", { class: "user enter" }, files?.length ? sentFiles(files) : null, text ? h("p", {}, text) : null);
   thread.append(el);
   return el;
 }
@@ -540,7 +540,7 @@ function replay(messages, chat, keepOpen = false) {  // returns the last reply's
   for (const m of messages) {
     if (m.role === "user") {
       close();
-      addUser(m.text);
+      addUser(m.text, m.files);
       view = assistantView();
       last = "";
       continue;
@@ -599,7 +599,8 @@ async function talk(text, shown = null) {
     addUser(text);
   }
   stick(true);
-  await run(`/chats/${state.chat.id}/messages`, { text }, assistantView());
+  const files = takeSent();  // uploaded for this message, or alone just before it
+  await run(`/chats/${state.chat.id}/messages`, files.length ? { text, files } : { text }, assistantView());
 }
 
 async function giveAnswer(said) {  // the waiting question's answer (null: skipped)
