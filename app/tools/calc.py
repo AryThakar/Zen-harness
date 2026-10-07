@@ -10,7 +10,9 @@ no other names, attributes or calls. The set is what the model writes when left 
   it noticed -0.988 was not 0.5 and corrected itself);
 - a $ is dropped (LaTeX's math marker: 'tan(35°)$' was refused);
 - ln, log2 and log10 by those names (ln was refused before, and the model then confirmed a number
-  it never computed).
+  it never computed);
+- sinh, cosh, tanh and their inverses (sinh(2) was refused for a catenary cable's length, and the
+  model worked the "accurate" answer out by hand).
 """
 
 from __future__ import annotations
@@ -35,7 +37,8 @@ FUNCTIONS = {
     "round": round, "abs": abs, "min": min, "max": max, "floor": math.floor, "ceil": math.ceil,
     "sqrt": math.sqrt, "exp": math.exp, "ln": math.log, "log": math.log, "log2": math.log2, "log10": math.log10,
     "sin": math.sin, "cos": math.cos, "tan": math.tan, "asin": math.asin, "acos": math.acos, "atan": math.atan,
-    "factorial": _factorial,
+    "sinh": math.sinh, "cosh": math.cosh, "tanh": math.tanh, "asinh": math.asinh, "acosh": math.acosh,
+    "atanh": math.atanh, "factorial": _factorial,
 }
 _evaluator = SimpleEval(functions=FUNCTIONS, names={"pi": math.pi, "e": math.e})
 DEGREES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:°|deg(?:rees?)?\b)", re.I)

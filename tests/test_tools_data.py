@@ -148,6 +148,20 @@ def test_summary_row_is_found_and_dropped_first(ws, tmp_path):
     assert len(df) == 40 and df["amount"].sum() == 1220
 
 
+def test_a_title_that_starts_with_total_is_data_not_a_summary_row(ws):
+    import pandas as pd
+    # chat 7a918668b138: 'Total Recall' and 'Total Dhamaal' were dropped from a movies table as summary rows
+    titles = [f"Film {i}" for i in range(40)] + ["Total Recall", "Total Dhamaal"]
+    movies = pd.DataFrame({"title": titles, "genre": ["Action"] * 42, "year": list(range(1980, 2022))})
+    res = inspect_data(ws, ws.add_table(movies, "movies")).result
+    assert not any(s["op"] == "drop_rows" for s in res["suggested_steps"])
+    # a label that starts like one, with the rest of its row empty, still is one; and "Total:" alone is one
+    report = pd.DataFrame({"line": ["Revenue A", "Revenue B", "Total revenue", "Total:"] + [f"Cost {i}" for i in range(30)],
+                           "note": ["x", "y", None, "z"] + ["c"] * 30, "amount": range(34)})
+    steps = inspect_data(ws, ws.add_table(report, "report")).result["suggested_steps"]
+    assert steps[0]["op"] == "drop_rows" and steps[0]["values"] == ["Total revenue", "Total:"]
+
+
 def test_codes_stay_codes_and_repeats_without_an_id_are_asked_about(ws):
     import pandas as pd
     codes = pd.DataFrame({"invoice": [str(489434 + i) for i in range(30)] + ["C489450"],

@@ -50,7 +50,10 @@ ANNOUNCED = re.compile(
 # remember ...") don't use the action verbs above. Measured on the 188 replies stored so far: the 9
 # real announcements caught, no other reply.
 OFFER = re.compile(r"\b(?:if|let me know|would you|do you want|want me|shall I|should I|feel free|once|when you|"
-                   r"as soon as|after you|until)\b", re.I)
+                   r"as soon as|after you|until|tell me|send me|give me|share (?:it|them|that|this|with me)|"
+                   r"please (?:tell|share|send|give|upload|provide|let))\b", re.I)
+# ("Tell me, and I'll make sure to remember it" and "Please tell me what you like ..., and I will add it to
+# your notes" wait for the user - measured as false nudges, 2 in one chat.)
 SENTENCES = re.compile(r"(?<=[.!?])\s+|\n+")
 # A claim, in the first person or passive, that something was done. "run", "written" and "drawn" are past
 # only after have/been: "I run on a local clock" (measured, answering "what year is it?") is not a claim.
@@ -63,11 +66,16 @@ CLAIMED = re.compile(rf"\bI (?:now |just |also |successfully |already )?({DONE})
 
 
 # The user asking to keep something ("remember that ...", "note this down", "keep in mind ..."); a question
-# about the past ("do you remember ...?") is not one.
-REMEMBER = re.compile(r"\b(?:remember|memori[sz]e|take (?:a )?note|make a note|note (?:that|this|it|down)|"
+# about the past ("do you remember ...?", "do remember when I like coffee" typed without "you" or "?") is
+# not one, and neither is a note named as a thing ("a note that you used to answer me") - both measured
+# as false nudges in one chat.
+REMEMBER = re.compile(r"\b(?:remember|memori[sz]e|take (?:a )?note|make a note|"
+                      r"(?<!\ba )(?<!\bthe )(?<!\bthis )(?<!\bthat )(?<!\bany )(?<!\bmy )(?<!\byour )(?<!\bwhich )"
+                      r"note (?:that|this|it|down)|"
                       r"keep (?:that |this |it )?in (?:mind|view)|don'?t forget|from now on|in (?:every|all|future) "
                       r"chats?)\b", re.I)
-RECALLING = re.compile(r"\b(?:do|did|can|could|would) you (?:still )?remember\b", re.I)
+RECALLING = re.compile(r"\b(?:do|did|can|could|would) (?:you|u) (?:still )?remember\b"
+                       r"|^\W*(?:do|did|can|could|would) (?:still )?remember\b|\bremember when\b", re.I)
 
 
 def asked_to_remember(said: str) -> bool:

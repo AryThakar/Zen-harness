@@ -38,6 +38,10 @@ NOT_ANNOUNCEMENTS = [
     "Once you provide these numbers, I will run the model to give you the predicted house value.",
     "Total revenue was 817,860.05 across 21,350 orders.",
     "Which of the two tables should I use?",
+    # waiting for the user's details (chat 7a918668b138: each got a nudge, and an off-topic second reply)
+    "I haven't noted down your coffee preferences yet.\n\nTell me, and I'll make sure to remember it for next time.",
+    "Regarding your coffee, I want to make sure I save that correctly. Please tell me what you like to drink and "
+    "when, and I will add it to your notes immediately.",
 ]
 
 
@@ -68,8 +72,14 @@ def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():
                  "keep this in view in every chat: always answer in metric units", "from now on reply in English"):
         assert asked_to_remember(said), said
     for said in ("do you remember what we decided?", "what did I ask you to remember?", "what is 12 times 12",
-                 "can you remember the file I sent", "remember?"):
+                 "can you remember the file I sent", "remember?",
+                 # chat 7a918668b138: a question typed without "you" or "?", and a note named as a thing
+                 "do remember when i like to drink coffee", "a note that you used to answer me on my last question",
+                 "A note that you used to ans my question", "remember when we fixed the chart"):
         assert not asked_to_remember(said), said
+    for said in ("please note that the deadline moved to Friday", "note that I prefer tea", "so you can remember it, "
+                 "my PIN rule is 4 digits"):
+        assert asked_to_remember(said), said
     user = {"role": "user", "content": "[Mon 05 Oct 2026, 14:00] remember my name is Ary", "text": "remember my name is Ary"}
     assert nudge_for("Got it, Ary. I will remember that.", [user]) == REMEMBER_NUDGE
     saved = [user, {"role": "assistant", "text": "", "tool_calls": [{"id": "c1", "name": "save_note", "input": {}}]},
@@ -108,6 +118,9 @@ def test_an_announcement_gets_one_nudge_then_the_tool_runs(store, chat):
     nudges = [m for m in store.messages(chat["id"]) if m.get("check")]
     assert len(nudges) == 1 and nudges[0]["hidden"] and "called no tool" in nudges[0]["content"]
     assert main.requests[1]["messages"][-1]["content"] == nudges[0]["content"]
+    # the page is told the model went back to check, so a written reply doesn't look stuck meanwhile
+    kinds = [e["type"] for e in events]
+    assert kinds.count("checking") == 1 and kinds.index("checking") < kinds.index("tool_start")
 
 
 def test_a_claim_with_no_tool_gets_one_nudge_and_a_second_reply_stands(store, chat):

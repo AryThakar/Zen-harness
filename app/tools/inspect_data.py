@@ -21,8 +21,13 @@ from .workspace import Workspace
 OUTLIER_FACTOR = 3.0  # Tukey's "far out" fences: beyond Q1 - 3 IQR or Q3 + 3 IQR
 ALMOST = 0.8  # a text column whose values are at least 80% numbers (or dates) is probably meant to be one
 SAMPLE_ROWS = 3
-# Labels of summary rows that exports append ('Total', 'Grand Total', 'Subtotal'): not data.
-SUMMARY = r"^(?:grand\s+|sub)?totals?\b|^sum$"
+# Labels of summary rows that exports append ('Total', 'Grand Total', 'Subtotal'): not data. A label that is
+# nothing but one ('Total', 'Total:', 'Total (all regions)') is one; a label that only starts like one
+# ('Total revenue') is one when the rest of its row is empty - a film called 'Total Recall', with its
+# year, genre and description, is data (measured: 4 films dropped from a movies table).
+SUMMARY = r"^(?:grand\s+|sub[\s-]?)?totals?\b|^sum$"
+SUMMARY_ONLY = r"^(?:grand\s+|sub[\s-]?)?totals?\s*(?:[:(\-–—].*)?$|^sum$"
+INSPECTION = 2  # raised when what inspect_data finds changes: inspections kept from before are redone
 STEP_ORDER = {"drop_duplicates": 0, "drop_rows": 1}
 
 
@@ -32,13 +37,14 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
     Computed once per table and kept on it: a stored table never changes (cleaning makes a new one),
     and on 50,000 rows the inspection takes seconds."""
     cached = ws.entry(data).get("meta", {}).get("inspection")
-    if cached and "roles" in cached["result"]:  # (older inspections, before roles, are redone)
+    if cached and cached.get("version") == INSPECTION:
         return ok(cached["result"], cached["artifact"])
     df = ws.table(data)
     notes = ws.column_notes(data)
     columns, steps, questions = [], [], []
     for name in df.columns:
-        profile, col_steps, col_questions = _column(name, df[name], notes.get(name, {}), len(df))
+        profile, col_steps, col_questions = _column(name, df[name], notes.get(name, {}), len(df),
+                                                    rest_blank=lambda index, name=name: _rest_blank(df, name, index))
         columns.append(profile)
         steps += col_steps
         questions += col_questions
@@ -69,11 +75,21 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
                 "columns": ["column", "type", "role", "missing", "unique", "summary"],
                 "rows": [[c["name"], c["type"], role_of.get(c["name"], ""), c.get("missing", 0), c["unique"], _summary(c)]
                          for c in columns]}
-    ws.set_meta(data, "inspection", {"result": jsonable(result), "artifact": jsonable(artifact)})
+    ws.set_meta(data, "inspection", {"result": jsonable(result), "artifact": jsonable(artifact), "version": INSPECTION})
     return ok(result, artifact)
 
 
-def _column(name: str, s: pd.Series, note: dict, rows: int) -> tuple[dict, list[dict], list[dict]]:
+def _rest_blank(df: pd.DataFrame, name: str, index: pd.Index) -> pd.Series:
+    """For these rows: whether the row's other text columns are all empty, as in an export's 'Total,,1220'."""
+    others = [c for c in df.columns if c != name and (df[c].dtype == object or pd.api.types.is_string_dtype(df[c].dtype))]
+    if not others:
+        return pd.Series(True, index=index)
+    rest = df.loc[index, others]
+    return (rest.isna() | rest.apply(lambda col: col.astype(str).str.strip() == "")).all(axis=1)
+
+
+def _column(name: str, s: pd.Series, note: dict, rows: int,
+            rest_blank=lambda index: pd.Series(True, index=index)) -> tuple[dict, list[dict], list[dict]]:
     kind = _kind(s)
     present = s.dropna()
     p: dict = {"name": name, "type": kind}
@@ -103,7 +119,13 @@ def _column(name: str, s: pd.Series, note: dict, rows: int) -> tuple[dict, list[
         top = present.value_counts().head(3)
         p["top"] = [[str(v), int(n)] for v, n in top.items()]
         labels = present.astype(str).str.strip()
-        summary = labels.str.casefold().str.match(SUMMARY)
+        folded = labels.str.casefold()
+        summary = folded.str.match(SUMMARY)
+        if summary.any():  # only starts like one ('Total Recall'): a summary row only with the rest of its row empty
+            maybe = summary & ~folded.str.match(SUMMARY_ONLY)
+            if maybe.any():
+                blank = rest_blank(labels.index[maybe.to_numpy()]).reindex(labels.index, fill_value=False)
+                summary &= ~maybe | blank
         if 0 < summary.sum() <= max(3, 0.01 * rows):
             found = sorted(labels[summary].unique())
             p["summary_rows"] = int(summary.sum())

@@ -391,7 +391,7 @@ function assistantView() {
   const cards = h("div", { class: "cards" }), answer = h("div", { class: "answer" }), foot = h("div", { class: "foot" });
   root.append(activity.el, cards, answer, foot);
   thread.append(root);
-  let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null;
+  let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
   const stats = [], web = new Map(), passages = [];
   const paint = () => {
     frame = 0;
@@ -435,10 +435,17 @@ function assistantView() {
   const view = {
     get question() { return question; },
     text(chunk) {
+      if (fresh) {  // another reply in the same turn (after a check): its own paragraph, not glued on
+        fresh = false;
+        if (text.trim()) text = text.trimEnd() + "\n\n";
+        roundStart = text.length;
+      }
       if (!text.slice(roundStart)) activity.writing();
       text += chunk;
       repaint();
     },
+    round() { fresh = true; },  // the model's step ended; what it writes next starts a new reply
+    checking() { fresh = true; activity.checking(); repaint(); },
     toolStart(d) {
       if (text.slice(roundStart).trim()) text = text.trimEnd() + "\n\n";
       roundStart = text.length;
@@ -479,7 +486,7 @@ function assistantView() {
       }
     },
     worker(e) { if (current) activity.worker(current, e); if (e.event === "turn" && e.usage) stats.push(e.usage); },
-    stats(s) { stats.push(s); },
+    stats(s) { stats.push(s); fresh = true; },
     ask(pending) {  // the turn pauses here until the user answers, in the message box
       streaming = false;
       paint();
@@ -547,6 +554,7 @@ function replay(messages, chat, keepOpen = false) {  // returns the last reply's
     }
     if (!view) continue;
     if (m.role === "assistant") {
+      view.round();
       if (m.text) { view.text(m.text); last = m.text; }
       for (const t of m.tools || []) view.toolStart(t);
     } else if (m.role === "tool") {
@@ -634,6 +642,7 @@ async function run(path, body, view) {
       else if (event === "artifact") view.artifact(data.artifact);
       else if (event === "worker") view.worker(data);
       else if (event === "stats") view.stats(data);
+      else if (event === "checking") view.checking();
       else if (event === "question") { ended = true; state.pending = { ...data, view }; view.ask(data); }  // the stream ends here; the answer's request streams the rest
       else if (event === "done") { ended = true; view.finish(data.answer, timing()); }
       else if (event === "stopped") { ended = true; view.stop(timing()); }

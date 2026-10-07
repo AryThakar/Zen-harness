@@ -210,10 +210,16 @@ export function polish(root) {
   });
   root.querySelectorAll("a[href]").forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
 }
+// The caret goes after the last thing written: down the last child while it is an element, so text after a
+// bold word ("**sm_90**.") keeps it at the end, into the deepest paragraph, item, heading or bold on the way
+const lastNode = el => { let n = el.lastChild; while (n?.nodeType === 3 && !n.textContent.trim()) n = n.previousSibling; return n; };
 export function addCaret(root) {
-  let node = root.lastElementChild;
-  while (node && node.lastElementChild && !["TABLE", "PRE", "DIV"].includes(node.tagName)) node = node.lastElementChild;
-  (node && ["P", "LI", "H1", "H2", "H3", "H4", "STRONG", "EM"].includes(node.tagName) ? node : root).append(h("span", { class: "caret" }));
+  let node = root, into = root;
+  for (let next = lastNode(node); next?.nodeType === 1 && !["TABLE", "PRE", "DIV"].includes(next.tagName); next = lastNode(node)) {
+    node = next;
+    if (["P", "LI", "H1", "H2", "H3", "H4", "STRONG", "EM"].includes(node.tagName)) into = node;
+  }
+  into.append(h("span", { class: "caret" }));
 }
 
 // A code block: its language, a copy button, and an editor's colours

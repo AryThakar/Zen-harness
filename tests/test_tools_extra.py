@@ -35,7 +35,10 @@ def test_calculate_refuses(expr):
                                          ("sin(30 degrees)", 0.5), ("tan(35°)$", 0.7002075382),
                                          ("tan(35\\u00b0)", 0.7002075382), ("asin(0.5) * 180 / pi", 30),
                                          ("ln(50)", 3.9120230054), ("log2(1024)", 10), ("e^-0.5", 0.6065306597),
-                                         ("2197^(1/3)", 13), ("(pi * ln(2)) / 8", 0.2721982613)])
+                                         ("2197^(1/3)", 13), ("(pi * ln(2)) / 8", 0.2721982613),
+                                         # chat 7a918668b138: a catenary cable, refused before
+                                         ("sinh(2)", 3.6268604078),
+                                         ("5 * cosh(asinh((12 - 5 * sinh(2)) / 5))", 7.9138904155)])
 def test_calculate_takes_the_models_notation(expr, value):
     r = calculate(expr)
     assert r.status == "ok" and r.result["result"] == pytest.approx(value) and "note" not in r.result

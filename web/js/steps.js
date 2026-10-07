@@ -82,8 +82,8 @@ function inputDetail(name, input) {
   return tags.length ? h("div", { class: "tags" }, tags) : null;
 }
 
-// What a helper's tool showed, inside its step
-function evidenceEl(a, titled) {
+// What a helper's tool showed, inside its step (shown: the code its step already shows, not repeated)
+function evidenceEl(a, titled, shown) {
   const title = text => titled ? h("div", { class: "step-title" }, text) : null;
   const link = (url, text, fav) => h("a", { class: "link", href: url, target: "_blank", rel: "noopener noreferrer", title: text },
     favicon(url, fav), h("span", {}, text || url), h("span", { class: "host" }, host(url)));
@@ -99,7 +99,7 @@ function evidenceEl(a, titled) {
       rows.length > 6 ? h("div", { class: "step-note" }, `${rows.length - 6} more rows`) : null);
   }
   if (a.type === "code") {
-    return h("div", {}, title("Ran Python"), fold(`Code · ${plural(a.code.split("\n").length, "line")}`, code(a.code, "python")),
+    return h("div", {}, title("Ran Python"), a.code === shown ? null : fold(`Code · ${plural(a.code.split("\n").length, "line")}`, code(a.code, "python")),
       a.output ? code(a.output.length > 1500 ? a.output.slice(0, 1500) + "\n…" : a.output) : null,
       a.errors ? h("div", { class: "step-note err" }, a.errors.trim().split("\n").at(-1)) : null);
   }
@@ -118,8 +118,11 @@ export function activityEl() {
     h("span", { class: "chev-wrap", html: svg("chev", "i chev") }));
   const body = h("div", { class: "act-body" });
   const el = h("div", { class: "activity enter running" }, head, body);
+  // the timer stands still while the turn waits for the user's answer: only Zen's working time counts
   const t0 = performance.now();
-  let touched = false, tick = setInterval(() => { time.textContent = timer((performance.now() - t0) / 1000); }, 1000);
+  let waited = 0, waitStart = null;
+  const unpause = () => { if (waitStart != null) { waited += performance.now() - waitStart; waitStart = null; } };
+  let touched = false, tick = setInterval(() => { time.textContent = timer(((waitStart ?? performance.now()) - t0 - waited) / 1000); }, 1000);
   const setOpen = open => { el.classList.toggle("open", open); head.setAttribute("aria-expanded", open); };
   head.addEventListener("click", () => { touched = true; setOpen(!el.classList.contains("open")); });
   const tell = text => {  // the status text slides to its next state
@@ -132,7 +135,8 @@ export function activityEl() {
 
   const view = {
     el, steps,
-    running(text) { el.hidden = false; el.classList.remove("done", "waiting"); el.classList.add("running"); say.classList.add("shimmer"); tell(text); },
+    running(text) { unpause(); el.hidden = false; el.classList.remove("done", "waiting"); el.classList.add("running"); say.classList.add("shimmer"); tell(text); },
+    checking() { view.running("Checking the answer…"); },  // a hidden check sent the model back: say so, not a stuck reply
     writing() { if (!steps.size) el.hidden = true; else { view.fold(); view.running("Writing…"); } },
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
@@ -169,6 +173,7 @@ export function activityEl() {
       el.classList.remove("done");
       el.classList.add("waiting", "running");
       say.classList.remove("shimmer");
+      waitStart ??= performance.now();
       tell("Waiting for your answer, in the message box");
     },
     answered(id) {
@@ -178,6 +183,7 @@ export function activityEl() {
     resumed(id) {  // a helper got its answer and goes on
       const step = steps.get(id);
       if (step) { step.el.className = "step run"; step.title.firstChild.textContent = `${stepLabel(step.name, false)}…`; }
+      unpause();
       el.classList.remove("waiting");
       say.classList.add("shimmer");
       tell(step ? `${stepLabel(step.name, false)}…` : "Thinking…");
@@ -185,7 +191,8 @@ export function activityEl() {
     worker(step, e) {
       if (e.event === "tool") {
         const title = h("div", { class: "step-title" }, `${stepLabel(e.name, false)}…`);
-        step.sub = { name: e.name, done: false, evidence: false, title, el: h("div", { class: "sub run enter" }, title, inputDetail(e.name, e.input)) };
+        step.sub = { name: e.name, done: false, evidence: false, title, code: e.input?.code,
+          el: h("div", { class: "sub run enter" }, title, inputDetail(e.name, e.input)) };
         step.subs.append(step.sub.el);
         helperActions++;
         view.running(`${stepLabel(e.name, false)}…`);
@@ -203,13 +210,15 @@ export function activityEl() {
       const sub = step.sub, failed = !["ok", "partial"].includes(e.status);
       sub.done = true;
       sub.el.className = `sub ${failed ? "err" : "ok"}`;
-      sub.title.textContent = failed ? `${stepLabel(sub.name, false)} · didn't run` : stepLabel(sub.name, true);
+      // refused before running (wrong arguments), or ran and failed (a script that raised)
+      sub.title.textContent = !failed ? stepLabel(sub.name, true)
+        : e.status === "invalid_arguments" ? `${stepLabel(sub.name, false)} · didn't run` : `${stepLabel(sub.name, true)} · failed`;
       if (failed && e.summary) sub.el.append(h("div", { class: "step-note err" }, errorText(e.summary)));
       view.running(`${stepLabel(step.name, false)}…`);
     },
     evidence(step, a) {
       const into = step.sub && !step.sub.evidence ? step.sub : null;
-      const node = evidenceEl(a, !into);
+      const node = evidenceEl(a, !into, into?.code);
       if (!node) return;
       if (into) { into.evidence = true; into.el.append(node); }
       else { step.subs.append(h("div", { class: "sub ok enter" }, node)); helperActions += 1; }

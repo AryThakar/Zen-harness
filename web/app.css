@@ -219,7 +219,7 @@ code, pre, kbd { font-family: "Google Sans Code", "Cascadia Code", Consolas, mon
 .user-follow { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; }
 
 /* ---------------------------------------------------------------- Zen's replies */
-.reply { margin: 8px 0 26px; font-size: 15.5px; line-height: 1.75; }
+.reply { margin: 8px 0 26px; font-size: 15.5px; line-height: 1.75; overflow-wrap: break-word; }  /* a long list with no spaces wraps */
 .reply > p { margin: 0 0 14px; }
 .reply strong { font-weight: var(--w-strong); }
 .reply h3 { font-size: 17px; font-weight: 600; margin: 20px 0 6px; line-height: 1.4; }
@@ -509,8 +509,8 @@ body.drawer-open .drawer { transform: none; }
 .ask-top .stop:hover { background: var(--hover); color: var(--ink); }
 .ask-q { margin: 6px 0 12px; font-size: 15px; line-height: 1.55; }
 .ask-panel .facts { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
-.ask-panel .facts span { font-size: 12.5px; padding: 2px 9px; border-radius: 999px; background: var(--hover); color: var(--muted);
-  font-family: "Google Sans Code", monospace; --dials: normal; }
+.ask-panel .facts span { font-size: 12.5px; padding: 2px 9px; border-radius: 11px; background: var(--hover); color: var(--muted);
+  font-family: "Google Sans Code", monospace; --dials: normal; max-width: 100%; overflow-wrap: anywhere; }  /* a long link wraps on a phone */
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ask-row .opt { display: inline-flex; align-items: center; gap: 8px; }
 .ask-row .skip-link { margin-left: auto; padding: 6px 8px; border-radius: 8px; font-size: 13px; color: var(--soft); }

@@ -225,6 +225,7 @@ def _agent(state: TurnState, config) -> dict:
     if check:  # announced or claimed an action no tool did: one hidden nudge per turn (checks.py)
         nudge = {"role": "user", "content": check, "hidden": True, "check": True}
         t.store.append(t.chat_id, nudge)
+        t.write({"type": "checking"})  # the page says it is checking, instead of a finished reply that won't end
         new.append(nudge)
         return {"messages": new, "rounds": state["rounds"] + 1}
     return {"messages": new}
