@@ -14,7 +14,8 @@ recall can't find them any more.
 
 Messages are stored as they happen (one row each), so a turn that stops half way keeps what it did.
 Rows with role 'artifact' are what the UI was shown (charts, tables, sources); they are kept for
-redisplay and never sent to a model.
+redisplay and never sent to a model. A row with role 'trace' ends each turn: how it went (main.Live.trace)
+- never sent to a model nor shown in the chat.
 
 Design points (cascade deletes, removing the folder after the rows and only inside the data root)
 from Unsloth Studio's chat storage (studio/backend/storage/studio_db.py), written independently.
@@ -192,11 +193,11 @@ class Store:
                              (json.dumps(body, ensure_ascii=False, default=str), message_id))
 
     def messages(self, chat_id: str, for_model: bool = False) -> list[dict]:
-        """The chat in order; for_model leaves out what only the UI needs (artifacts)."""
+        """The chat in order; for_model leaves out what isn't conversation (artifacts, traces)."""
         rows = self._run("SELECT id, role, body, created_at FROM messages WHERE chat_id = ? ORDER BY id", (chat_id,))
         out = []
         for r in rows:
-            if for_model and r["role"] == "artifact":
+            if for_model and r["role"] in ("artifact", "trace"):
                 continue
             out.append({"id": r["id"], **json.loads(r["body"]), "at": r["created_at"]})
         return out

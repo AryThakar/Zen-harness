@@ -2,51 +2,20 @@
 // "Worked for 34s · 3 steps", which opens to each step, a helper's own steps inside it, and what they
 // found (search results, pages read, tables, code).
 
+import { api } from "./api.js";
 import { favicon, tableEl } from "./cards.js";
 import { errorText, h, host, plural, svg } from "./util.js";
 
-export const DELEGATES = new Set(["research_web", "ask_knowledge", "analyze_data", "write_code"]);
-export const HELPER = { research_web: "Web researcher", ask_knowledge: "Knowledge", analyze_data: "Data analyst", write_code: "Coder" };
-
-// What a step is doing (while it runs) and did (afterwards)
-const STEP = {
-  research_web: ["Researching on the web", "Researched on the web"],
-  ask_knowledge: ["Looking through your files and chats", "Looked through your files and chats"],
-  analyze_data: ["Analysing your data", "Analysed your data"],
-  write_code: ["Writing and running code", "Wrote and ran code"],
-  calculate: ["Calculating", "Calculated"],
-  get_weather: ["Checking the weather", "Checked the weather"],
-  generate_image: ["Creating an image", "Created an image"],
-  draw_diagram: ["Drawing a diagram", "Drew a diagram"],
-  save_note: ["Saving a note", "Saved a note"],
-  ask_user: ["Asking you", "Asked you"],
-  files: ["Working with files", "Worked with files"],
-  web_search: ["Searching the web", "Searched the web"],
-  read_webpage: ["Reading a page", "Read a page"],
-  search_files: ["Searching your documents and notes", "Searched your documents and notes"],
-  recall: ["Searching earlier chats", "Searched earlier chats"],
-  read_file: ["Reading a file", "Read a file"],
-  inspect_data: ["Looking at the table", "Looked at the table"],
-  clean_data: ["Cleaning the table", "Cleaned the table"],
-  query_data: ["Querying the data", "Queried the data"],
-  make_chart: ["Drawing a chart", "Drew a chart"],
-  compare: ["Testing the numbers", "Tested the numbers"],
-  train_model: ["Training a model", "Trained a model"],
-  predict: ["Learning to predict", "Learned to predict"],
-  find_patterns: ["Looking for patterns", "Looked for patterns"],
-  analyze_text: ["Reading the texts", "Read the texts"],
-  view_image: ["Looking at the image", "Looked at the image"],
-  forecast: ["Forecasting", "Made a forecast"],
-  run_code: ["Running code", "Ran code"],
-  fix_code: ["Fixing the code", "Fixed the code"],
-};
-// files() says what it does by its mode
-const FILE_STEP = { list: ["Listing files", "Listed files"], find: ["Looking for a file", "Looked for a file"],
-  read: ["Reading a file", "Read a file"], write: ["Writing a file", "Wrote a file"], update: ["Updating a file", "Updated a file"],
-  rename: ["Renaming a file", "Renamed a file"], delete: ["Asking to delete a file", "Asked to delete a file"],
-  download: ["Asking to download", "Asked to download"] };
-export const stepLabel = (name, done, input) =>
-  ((name === "files" && FILE_STEP[input?.mode]) || STEP[name] || [name.replace(/_/g, " "), name.replace(/_/g, " ")])[done ? 1 : 0];
+// How each tool and helper is named while it works ("Reading a page" / "Read a page"): defined with the
+// tools on the server and loaded once at start (GET /assistant/tools), so the page keeps no list of its own.
+const TOOLS = {};
+export async function loadTools() { try { Object.assign(TOOLS, await api("/tools")); } catch {} }
+export const isDelegate = name => Boolean(TOOLS[name]?.helper);
+export const helperName = name => TOOLS[name]?.helper;
+export function stepLabel(name, done, input) {
+  const t = TOOLS[name], pair = (name === "files" && t?.modes?.[input?.mode]) || (t && [t.doing, t.done]);
+  return (pair || [name.replace(/_/g, " "), name.replace(/_/g, " ")])[done ? 1 : 0];
+}
 
 const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
 const clock = s => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
@@ -140,8 +109,8 @@ export function activityEl() {
     writing() { if (!steps.size) el.hidden = true; else { view.fold(); view.running("Writing…"); } },
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
-      const step = { id: d.id, name: d.name, delegate: DELEGATES.has(d.name), done: false, sub: null, tables: [], code: null, input: d.input };
-      step.title = h("div", { class: "step-title" }, `${stepLabel(d.name, false, d.input)}…`, step.delegate ? h("span", { class: "helper" }, HELPER[d.name]) : null);
+      const step = { id: d.id, name: d.name, delegate: isDelegate(d.name), done: false, sub: null, tables: [], code: null, input: d.input };
+      step.title = h("div", { class: "step-title" }, `${stepLabel(d.name, false, d.input)}…`, step.delegate ? h("span", { class: "helper" }, helperName(d.name)) : null);
       step.subs = h("div", { class: "subs" });
       step.el = h("div", { class: "step run enter" }, step.title, inputDetail(d.name, d.input), step.subs);
       steps.set(d.id, step);

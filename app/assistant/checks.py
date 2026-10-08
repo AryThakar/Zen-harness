@@ -1,6 +1,6 @@
 """main's honesty checks: what the system guarantees about main's own replies and calls, by code.
 
-The helpers' results are checked in workers.py (sources, numbers, reports); these are the checks on
+The helpers' results are checked in workers/checks.py (sources, numbers, reports); these are the checks on
 main itself, each from a measured failure in the user's own test chat (docs/SYSTEM_MAP.md, section 10):
 
     repeated failure    the same call that already failed in this turn is not run again: the model

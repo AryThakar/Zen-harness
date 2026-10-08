@@ -49,7 +49,11 @@ def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
     kinds = [e["type"] for e in events]
     assert kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done" and events[-1]["answer"] == "It is 360."
     saved = store.messages(chat["id"])
-    assert [m["role"] for m in saved] == ["user", "assistant", "tool", "assistant"]
+    assert [m["role"] for m in saved] == ["user", "assistant", "tool", "assistant", "trace"]
+    trace = saved.pop()["trace"]  # how the turn went: never sent to the model, never shown in the chat
+    assert trace["ended"] == "done" and [s["calls"] for s in trace["steps"]] == [["calculate"], []]
+    assert [(c["name"], c["status"]) for c in trace["tools"]] == [("calculate", "ok")] and trace["seconds"] >= 0
+    assert all(m["role"] != "trace" for m in store.messages(chat["id"], for_model=True))
     assert saved[0]["content"].startswith("[") and saved[0]["text"] == "What is 15% of 2400?"  # stamped once
     assert '"result": 360' in saved[2]["content"]
     first = main.requests[0]
@@ -136,11 +140,19 @@ def test_the_system_prompt_never_changes_and_context_is_appended(store, chat):
     assert [m["content"] for m in earlier if m["role"] == "user"][:2] == [first, second]  # history never rewritten
 
 
+def test_a_failed_turn_keeps_its_error_in_the_trace(store, chat):
+    """Before, an error reached the page and was gone: nothing stored said a turn had failed, or why."""
+    events = run(send(store, chat["id"], "hello", ScriptedProvider([]), ScriptedProvider([])))
+    assert events[-1]["type"] == "error"
+    trace = store.messages(chat["id"])[-1]["trace"]
+    assert trace["ended"] == "failed" and "no more turns" in trace["error"] and trace["steps"] == []
+
+
 def test_a_copy_of_the_apps_notes_never_reaches_the_user(store, chat):
     echoed = "Saved plan.md.\n\n[Workspace now:\ndata_1  sales.csv - 3 rows]\n[Pinned notes (your 5 latest notes):\n- A (03 Oct): b]"
     main = ScriptedProvider([answer(echoed)])
     events = run(send(store, chat["id"], "save my plan", main, ScriptedProvider([])))
-    assert events[-1]["answer"] == "Saved plan.md." and store.messages(chat["id"])[-1]["text"] == "Saved plan.md."
+    assert events[-1]["answer"] == "Saved plan.md." and store.messages(chat["id"], for_model=True)[-1]["text"] == "Saved plan.md."
 
 
 def test_the_rolling_window_cut_is_kept_between_turns(store, chat):

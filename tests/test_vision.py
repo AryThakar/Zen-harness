@@ -94,7 +94,7 @@ def test_the_coder_is_shown_what_its_script_drew(ctx):
     shown = model.requests[1]["messages"][-1]  # after the run's result, before the next step
     assert shown["role"] == "user" and shown["content"].startswith("[The picture your script made: image_1 (line.png, ")
     assert len(shown["images"]) == 1 and shown["images"][0]["mime"] == "image/png"
-    assert out["file"] and not out.get("warnings") and not ctx.look.seen  # no separate vision call
+    assert out["files"] and not out.get("warnings") and not ctx.look.seen  # no separate vision call
 
 
 def test_an_image_the_task_names_or_the_coder_reads_is_shown(ctx):
@@ -133,5 +133,5 @@ def test_a_save_named_after_the_picture_keeps_the_script(ctx):
     report = {**SAVE, "name": "passengers_modified.png", "inputs_outputs": "image_1 in, passengers_modified.png out"}
     model = seeing(turn(call("run_code", code=edit)), turn({**call("save"), "input": report}))
     out = run_worker(model, PROFILES["coder"], "Make the passengers chart twice as wide.", ctx)
-    assert out["name"] == "passengers_modified.py" and not out.get("warnings")
-    assert ctx.ws.kind(out["file"]) == "file" and ctx.ws.entry("image_2")["meta"]["width"] == 80
+    assert out["files"][0]["name"] == "passengers_modified.py" and not out.get("warnings")
+    assert ctx.ws.kind(out["files"][0]["id"]) == "file" and ctx.ws.entry("image_2")["meta"]["width"] == 80

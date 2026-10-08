@@ -9,7 +9,7 @@ which is said with every answer. main keeps a text answer rather than the image:
 turns, and an image would sit in its window (and every request) for all of them.
 
 A helper doesn't use it: a helper that sees images (the coder) is shown them in its own conversation
-(workers._pictures) - 9 of 10 known-answer questions right there vs 8 of 10 here, with the task in
+(workers/runner.py, _pictures) - 9 of 10 known-answer questions right there vs 8 of 10 here, with the task in
 mind, and without replacing the slot's cached prompt.
 
 Images are sent at most MAX_SIDE pixels on their longer side (PNG, or JPEG for photos), so a large

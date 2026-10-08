@@ -1,6 +1,7 @@
 """The assistant's API: workspaces, chats, the conversation itself, uploads and what the UI shows.
 
     GET    /assistant/status                                  is the model server up; the assistant's and the user's names
+    GET    /assistant/tools                                   how the UI names each tool and helper while it works
     GET    /assistant/workspaces                              list (newest first)
     POST   /assistant/workspaces              {name}          create
     PATCH  /assistant/workspaces/{ws}         {name}          rename
@@ -9,6 +10,7 @@
     POST   /assistant/workspaces/{ws}/chats                   new chat
     DELETE /assistant/chats/{chat}                            delete (and forget it in recall)
     GET    /assistant/chats/{chat}/messages                   the chat, for redisplay (rows of a running turn marked live)
+    GET    /assistant/chats/{chat}/traces                     how each turn went: steps, times, tokens, checks, errors
     GET    /assistant/chats/{chat}/stream                     the running turn's events from its start - events
     POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
     POST   /assistant/chats/{chat}/answer     {answer|null}   answer the waiting question - events
@@ -38,6 +40,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.assistant import main as main_slot
+from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
 from app.tools import files as files_tool
@@ -98,6 +101,13 @@ def assistant_status(request: Request) -> dict:
             "assistant": settings.assistant_name, "user": settings.assistant_user_name}
 
 
+@router.get("/tools")
+def tool_labels() -> dict:
+    """Every tool's labels (doing, done) and each helper's name: defined with the tools, so the UI has no list
+    of its own to fall out of step."""
+    return catalogue()
+
+
 @router.get("/workspaces")
 def list_workspaces(request: Request) -> list[dict]:
     return _store(request).workspaces()
@@ -151,7 +161,7 @@ def chat_messages(chat_id: str, request: Request) -> dict:
     turn = main_slot.live(chat_id)
     out = []
     for m in _store(request).messages(chat_id):
-        if m.get("hidden"):
+        if m.get("hidden") or m["role"] == "trace":
             continue
         attached = {"files": m["files"]} if m["role"] == "user" and m.get("files") else {}
         if turn is not None and m["id"] > turn.after_id:  # the page follows these through /stream
@@ -169,6 +179,13 @@ def chat_messages(chat_id: str, request: Request) -> dict:
         elif m["role"] == "artifact":
             out.append({"role": "artifact", "artifact": m["artifact"], "at": m["at"]})
     return {"chat": chat, "messages": out, "running": turn is not None}
+
+
+@router.get("/chats/{chat_id}/traces")
+def chat_traces(chat_id: str, request: Request) -> list[dict]:
+    """Each finished turn's trace (main.Live.trace), oldest first: for a developer's view and the evaluation."""
+    _chat(request, chat_id)
+    return [{"at": m["at"], **m["trace"]} for m in _store(request).messages(chat_id) if m["role"] == "trace"]
 
 
 def _answered(name: str, content: str) -> dict:

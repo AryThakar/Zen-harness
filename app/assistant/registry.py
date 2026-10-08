@@ -52,10 +52,15 @@ class _In(BaseModel):
 
 @dataclass(frozen=True)
 class Tool:
+    """One tool, defined once: what the model reads (name, description, input schema), what runs (handler)
+    and what the user sees while it runs and after (labels: doing, done; mode_labels: the same per mode, for
+    files) - the UI gets the labels from the server (GET /assistant/tools) instead of keeping its own list."""
     name: str
     description: str
     input_model: type[_In]
     handler: Callable[[ToolContext, Any], ToolResult]
+    labels: tuple[str, str] = ("Working", "Done")
+    mode_labels: dict[str, tuple[str, str]] | None = None
 
     def spec(self) -> dict:
         schema = self.input_model.model_json_schema()
@@ -276,16 +281,19 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "(temperature, UV, air quality, the local time there), and with days a daily forecast (days=1 covers "
        "tomorrow). Use it when the user asks about the weather, rain, heat, air or what to wear or carry outside, "
        "or the time in another place.",
-       WeatherIn, lambda c, a: weather.get_weather(a.location, a.days)),
+       WeatherIn, lambda c, a: weather.get_weather(a.location, a.days),
+       labels=("Checking the weather", "Checked the weather")),
     Tool("generate_image", "Generate one picture - a scene, art, a photo-like image - from a detailed description; "
        "the user sees it. Use it when the user asks for a picture, an illustration or art. Not for technical "
        "drawings (circuits, charts, labelled parts): an image model draws them "
        "wrong, with unreadable labels - draw_diagram shows how something works.",
-       ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size, look=c.look)),
+       ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size, look=c.look),
+       labels=("Creating an image", "Created an image")),
     Tool("draw_diagram", "Draw a flowchart, sequence, class, state, ER, gantt, pie, mindmap or timeline diagram "
        "from Mermaid code. Use it when the user wants to see how something works or is built - steps, logic, states, "
        "structure, a plan over time - or asks for a visual explanation.",
-       DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title)),
+       DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title),
+       labels=("Drawing a diagram", "Drew a diagram")),
     Tool("calculate", "Exact arithmetic: use it for every number you work out - even a sum or an average - "
        "instead of doing it in your head; one call can hold a whole expression. Maths problems: solve them yourself, "
        "step by step, and check the numbers here.",
@@ -297,13 +305,15 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "with different results. When one reading can be answered as it stands (e.g. a record, a top or a total), "
        "answer that one and say which reading you took instead. Never ask about preferences that don't change the "
        "answer.",
-       AskIn, lambda c, a: ask.ask_user(a.question, a.options, a.allow_text)),
+       AskIn, lambda c, a: ask.ask_user(a.question, a.options, a.allow_text),
+       labels=("Asking you", "Asked you")),
     # worker tools
     Tool("web_search", "Search the web: titles, links and snippets.",
        SearchIn, lambda c, a: web.web_search(a.query, a.site)),
     Tool("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
        "channel, length, date and description (not what is said in it).", ReadPageIn,
-       lambda c, a: web.read_webpage(a.url, a.find)),
+       lambda c, a: web.read_webpage(a.url, a.find),
+       labels=("Reading a page", "Read a page")),
     Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or "
        "to open, show, save, change, rename, delete or download one. list: everything, a page at a time; find: whether "
        "a name exists; read: a file's report (what a helper did with it), or its text from line start on (an "
@@ -314,56 +324,74 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "download and updating the user's own file ask the user with a button - call it straight away, don't ask "
        "first in words.",
        FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
-                                            end=a.end, content=a.content, new_name=a.new_name, link=a.link)),
+                                            end=a.end, content=a.content, new_name=a.new_name, link=a.link),
+       labels=("Working with files", "Worked with files"),
+       mode_labels={"list": ("Listing files", "Listed files"), "find": ("Looking for a file", "Looked for a file"),
+                    "read": ("Reading a file", "Read a file"), "write": ("Writing a file", "Wrote a file"),
+                    "update": ("Updating a file", "Updated a file"), "rename": ("Renaming a file", "Renamed a file"),
+                    "delete": ("Asking to delete a file", "Asked to delete a file"),
+                    "download": ("Asking to download", "Asked to download")}),
     Tool("search_files", "Find passages in the user's documents and saved notes that match a query.", FilesQueryIn,
        lambda c, a: files.search_files(c.index, a.query)),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
        FilesQueryIn,
-       lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since)),
+       lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since),
+       labels=("Searching earlier chats", "Searched earlier chats")),
     Tool("read_file", "Read a stored file or note in order, from a line on (code with line numbers, documents with "
        "their pages), with what a helper reported about it.", ReadFileIn,
-       lambda c, a: read_file.read_file(c.ws, a.file, a.start)),
+       lambda c, a: read_file.read_file(c.ws, a.file, a.start),
+       labels=("Reading a file", "Read a file")),
     Tool("inspect_data", "First look at a table: columns, types, missing values, duplicates, outliers, suggested "
        "cleaning steps and questions only the user can answer.", DataIn,
-       lambda c, a: inspect_data.inspect_data(c.ws, a.data)),
+       lambda c, a: inspect_data.inspect_data(c.ws, a.data),
+       labels=("Looking at the table", "Looked at the table")),
     Tool("clean_data", "Apply cleaning steps to a table; saves a new table and a log. Nothing is changed without a step.",
-       CleanIn, lambda c, a: clean_data.clean_data(c.ws, a.data, a.steps)),
+       CleanIn, lambda c, a: clean_data.clean_data(c.ws, a.data, a.steps),
+       labels=("Cleaning the table", "Cleaned the table")),
     Tool("query_data", "Exact numbers with one read-only SQL query: totals, rankings, filters, group-bys - and "
        "plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100.",
-       SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save)),
+       SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save),
+       labels=("Querying the data", "Queried the data")),
     Tool("make_chart", "Draw a chart of a table, computed from all its rows: line (over time; by = one line per "
        "group), bar (by category; by = grouped or stacked), scatter (two numbers, with a trend line), histogram "
        "(how one number spreads), box (a number's spread per group), heatmap (two categories, e.g. weekday x hour) "
        "or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with query_data "
        "first.",
        ChartIn, lambda c, a: make_chart.make_chart(c.ws, a.data, a.type, a.x, a.y, a.by, a.agg, a.time_unit, a.top,
-                                                   a.stacked, a.title)),
+                                                   a.stacked, a.title),
+       labels=("Drawing a chart", "Drew a chart")),
     Tool("compare", "Is a difference, correlation, association or A/B result real, or chance? The test is chosen "
        "from the columns; the result gives the size of the effect with a 95% range.",
-       CompareIn, lambda c, a: compare.compare(c.ws, a.data, a.question, a.columns)),
+       CompareIn, lambda c, a: compare.compare(c.ws, a.data, a.question, a.columns),
+       labels=("Testing the numbers", "Tested the numbers")),
     Tool("predict", "Learn a column from the others (who will churn, what a price will be): tested against a "
        "baseline, with the drivers and their direction (associations, not causes) and leak warnings; saves the "
        "table with the predictions (and new_data's) as a new table.", PredictIn,
-       lambda c, a: ml.predict(c.ws, a.data, a.target, a.features, a.time_column, a.new_data)),
+       lambda c, a: ml.predict(c.ws, a.data, a.target, a.features, a.time_column, a.new_data),
+       labels=("Learning to predict", "Learned to predict")),
     Tool("forecast", "A value over time: is it really rising or falling (trend test), its seasonal pattern "
        "(e.g. peak month), the latest period vs a year earlier, and the next periods with an 80% range - "
        "tested against a simple baseline; by = one forecast per group.", ForecastIn,
-       lambda c, a: forecast.forecast(c.ws, a.data, a.date, a.value, a.horizon, a.time_unit, a.agg, a.by)),
+       lambda c, a: forecast.forecast(c.ws, a.data, a.date, a.value, a.horizon, a.time_unit, a.agg, a.by),
+       labels=("Forecasting", "Made a forecast")),
     Tool("find_patterns", "Patterns no single query shows: segments (groups of similar customers or rows, what "
        "sets each apart), unusual (days or periods far from their trend and season, or extreme rows) or together "
        "(items bought in the same order more often than chance). Saves a table of the result.", PatternsIn,
        lambda c, a: find_patterns.find_patterns(c.ws, a.data, a.kind, a.group, a.columns, a.value, a.by, a.basket,
-                                                a.item, a.time_unit)),
+                                                a.item, a.time_unit),
+       labels=("Looking for patterns", "Looked for patterns")),
     Tool("analyze_text", "What a text column says, by meaning (local embeddings): themes (groups with their words "
        "and examples - you name them), classify (into the user's labels; about 70% right on labels with a clear "
        "meaning) or similar (rows most like a phrase). Saves the table with each row's theme or label.", TextIn,
        lambda c, a: analyze_text.analyze_text(c.ws, a.data, a.kind, a.column, a.labels, a.query, a.count, a.value,
-                                              embedder=c.index.embedder)),
+                                              embedder=c.index.embedder),
+       labels=("Reading the texts", "Read the texts")),
     Tool("view_image", "Look at an image (attached, generated, or drawn by a script) and answer a question about "
        "it: what it shows, whether a detail is there, what its text says. Use it when the user attaches or asks about "
        "an image - you can't see images otherwise: look before you describe one. Rough for exact numbers.",
        ViewImageIn,
-       lambda c, a: vision.view_image(c.ws, a.image, a.question, c.look)),
+       lambda c, a: vision.view_image(c.ws, a.image, a.question, c.look),
+       labels=("Looking at the image", "Looked at the image")),
     Tool("run_code", "Write your scratch Python script (the whole of it) and run it. In the script, "
        "table('data_1') gives a table as a DataFrame, open('file_3') opens a stored item by its id "
        "(Image.open('image_3') an image), and path('file_3') gives its location for libraries that open files "

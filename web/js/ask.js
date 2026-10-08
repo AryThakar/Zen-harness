@@ -2,14 +2,14 @@
 // question (it stays in view; what is typed is the answer), and once they decide it goes, leaving one
 // line in the chat. Esc only ever skips or cancels; a delete is given by a click only, never a key.
 
-import { HELPER } from "./steps.js";
+import { helperName } from "./steps.js";
 import { $, cap, escapeHtml, h, svg } from "./util.js";
 
 const DANGER = new Set(["delete_files", "replace_file"]);
 let open = null;  // { card, onChoose }
 export const askOpen = () => !!open;
 
-const helperOf = card => HELPER[card.via || card.tool || card.name];
+const helperOf = card => helperName(card.via || card.tool || card.name);
 function who(card) {
   if (card.approval) return "Needs your permission";
   const helper = helperOf(card);

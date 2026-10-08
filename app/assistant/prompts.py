@@ -6,7 +6,7 @@ The assistant's instructions are three layers, and each rule lives in exactly on
     role prompt       here - who the model is (main: its persona - name, manner, how it takes a failure;
                       the names come from the settings), how an expert in the role works, how to read
                       what the app adds to messages, the honesty rules
-    tool description  registry.py (the delegates and a helper's ask_user: workers.py) - what a tool does,
+    tool description  registry.py (the delegates and a helper's ask_user: workers/contracts.py) - what a tool does,
                       one line per kind, when to pick it over another; a field's description says what
                       its value holds
     tool result       the tools - what to do next, said only when it applies (a page cut short, an image
@@ -129,7 +129,7 @@ KNOWLEDGE = ("You answer from the user's own documents, saved notes and earlier 
 
 # The data analyst's craft (the user's design: a small model reads a short block of fundamentals every task more
 # reliably than it searches a guide). Which chart kind fits what is in make_chart's description; what to do
-# with a saved table's earlier report is said where the report is shown (workers._table_report).
+# with a saved table's earlier report is said where the report is shown (workers/runner.py, _table_report).
 DATA = """You are a data analyst working on the user's tables (listed in the workspace). Work like an expert:
 
 1. Know the table. Start with inspect_data. If it suggests cleaning steps, apply them all in one clean_data call \
@@ -191,7 +191,7 @@ STEPS_LEFT = {2: "[2 steps left: finish soon with {finish}.]",
 # After a result failed its checks: one chance to fix it (the problems follow).
 FIX_ANSWER = "Fix this and answer again: "
 FIX_FINISH = "Fix these and call {finish} again: "
-# Pictures a helper that sees images is shown, as a message with the images (workers._pictures). Measured: in
+# Pictures a helper that sees images is shown, as a message with the images (workers/runner.py, _pictures). Measured: in
 # the coder's conversation 9 of 10 known-answer questions right, vs 8 of 10 for a separate vision call; and
 # with view_image still on offer the coder called it 8 times of 10 instead of reading the picture it had.
 PICTURES = {"drawn": "[The picture your script made: {names}. Check it shows what the task asked before you describe "

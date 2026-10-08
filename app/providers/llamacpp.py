@@ -21,7 +21,9 @@
   to the model, not to this client - and nothing is sent unless a caller passes ``sampling``
   (a benchmark comparing settings). Values left here from an earlier model once overrode the
   loaded model's own on every request.
-- ready() names the model llama-server has loaded (its /props), not a configured label.
+- ready() names the model llama-server has loaded (its /props), not a configured label, and learns the
+  context of one slot from the same answer (slot_tokens: default_generation_settings.n_ctx, per slot with
+  --parallel) - the prompt limit follows the server as it runs, not a constant (16K on a laptop, 32K on Kaggle).
 - count_tokens() is exact: the same request generation would send, counted by llama-server
   (/v1/chat/completions/input_tokens; else /apply-template then /tokenize), so the chat template's
   markers and tool declarations are counted too. Approach from Unsloth Studio's prompt counter.
@@ -50,6 +52,7 @@ MAX_TOKENS = 4096           # per turn, without thinking
 MAX_TOKENS_THINKING = 8192  # thinking counts against it
 THINKING_BUDGET = None      # no thinking budget (a number caps thinking tokens per reply, for experiments)
 READ_TIMEOUT = 600          # longest silence allowed while a turn streams (a first turn reads the whole prompt)
+DEFAULT_SLOT_TOKENS = 16_384  # a slot's context until the server says (it is still starting)
 NO_MORE_TOOLS = ("(The tool limit for this question is reached. Answer now in plain text from the results above, "
                  "without calling any tools; say what is still missing if something is.)")
 # A tool call the model writes as text anyway (tools switched off, or a call the template parser missed).
@@ -85,6 +88,7 @@ class LlamaCppProvider:
         self.max_tokens = max_tokens or (MAX_TOKENS_THINKING if thinking else MAX_TOKENS)
         self.thinking_budget = thinking_budget  # None: unlimited (only for comparisons)
         self._vision: bool | None = None  # whether the server has the vision part loaded (sees_images)
+        self._slot_tokens: int | None = None  # one slot's context, from /props
 
     def ready(self) -> tuple[bool, str]:
         try:
@@ -102,20 +106,36 @@ class LlamaCppProvider:
         """Whether llama-server has the model's vision part loaded (--mmproj; /props says so), asked once.
         A helper is shown images only then: sent to a server without it, an image fails the call."""
         if self._vision is None:
-            try:
-                with urllib.request.urlopen(f"{self.base_url}/props", timeout=3) as response:
-                    self._vision = bool((json.loads(response.read()).get("modalities") or {}).get("vision"))
-            except (urllib.error.URLError, OSError, ValueError):
+            props = self._props()
+            if not props:
                 return False  # not remembered: the server may still be starting
+            self._vision = bool((props.get("modalities") or {}).get("vision"))
         return self._vision
 
-    def loaded_model(self) -> str:
-        """The model file llama-server has loaded, e.g. 'gemma-4-E4B-it-qat-UD-Q4_K_XL'."""
+    @property
+    def slot_tokens(self) -> int:
+        """One slot's context, as the server runs it; DEFAULT_SLOT_TOKENS until it answers."""
+        if self._slot_tokens is None:
+            self._props()
+        return self._slot_tokens or DEFAULT_SLOT_TOKENS
+
+    def _props(self) -> dict:
+        """llama-server's /props ({} when it doesn't answer), remembering the slot size it gives."""
         try:
             with urllib.request.urlopen(f"{self.base_url}/props", timeout=3) as response:
-                path = json.loads(response.read()).get("model_path") or ""
+                props = json.loads(response.read())
         except (urllib.error.URLError, OSError, ValueError):
-            path = ""
+            return {}
+        if not isinstance(props, dict):
+            return {}
+        n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
+        if isinstance(n_ctx, int) and n_ctx > 0:
+            self._slot_tokens = n_ctx
+        return props
+
+    def loaded_model(self) -> str:
+        """The model file llama-server has loaded, e.g. 'gemma-4-26B-A4B-it-qat-UD-Q4_K_XL'."""
+        path = str(self._props().get("model_path") or "")
         return re.split(r"[\\/]", path)[-1].removesuffix(".gguf") or self.model
 
     def _body(self, system: str, messages: list[dict], tools: list[dict], allow_tools: bool,

@@ -57,7 +57,7 @@ def test_truncated_or_tool_less_turns_run_no_tools():
 class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
-    def __init__(self, chunks=(), status=200, error=None):
+    def __init__(self, chunks=(), status=200, error=None, props=None):
         self.requests = []
         fake = self
 
@@ -66,8 +66,11 @@ class FakeServer:
                 pass
 
             def do_GET(self):
+                body = json.dumps(props).encode() if props is not None and self.path == "/props" else b""
                 self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
+                self.wfile.write(body)
 
             def do_POST(self):
                 fake.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
@@ -173,6 +176,21 @@ def test_errors_become_provider_errors(fake):
         LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
     with pytest.raises(ProviderError, match="is llama-server running"):
         LlamaCppProvider("m", "http://127.0.0.1:9").complete("s", [{"role": "user", "content": "q"}], [])
+
+
+def test_the_slot_size_comes_from_the_server():
+    """The prompt limit follows the server as it runs (16K on a laptop, 32K per slot on Kaggle)."""
+    from app.assistant.context import prompt_limit
+    server = FakeServer(props={"model_path": "/m/gemma-4-26B.gguf", "total_slots": 2,
+                               "default_generation_settings": {"n_ctx": 32768}, "modalities": {"vision": True}})
+    try:
+        model = LlamaCppProvider("m", server.url, max_tokens=4096)
+        assert model.ready() == (True, "gemma-4-26B (local, llama.cpp)")
+        assert model.slot_tokens == 32768 and prompt_limit(model) == 32768 - 4096 and model.sees_images()
+    finally:
+        server.close()
+    offline = LlamaCppProvider("m", "http://127.0.0.1:9")
+    assert offline.slot_tokens == 16_384 and offline._slot_tokens is None  # asked again once it is up
 
 
 def test_ready_reports_loading_and_missing_server(fake):

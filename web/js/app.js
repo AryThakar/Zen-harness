@@ -6,7 +6,7 @@ import { closeAsk, decision, openAsk } from "./ask.js";
 import { CARD_TYPES, addRun, artifactCard, codeCard, finishAnswer, onDrawn, passagesEl, redrawDiagrams, resultsCard, webSourcesEl } from "./cards.js";
 import { forgetCharts, redrawCharts } from "./charts.js";
 import { attachedCount, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
-import { activityEl } from "./steps.js";
+import { activityEl, loadTools } from "./steps.js";
 import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, svg, toast, copyText, projectHue } from "./util.js";
 import { wireViewer } from "./viewer.js";
 
@@ -754,7 +754,7 @@ wireFiles();
 playIntro();
 (async () => {
   updateComposer();
-  await refreshStatus();
+  await Promise.all([refreshStatus(), loadTools()]);  // the tools' names before any chat is drawn
   try { await loadWorkspaces(); }
   catch (e) { showProjects(); toast(e.message, true); }
 })();

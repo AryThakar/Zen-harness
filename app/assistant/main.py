@@ -26,6 +26,11 @@ answer comes back as the helper call's result, to hand the task back with. A rep
 output limit gets another step. When the model answers, the turn is indexed for recall (remember_turn: the user's words, the
 tools called, the answer) and a new chat is named after its first message.
 
+Every turn leaves a trace (Live.trace, stored as a 'trace' row when it ends - done, waiting for the user,
+stopped or failed): main's steps (seconds, stop, calls, tokens), each tool call (status, seconds), each
+helper's steps, results and checks, the hidden checks that fired, and the error if it failed - measured
+facts for the evaluation and a developer's view, instead of reconstructing a turn from its messages.
+
 Events streamed to the UI (dicts with "type"):
     text {text}  ·  tool_start {id, name, input}  ·  tool_end {id, name, status, summary}
     artifact {artifact: {tool, type, ...}}  ·  worker {worker, event, ...}  ·  stats {output_tokens, ...}
@@ -154,8 +159,12 @@ class Turn:
         self.ctx = ToolContext(ws=self.ws, index=self.index, conversation=self.chat_id, emit=emit,
                                visible_since=self.visible_since, ask=self.ask if self.live else None,
                                look=getattr(self.worker, "look", None))  # vision on the helpers' slot
-        self.tools = main_tools(self.worker, self.ctx, user_message=lambda: self.user_text,
-                                progress=lambda e: write(_worker_event(e)))
+        def progress(event: dict) -> None:
+            if self.live is not None:
+                self.live.note_helper(event)
+            write(_worker_event(event))
+
+        self.tools = main_tools(self.worker, self.ctx, user_message=lambda: self.user_text, progress=progress)
 
 
     def ask(self, card: dict) -> dict:
@@ -198,6 +207,9 @@ def _agent(state: TurnState, config) -> dict:
     turn = t.main.complete(system, visible, specs, allow_tools=not last, on_event=stream,
                            budget=QUICK_BUDGET if quick else None)
     stream.flush()
+    if t.live is not None:
+        t.live.note("steps", {"seconds": round(time.perf_counter() - started, 2), "stop": turn.stop,
+                              "calls": [c["name"] for c in turn.tool_calls], **({"usage": turn.usage} if turn.usage else {})})
     turn.text = mend_blocks(without_notes(STAMP.sub("", turn.text, count=1)))
     if turn.usage:
         t.write({"type": "stats", **turn.usage, "seconds": round(time.perf_counter() - started, 3)})
@@ -223,6 +235,8 @@ def _agent(state: TurnState, config) -> dict:
         return {"messages": new, "rounds": state["rounds"] + 1}
     check = nudge_for(turn.text, this_turn(history + [message]), t.tools) if not turn.tool_calls and not last else None
     if check:  # announced or claimed an action no tool did: one hidden nudge per turn (checks.py)
+        if t.live is not None:
+            t.live.note("checks", check[:120])
         nudge = {"role": "user", "content": check, "hidden": True, "check": True}
         t.store.append(t.chat_id, nudge)
         t.write({"type": "checking"})  # the page says it is checking, instead of a finished reply that won't end
@@ -240,8 +254,12 @@ def _tools(state: TurnState, config) -> dict:
         t.ctx.call_id = call["id"]  # a helper's question in place shows on this call's step
         refused = (repeated_failure(this_turn(state["messages"] + results), call)
                    or invented_numbers(call, state["messages"]))
+        began = time.perf_counter()
         result = (ToolResult("invalid_arguments", {"error": {"message": refused}}) if refused
                   else execute(t.ctx, call["name"], call["input"], t.tools))
+        if t.live is not None:
+            t.live.note("tools", {"name": call["name"], "status": result.status,
+                                  "seconds": round(time.perf_counter() - began, 2), **({"refused": refused} if refused else {})})
         if result.status == "ok" and (result.artifact or {}).get("type") == "question":
             # ask_user's question, or a request for the user's permission (approval.py): it is shown (its
             # artifact went out through emit); the answer becomes this call's result when the user gives
@@ -453,6 +471,28 @@ class Live:
     asking: int | None = None  # the event index of a helper's question waiting for its answer
     answer_value: str | None = None
     _answered: threading.Event | None = None
+    began: float = field(default_factory=time.perf_counter)
+    trace: dict = field(default_factory=lambda: {"steps": [], "tools": [], "helpers": []})
+
+    def note(self, part: str, entry) -> None:
+        """One fact for the turn's trace, with when it happened (seconds since the turn began)."""
+        at = round(time.perf_counter() - self.began, 2)
+        self.trace.setdefault(part, []).append({"at": at, **entry} if isinstance(entry, dict) else entry)
+
+    def note_helper(self, event: dict) -> None:
+        """A helper's progress, kept per helper task: its steps (stop, calls, tokens), results and checks."""
+        kind, at = event.get("type", ""), round(time.perf_counter() - self.began, 2)
+        if kind == "worker_start" or not self.trace["helpers"]:
+            self.trace["helpers"].append({"worker": event.get("worker"), "at": at, "steps": [], "tools": [], "checks": []})
+        helper = self.trace["helpers"][-1]
+        if kind == "worker_turn":
+            helper["steps"].append({"at": at, "stop": event.get("stop"), "calls": event.get("calls", []),
+                                    **({"usage": event["usage"]} if event.get("usage") else {})})
+        elif kind == "worker_result":
+            helper["tools"].append({"at": at, "name": event.get("name"), "status": event.get("status"),
+                                    "chars": event.get("chars")})
+        elif kind == "worker_check":
+            helper["checks"].append({"at": at, "problems": event.get("problems", []), "retry": event.get("retry")})
 
     def put(self, event: dict) -> None:
         with self.cond:
@@ -564,6 +604,7 @@ def _run(store: Store, chat_id: str, record: Callable[[Callable[[dict], None]], 
 
 
 def _work(turn: Live, store: Store, chat_id: str, user_text: str, main: Provider, worker: Provider) -> None:
+    ended = "failed"
     try:
         chat = store.chat(chat_id)
         ws, index = store.open(chat["workspace_id"])
@@ -575,15 +616,32 @@ def _work(turn: Live, store: Store, chat_id: str, user_text: str, main: Provider
             turn.put(event)
         if not store.chat(chat_id)["pending"]:  # else: waiting for the user's answer; the turn goes on after it
             turn.put({"type": "done", "answer": _finish(store, chat, index, user_text)})
+            ended = "done"
+        else:
+            ended = "waiting for the user"
     except Cancelled:
         turn.put({"type": "stopped"})
+        ended = "stopped"
     except ProviderError as exc:
         turn.put({"type": "error", "message": str(exc)})
-    except Exception:  # a bug, not the user's fault; details go to the log
+        turn.trace["error"] = str(exc)
+    except Exception as exc:  # a bug, not the user's fault; details go to the log
         log.exception("Assistant turn failed")
         turn.put({"type": "error", "message": "Something went wrong while answering. Please try again."})
+        turn.trace["error"] = f"{type(exc).__name__}: {exc}"[:300]
     finally:
+        _keep_trace(store, chat_id, turn, ended)
         _release(turn)
+
+
+def _keep_trace(store: Store, chat_id: str, turn: Live, ended: str) -> None:
+    """The turn's trace as its chat's last row; a chat deleted meanwhile has nowhere to keep it."""
+    trace = {"ended": ended, "seconds": round(time.perf_counter() - turn.began, 2), **turn.trace}
+    try:
+        if store.chat(chat_id) is not None:
+            store.append(chat_id, {"role": "trace", "trace": trace})
+    except Exception:  # noqa: BLE001 - a trace never costs the user their turn
+        log.exception("Could not keep the turn's trace")
 
 
 def _claim(store: Store, chat_id: str) -> Live | None:

@@ -45,7 +45,7 @@ def save(**fields) -> dict:
 def test_the_coder_keeps_its_file_and_main_gets_the_report_not_the_code(ctx):
     model = ScriptedProvider([turn(call("run_code", code=FIB)), turn(save(name="fib.py"))])
     out = run_worker(model, PROFILES["coder"], "fib(30)?", ctx)
-    assert out["file"] == "file_1" and out["name"] == "fib.py" and "warnings" not in out
+    assert out["files"][0] == {"id": "file_1", "name": "fib.py", "kind": "file"} and "warnings" not in out
     assert "code" not in out and "output" not in out  # main never gets the code
     report = out["report"]
     assert report.startswith("# Prints a Fibonacci number\n") and "## How it works\n`fib()`" in report
@@ -63,7 +63,7 @@ def test_a_report_with_a_missing_section_or_an_unknown_function_gets_one_chance(
     out = run_worker(model, PROFILES["coder"], "fib", ctx)
     told = model.requests[2]["messages"][-1]["content"]
     assert "limits is empty" in told and "fibonacci" in told and "doesn't define" in told
-    assert out["file"] == "file_1" and "warnings" not in out
+    assert out["files"][0]["id"] == "file_1" and "warnings" not in out
 
 
 def test_a_failing_script_gets_one_chance_then_is_kept_saying_it_fails(ctx):
@@ -79,7 +79,7 @@ def test_a_file_in_another_language_is_kept_without_running(ctx):
     rust = 'fn main() {\n    for i in 1..=10 { println!("{}", i); }\n}\n'
     model = ScriptedProvider([turn(save(name="count.rs", code=rust, how_it_works="A for loop over 1..=10."))])
     out = run_worker(model, PROFILES["coder"], "rust code to print 1 to 10", ctx)
-    assert ctx.ws.path(out["file"]).read_text() == rust and "- Last run: not run (only Python runs here)" in out["report"]
+    assert ctx.ws.path(out["files"][0]["id"]).read_text() == rust and "- Last run: not run (only Python runs here)" in out["report"]
 
 
 def test_python_passed_in_save_is_run_before_it_is_kept(ctx):
@@ -92,14 +92,14 @@ def test_a_plain_text_answer_is_asked_to_save(ctx):
     model = ScriptedProvider([turn(call("run_code", code=FIB)), ModelTurn(text="It prints 832040."),
                               turn(save(name="fib.py"))])
     out = run_worker(model, PROFILES["coder"], "fib", ctx)
-    assert "nothing was saved" in model.requests[2]["messages"][-1]["content"] and out["file"] == "file_1"
+    assert "nothing was saved" in model.requests[2]["messages"][-1]["content"] and out["files"][0]["id"] == "file_1"
 
 
 def test_work_that_ran_is_kept_even_when_the_coder_never_saves(ctx):
     model = ScriptedProvider([turn(call("run_code", code=FIB)), ModelTurn(text="Saved as fib_numbers.py."),
                               ModelTurn(text="Here is the save: fib_numbers.py")])
     out = run_worker(model, PROFILES["coder"], "fib", ctx)
-    assert out["name"] == "fib_numbers.py" and ctx.ws.path(out["file"]).read_text() == FIB
+    assert out["files"][0]["name"] == "fib_numbers.py" and ctx.ws.path(out["files"][0]["id"]).read_text() == FIB
     assert "- It printed: 832040" in out["report"] and "didn't describe this" in out["report"]
     assert "the coder didn't call save" in out["warnings"][-1]  # still flagged: the contract wasn't kept
 
@@ -112,7 +112,7 @@ def test_a_given_file_is_loaded_with_its_report_and_saved_under_its_name(ctx):
     out = run_worker(model, PROFILES["coder"], "make it the 10th", ctx, file="fib.py")
     opening = model.requests[0]["messages"][0]["content"]
     assert "The file to work on: fib.py (file_1), 7 lines" in opening and first["report"] in opening
-    assert out["file"] == "file_1" and "- It printed: 55" in out["report"]  # the same file, replaced
+    assert out["files"][0]["id"] == "file_1" and "- It printed: 55" in out["report"]  # the same file, replaced
     assert ctx.ws.ids("file") == ["file_1"] and ctx.ws.report("file_1").startswith("# Prints the 10th")
 
 
@@ -134,7 +134,7 @@ def test_run_outputs_are_linked_to_the_file(ctx):
                               turn(save(name="plot.py", how_it_works="Plots three points with matplotlib."))])
     out = run_worker(model, PROFILES["coder"], "plot", ctx)
     image = next(i for i in ctx.ws.ids("image"))
-    assert ctx.ws.entry(image)["parent"] == out["file"] and f"- It made: {image} (line.png)" in out["report"]
+    assert ctx.ws.entry(image)["parent"] == out["files"][0]["id"] and f"- It made: {image} (line.png)" in out["report"]
     assert next(a for a in ctx.seen if a["type"] == "file")["outputs"] == [image]
 
 

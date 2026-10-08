@@ -444,7 +444,7 @@ def test_made_lists_only_what_the_task_created(ctx):
                               tools_turn(call("query_data", sql="SELECT a * 2 AS b FROM data_1", save=True)),
                               report(results="Saved the doubled values as a new table.")])
     out = run_worker(model, PROFILES["data"], "double a", ctx)
-    assert out["made"] == ["data_2"]  # data_1 was the input
+    assert [f["id"] for f in out["files"]] == ["data_2"]  # data_1 was the input
 
 
 def test_a_question_without_an_answer_is_accepted_first_time(ctx):
