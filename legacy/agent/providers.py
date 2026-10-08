@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.config import Settings
+from legacy.config import Settings
 from app.providers import LlamaCppProvider, Provider
 
 from .claude import ClaudeProvider

@@ -29,7 +29,7 @@ from .search_index import SearchIndex
 from .workspace import Workspace
 
 PAGE = 15  # items per list page
-KINDS = ("table", "model", "image", "file")  # everything but notes
+KINDS = ("table", "image", "file")  # everything but notes
 MAX_WRITE = 1_000_000  # characters
 MODES = ("list", "find", "read", "write", "update", "rename", "delete", "download")
 # Formats that are not text: text written under such a name would be a broken file (a .docx is the

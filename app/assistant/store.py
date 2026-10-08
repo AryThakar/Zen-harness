@@ -6,7 +6,7 @@
                 pending  - an ask_user question waiting for its answer (JSON), or NULL
     messages    id, chat_id -> chats (ON DELETE CASCADE), role, body (the message as JSON), created_at
 
-A workspace's files, tables, models, sandbox and search index (documents, notes, past chats) live
+A workspace's files, tables, images, notes, sandbox and search index (documents, notes, past chats) live
 in its own folder, <root>/workspaces/<id>/. Deleting a workspace deletes its rows - its chats and
 their messages go with it by cascade - and then the folder, after checking that the folder really
 is inside <root>/workspaces. Deleting a chat also takes its turns out of the search index, so

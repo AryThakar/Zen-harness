@@ -1,17 +1,13 @@
-"""Document search: extraction, chunking and ranking (app/rag). The legacy library: legacy/tests/test_library.py."""
+"""Documents for search: extraction and chunking (app/rag); the ranking is the search index's
+(tests/test_tools_search.py)."""
 
-from datetime import date
-
-import numpy as np
 import pytest
 
 from app.rag.chunking import MAX_WORDS, OVERLAP_WORDS, chunk
 from app.rag.extract import Block, DocumentError, extract
-from legacy.rag.samples import _pdf, sample_documents  # sample documents of every kind, as test data
-from app.rag.search import BM25, hybrid, tokenize
+from tests.documents import pdf, samples
 
-END = date(2026, 9, 26)
-SAMPLES = dict(sample_documents(END))
+SAMPLES = samples()
 
 
 # --- extraction --------------------------------------------------------------------
@@ -44,7 +40,7 @@ def test_text_files_in_windows_encoding_are_read():
     ("sheet.xlsx", b"PK...", "aren't supported"),
     ("empty.txt", b"", "empty"),
     ("blank.txt", b"   \n\n  ", "No text found"),
-    ("scan.pdf", _pdf([""]), "scanned PDF"),
+    ("scan.pdf", pdf([""]), "scanned PDF"),
     ("broken.pdf", b"%PDF-1.4 garbage", "couldn't be read"),
     ("broken.docx", b"not a zip", "save it as .docx"),
 ])
@@ -71,22 +67,3 @@ def test_a_lone_heading_joins_the_next_passage():
               Block("We deliver in Mumbai within two days. " * 5, section="Delivery details")]
     chunks = chunk(blocks)
     assert len(chunks) == 1 and chunks[0].text.startswith("Delivery We deliver")
-
-
-# --- ranking -----------------------------------------------------------------------
-
-def test_bm25_matches_plurals_and_prefers_rare_terms():
-    assert tokenize("Returns and policies") == ["return", "policy"]
-    bm25 = BM25(["refund policy for returned goods", "delivery policy", "return a product within 7 days"])
-    scores = bm25.scores("how do I return products")
-    assert max(scores, key=scores.get) == 2
-
-
-def test_fusion_rewards_passages_both_methods_like():
-    bm25 = BM25(["apple pie recipe", "apple orchard", "banana bread"])
-    vectors = np.array([[1, 0], [0, 1], [0.6, 0.8]], dtype=np.float32)
-    ranked = hybrid(bm25, "apple", vectors, np.array([0, 1, 2]), np.array([1, 0], dtype=np.float32), k=3)
-    assert ranked[0].index == 0  # first by keywords and by meaning
-    assert ranked[0].keyword and ranked[0].similarity == pytest.approx(1.0)
-    only_meaning = hybrid(bm25, "cake", vectors, np.array([0, 1, 2]), np.array([1, 0], dtype=np.float32), k=1)
-    assert only_meaning[0].index == 0 and only_meaning[0].keyword is None  # no shared words, found by meaning

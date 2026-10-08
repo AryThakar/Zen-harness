@@ -174,7 +174,7 @@ code, pre, kbd { font-family: "Google Sans Code", "Cascadia Code", Consolas, mon
 .fdoc .mk { fill: none; stroke: var(--k); stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; }
 .fdoc text { fill: var(--k); font-family: var(--font); font-size: 6.2px; font-weight: 700; letter-spacing: .04em; --dials: "ROND" 100, "GRAD" 0; }
 .k-csv { --k: var(--k-green); } .k-py { --k: var(--k-blue); } .k-md { --k: var(--k-gray); } .k-pdf { --k: var(--k-red); }
-.k-doc { --k: var(--k-indigo); } .k-img { --k: var(--k-purple); } .k-model { --k: var(--k-orange); }
+.k-doc { --k: var(--k-indigo); } .k-img { --k: var(--k-purple); }
 .k-note .band { fill: var(--k-yellow); }
 .k-note .rule { fill: none; stroke: var(--doc-fold); stroke-width: 1.3; stroke-linecap: round; }
 :root:not([data-theme="light"]) .k-note .rule { stroke: rgba(255,255,255,.2); }

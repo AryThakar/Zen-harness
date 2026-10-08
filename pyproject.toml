@@ -3,13 +3,12 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ai-business-analyst"
-version = "0.5.0"
-description = "Upload business sales data, ask questions in plain English, get answers, forecasts and charts."
+name = "zen-assistant"
+version = "0.6.0"
+description = "Zen: a personal AI workbench on a local model - a main assistant with web, knowledge, data and coding helpers."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic>=1.8",
     "charset-normalizer>=3.0",
     "ddgs>=9.16",
     "duckdb>=1.1",
@@ -17,7 +16,6 @@ dependencies = [
     "fastembed>=0.8",
     "httpx>=0.27",
     "langgraph>=1.2",
-    "langgraph-checkpoint-sqlite>=3.1",
     "lxml>=5.0",
     "numpy>=1.26",
     "openpyxl>=3.1",
@@ -37,13 +35,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["plotly>=5.19", "requests>=2.31", "streamlit>=1.50"]
+# The first product (legacy/: business analytics with a Streamlit UI), kept apart from the assistant.
+legacy = ["anthropic>=1.8", "langgraph-checkpoint-sqlite>=3.1", "plotly>=5.19", "requests>=2.31", "streamlit>=1.50"]
 # Libraries for the scripts the assistant runs (run_python): charts, maths, data, ML, files.
 sandbox = ["beautifulsoup4>=4.12", "imbalanced-learn>=0.12", "lightgbm>=4.0", "matplotlib>=3.8", "networkx>=3.0",
            "nltk>=3.8", "opencv-python-headless>=4.8", "polars>=1.0", "python-pptx>=1.0", "scikit-image>=0.22",
            "seaborn>=0.13", "statsmodels>=0.14", "sympy>=1.12", "tabulate>=0.9", "xgboost>=2.0", "xlrd>=2.0",
            "xlsxwriter>=3.1"]
-dev = ["ai-business-analyst[ui,sandbox]", "httpx2>=2.0", "pytest>=8"]
+dev = ["zen-assistant[sandbox]", "httpx2>=2.0", "pytest>=8"]
 
 [tool.setuptools.packages.find]
 include = ["app*", "legacy*"]
@@ -52,4 +51,4 @@ include = ["app*", "legacy*"]
 "legacy.db" = ["migrations/*.sql"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "legacy/tests"]
+testpaths = ["tests"]  # the legacy product: pytest legacy/tests (needs the legacy extra)

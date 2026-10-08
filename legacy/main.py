@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from app.config import settings
+from legacy.config import settings
 from app.providers import Provider
 from app.rag.embed import Embedder, make_embedder
 from legacy.agent.graph import build_graph

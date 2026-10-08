@@ -315,9 +315,9 @@ LIBRARIES = ("numpy", "pandas", "scipy", "sklearn", "statsmodels", "matplotlib",
              "polars", "xgboost", "lightgbm", "imblearn", "cv2", "skimage", "PIL", "nltk",
              "openpyxl", "xlrd", "xlsxwriter", "docx", "pptx", "pypdf", "duckdb", "pyarrow", "tabulate")
 INSTALLED = tuple(name for name in LIBRARIES if importlib.util.find_spec(name))
-ID_AS_VARIABLE = re.compile(r"NameError: name '((?:data|file|model|image|note)_\d+\w*)' is not defined")
+ID_AS_VARIABLE = re.compile(r"NameError: name '((?:data|file|image|note)_\d+\w*)' is not defined")
 ID_AS_SQL_TABLE = re.compile(r"Table with name ((?:data)_\d+\w*) does not exist")
-ID_AS_PATH = re.compile(r"(?:FileNotFoundError|No such file).*?'((?:data|file|model|image|note)_\d+\w*)'")
+ID_AS_PATH = re.compile(r"(?:FileNotFoundError|No such file).*?'((?:data|file|image|note)_\d+\w*)'")
 
 
 def _hint(errors: str) -> str:

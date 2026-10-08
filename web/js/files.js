@@ -4,7 +4,7 @@
 
 import { api, itemUrl, KEYS, rowsUrl, state, uploadFile } from "./api.js";
 import { openViewer, viewerOpen } from "./viewer.js";
-import { $, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, modelTile, nf2, noteTile, plural, polish, save, svg, codeBlocks, copyText } from "./util.js";
+import { $, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText } from "./util.js";
 
 export const hooks = { thread: null, stick: () => {}, loadItems: async () => {}, submit: () => {}, hideHello: () => {}, updateComposer: () => {} };
 
@@ -217,8 +217,6 @@ export function fillDrawer() {
       const thumb = h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name || i.id, loading: "lazy" });
       return row(thumb, i.name || i.id, `${i.id}${i.width ? ` · ${i.width}×${i.height}` : ""}${from(i)}`, act("View", () => openViewer(thumb, "image")));
     }],
-    ["Models", itemsOf("model"), i => row(modelTile(), i.name,
-      `${i.id}${i.target ? ` · predicts ${i.target}` : ""}${i.metric ? ` · ${i.metric} ${typeof i.score === "number" ? nf2.format(i.score) : i.score}` : ""}`)],
   ];
   body.replaceChildren(...sections.filter(([, list]) => list.length).flatMap(([title, list, make]) => [
     h("div", { class: "sec" }, h("span", {}, title), h("span", {}, String(list.length))), ...list.map(make)]));

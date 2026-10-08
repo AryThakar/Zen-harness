@@ -24,7 +24,7 @@ from legacy.db.connection import Database
 from app.rag.chunking import Chunk, chunk
 from app.rag.embed import Embedder, EmbedderUnavailable
 from app.rag.extract import DocumentError, extract
-from app.rag.search import BM25, hybrid
+from .search import BM25, hybrid
 
 log = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from app.config import settings
+from legacy.config import settings
 from legacy.db.connection import Database
 
 from .mapper import MappingError

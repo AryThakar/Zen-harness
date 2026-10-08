@@ -13,7 +13,7 @@
     POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
     POST   /assistant/chats/{chat}/answer     {answer|null}   answer the waiting question - events
     POST   /assistant/chats/{chat}/stop                       stop its running turn (the Stop button)
-    GET    /assistant/workspaces/{ws}/items                   files, tables, images, models, the 5 pinned notes
+    GET    /assistant/workspaces/{ws}/items                   files, tables, images, the 5 pinned notes
     POST   /assistant/workspaces/{ws}/files   (upload)        a table, a document (indexed) or a file
     GET    /assistant/workspaces/{ws}/items/{item}/file       the stored file (images inline)
     GET    /assistant/workspaces/{ws}/items/{item}/rows       a table's first rows
@@ -52,7 +52,7 @@ IMAGES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp":
 SAFE = {"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
         "X-Content-Type-Options": "nosniff"}
 ID = re.compile(r"^[0-9a-f]{12}$")
-ITEM = re.compile(r"^(data|model|image|file|note)_\d+(?:_\w+)?$")
+ITEM = re.compile(r"^(data|image|file|note)_\d+(?:_\w+)?$")
 
 
 class NameIn(BaseModel):
@@ -237,7 +237,7 @@ def _sse(event: dict) -> str:
 def list_items(ws_id: str, request: Request) -> list[dict]:
     _workspace(request, ws_id)
     ws, _ = _store(request).open(ws_id)
-    keep = ("pages", "words", "passages", "title", "target", "metric", "score", "width", "height")
+    keep = ("pages", "words", "passages", "title", "width", "height")
     shown = {n["id"]: n["saved"] for n in notes_tool.pinned(ws)}  # notes: only the 5 the AI keeps in view
     out = []
     for i in ws.ids():

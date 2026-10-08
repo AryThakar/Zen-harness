@@ -125,7 +125,6 @@ export const noteTile = () => h("span", { class: "ficon k-note", title: "Note", 
   `<svg class="fdoc" viewBox="0 0 32 40" aria-hidden="true"><rect class="pg" x="4" y="2" width="24" height="36" rx="3.5"/>` +
   `<path class="band" d="M4 9.5V5.5A3.5 3.5 0 0 1 7.5 2h17A3.5 3.5 0 0 1 28 5.5v4z"/>` +
   `<path class="rule" d="M8.5 15.5h15M8.5 20h15M8.5 24.5h15M8.5 29h9"/></svg>` });
-export const modelTile = () => h("span", { class: "ficon k-model", title: "Model", html: sheet("model", "MODEL".slice(0, 4)) });
 // A project's colour: one of Apple's system hues, fixed by its id (a rename keeps it)
 const HUES = [211, 26, 140, 280, 4, 186, 330, 241];  // in the order given: neighbours differ most
 // given once, the first time a project shows (a free one while any is free), then kept on this computer

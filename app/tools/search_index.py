@@ -24,9 +24,13 @@ from pathlib import Path
 import numpy as np
 
 from app.rag.embed import Embedder, EmbedderUnavailable
-from app.rag.search import STOPWORDS
 
 RRF_K = 60
+STOPWORDS = frozenset("""
+a an and are as at be but by can could did do does for from had has have how i if in into is it its
+me my no not of on or our shall should so than that the their them then there these they this to
+us was we were what when where which who why will with would you your about any all also been
+""".split())  # left out of keyword queries: they match almost every passage
 CANDIDATES = 50
 # Meaning-only matches below this cosine similarity are dropped, so an unrelated question finds
 # nothing instead of the least-bad passage. Measured with bge-small-en-v1.5 on 11 queries: the right

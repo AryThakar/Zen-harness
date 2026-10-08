@@ -169,7 +169,7 @@ async function renameWorkspace(w) {
   catch (e) { toast(e.message, true); }
 }
 async function deleteWorkspace(w) {
-  if (!await confirmDialog(`Delete “${w.name}”?`, "All its chats, files, tables, notes, images and models are removed. This can't be undone.", "Delete")) return;
+  if (!await confirmDialog(`Delete “${w.name}”?`, "All its chats, files, tables, notes and images are removed. This can't be undone.", "Delete")) return;
   try { await api(`/workspaces/${w.id}`, { method: "DELETE" }); } catch (e) { toast(e.message, true); return; }
   if (load(KEYS.ws) === w.id) save(KEYS.ws, null);
   toast(`Deleted ${w.name}`);

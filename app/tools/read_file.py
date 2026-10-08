@@ -27,7 +27,7 @@ HELPER_CHARS = 12_000
 CODE = {".py", ".js", ".ts", ".java", ".c", ".h", ".cpp", ".cs", ".go", ".rs", ".rb", ".php", ".sh", ".ps1",
         ".sql", ".r", ".html", ".css", ".kt", ".swift", ".scala", ".m", ".pl", ".lua"}
 MAX_FILE = 10 * 1024 * 1024
-KINDS = ("file", "note", "image", "table", "model")
+KINDS = ("file", "note", "image", "table")
 
 
 @tool

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from app.config import settings
+from legacy.config import settings
 from legacy.db import registry
 from legacy.db.connection import Database
 

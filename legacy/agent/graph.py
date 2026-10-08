@@ -25,7 +25,7 @@ from typing import Annotated, TypedDict
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from app.config import settings
+from legacy.config import settings
 from legacy.db.connection import Database
 from legacy.rag.library import Library
 

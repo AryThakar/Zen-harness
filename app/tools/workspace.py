@@ -1,16 +1,15 @@
 """One folder for everything the tools make, with an id for every artifact.
 
     data_1   a table (an uploaded file, a cleaned copy, a saved query result, predictions)
-    model_1  a trained model
     image_1  an image (uploaded, generated, drawn by a script)
     file_1   any other file (code, documents, text)
     note_1   a note (the AI's memory; never listed as a file)
 
 Tools return ids, and take an id or a name: Workspace.resolve is the one resolver every tool uses
-(registry.execute applies it to every 'data', 'model' and 'file' input), so the model never has to
+(registry.execute applies it to every 'data', 'image' and 'file' input), so the model never has to
 tell 'sales_cleaned_v2.csv' from 'sales_cleaned.csv', and a copied listing line still works.
 registry.json records what each id is, where it came from (parent) and when it was made. Tables are
-stored as Parquet (types survive), models with joblib.
+stored as Parquet (types survive).
 
 One Workspace object serves a workspace to every thread - the running turn and the API's requests
 (an upload, the item list) - so every change and every walk over the registry holds its lock: two
@@ -28,7 +27,6 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-import joblib
 import pandas as pd
 from rapidfuzz import fuzz, process
 
@@ -37,11 +35,11 @@ from app.tools.table_reader import ReadError, read_file
 from .core import ToolError
 from .values import type_columns
 
-PREFIX = {"table": "data", "model": "model", "image": "image", "file": "file", "note": "note"}
+PREFIX = {"table": "data", "image": "image", "file": "file", "note": "note"}
 IMAGE_FORMATS = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"), "WEBP": ("webp", "image/webp"),
                  "GIF": ("gif", "image/gif")}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-ITEM_REF = re.compile(r"\b((?:data|model|image|file|note)_\d+(?:_\w+)?)\b")
+ITEM_REF = re.compile(r"\b((?:data|image|file|note)_\d+(?:_\w+)?)\b")
 # The tool that does handle an item of the wrong kind, said in the error so the model's next call fits.
 WRONG_KIND = {("table", "file"): " A table: a script reads it with table('{id}'), and analyze_data works with it.",
               ("image", "file"): " An image: it has no text - view_image looks at it and says what it shows.",
@@ -92,12 +90,6 @@ class Workspace:
         new_id = self._new_id("table")
         df.to_parquet(self.root / f"{new_id}.parquet", index=False)
         self._add(new_id, "table", name, parent, rows=len(df), columns=list(map(str, df.columns)), meta=meta)
-        return new_id
-
-    def add_model(self, model, name: str, parent: str | None = None, meta: dict | None = None) -> str:
-        new_id = self._new_id("model")
-        joblib.dump(model, self.root / f"{new_id}.joblib")
-        self._add(new_id, "model", name, parent, meta=meta or {})
         return new_id
 
     # ------------------------------------------------------------------ reading
@@ -152,7 +144,7 @@ class Workspace:
         """Remove an item and its stored file - only ever after the user approved it (approval.py).
         Items made from it stay; their 'from' names an id that is gone."""
         e = self.entry(item_id)
-        stored = e.get("file") or {"table": f"{item_id}.parquet", "model": f"{item_id}.joblib"}.get(e["kind"])
+        stored = e.get("file") or (f"{item_id}.parquet" if e["kind"] == "table" else None)
         del self._reg["items"][item_id]
         self._save()
         for name in (stored, e.get("report", {}).get("file")):
@@ -198,10 +190,6 @@ class Workspace:
         if "file" not in e:
             raise ToolError(f"'{item_id}' is a {e['kind']}, not a stored file.", field="id")
         return self.root / e["file"]
-
-    def model(self, item_id: str):
-        self._expect(item_id, "model")
-        return joblib.load(self.root / f"{item_id}.joblib")
 
     @_locked
     def entry(self, item_id: str) -> dict:
@@ -286,8 +274,6 @@ class Workspace:
                 cols = e.get("columns", [])
                 shown = ", ".join(cols[:8]) + (" ..." if len(cols) > 8 else "")
                 info = f"{e['rows']:,} rows, {len(cols)} columns ({shown})"
-            elif e["kind"] == "model":
-                info = f"predicts {meta.get('target')} ({meta.get('metric')} {meta.get('score')})"
             elif e["kind"] == "image":
                 info = f"image {meta['width']}x{meta['height']}" if meta.get("width") else "image"
             elif "passages" in meta:  # an uploaded document, indexed for search: say what it is about
