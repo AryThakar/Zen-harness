@@ -6,6 +6,8 @@ INSTALLED are there: the project's "sandbox" extra) inside the workspace's sandb
 - a minimal environment: no API keys or other secrets from the app's environment; TEMP, TMP and
   HOME point into the sandbox; matplotlib draws off-screen and open figures are saved as images
 - output cut to 10,000 characters (start and end kept)
+- typed input (stdin), when given: what a person would type, one line per input() call - so a program
+  that asks (a game, a menu) can be run and tested; without it, input() ends the run with EOFError
 - table("data_1") to read a workspace table (a copy - the original can't be changed) and path("file_1")
   for where a stored file is; open("file_1") and open("story.txt") (a stored file's original name)
   work too, because small models write that
@@ -43,7 +45,7 @@ from pathlib import Path
 import pandas as pd
 
 from .core import ToolError, ToolResult, jsonable
-from .workspace import IMAGE_SUFFIXES, Workspace
+from .workspace import IMAGE_SUFFIXES, Workspace, read_table
 
 DEFAULT_TIMEOUT = 30
 MAX_TIMEOUT = 120
@@ -217,8 +219,11 @@ finally:
 '''
 
 
-def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT) -> ToolResult:
-    """Run a Python script; returns its printed output, errors and the files it made."""
+def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
+               stdin: str | None = None) -> ToolResult:
+    """Run a Python script; returns its printed output, errors and the files it made. reuse: the items an
+    earlier run of the same task made, by the path it wrote - written again, each is updated in place
+    instead of becoming another item (measured: 3 runs of one script left 3 copies of its chart and table)."""
     code = str(code)
     if not code.strip():
         return _invalid("code is empty.", "code")
@@ -234,19 +239,21 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT) -> Tool
     before = _snapshot(box)
 
     started = time.perf_counter()
+    typed = stdin is not None and stdin != ""
     proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", CELL], cwd=box, env=_env(box, tmp),
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                            **_new_group())
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.PIPE if typed else subprocess.DEVNULL, **_new_group())
     timed_out = False
     try:
-        out, err = proc.communicate(timeout=timeout)
+        out, err = proc.communicate(input=(stdin if stdin.endswith("\n") else stdin + "\n").encode("utf-8")
+                                    if typed else None, timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
         _kill_tree(proc)
         out, err = proc.communicate()
     seconds = round(time.perf_counter() - started, 2)
 
-    files = _register(ws, box, before)
+    files = _register(ws, box, before, reuse or {})
     result = {"exit_code": proc.returncode, "seconds": seconds,
               "output": _cut(out.decode("utf-8", "replace"))}
     errors = OWN_FRAME.sub("", _cut(err.decode("utf-8", "replace")).replace(str(box), "."))
@@ -324,6 +331,9 @@ def _hint(errors: str) -> str:
     """The fix for mistakes small models repeat run after run: a workspace id used as a variable,
     or given to a library that opens files itself (pandas does not go through open()); and what to
     do when the script reached for the computer's files."""
+    if "EOFError" in errors and "input(" in errors:  # the program asked for typed input and had none
+        return (" The program waits for typed input (input()): run it again with input = what a person would type, "
+                "one line per input() call, e.g. input='w\\nw\\nq'.")
     if "files on the user's computer are off limits" in errors:
         return (" Scripts can't read or change files on the user's computer, start programs or list drives - "
                 "only workspace items and files written here. Tell the user that instead of trying again.")
@@ -359,9 +369,9 @@ def _snapshot(box: Path) -> dict[Path, tuple[int, float]]:
             if p.is_file() and ".tmp" not in p.relative_to(box).parts}
 
 
-def _register(ws: Workspace, box: Path, before: dict) -> list[dict]:
-    """Workspace ids for the files the script created or changed - new items; a script never changes
-    a stored one."""
+def _register(ws: Workspace, box: Path, before: dict, reuse: dict[str, str]) -> list[dict]:
+    """Workspace ids for the files the script created or changed - new items, or the same task's earlier
+    output under that path, updated (reuse); a script never changes a stored one."""
     after = _snapshot(box)
     new = [p for p, sig in after.items() if p.name not in (CELL, SCRIPT) and before.get(p) != sig]
     out = []
@@ -371,26 +381,36 @@ def _register(ws: Workspace, box: Path, before: dict) -> list[dict]:
             out.append({"path": rel, "note": "larger than 20 MB; not registered"})
             continue
         suffix = p.suffix.lower()
+        earlier = reuse.get(rel) if reuse.get(rel) in ws.ids() else None
+        made = {"from": "run_python"}  # made by the assistant: it may change it again without asking
         try:
-            if suffix == ".csv":
-                item = ws.add_file(p)
-                ws.set_meta(item, "from", "run_python")  # made by the assistant, like its images and files
-            elif suffix == ".parquet":
-                item = ws.add_table(pd.read_parquet(p), name=rel, meta={"from": "run_python"})
+            if suffix in (".csv", ".parquet"):
+                df, read = read_table(p) if suffix == ".csv" else (pd.read_parquet(p), {})
+                if earlier and ws.kind(earlier) == "table":
+                    ws.replace_table(earlier, df, {**read, **made})
+                    item = earlier
+                else:
+                    item = ws.add_table(df, name=rel, meta={**read, **made})
             elif suffix in IMAGE_SUFFIXES:  # SVG stays a file: it can carry scripts, the UI never shows it inline
                 try:
-                    item = ws.add_image(p.read_bytes(), rel, meta={"from": "run_python"})
+                    if earlier and ws.kind(earlier) == "image":
+                        ws.replace_image(earlier, p.read_bytes(), made)
+                        item = earlier
+                    else:
+                        item = ws.add_image(p.read_bytes(), rel, meta=made)
                 except ToolError:
-                    item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip("."), name=rel, meta={"from": "run_python"})
+                    item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip("."), name=rel, meta=made)
                     out.append({"path": rel, "id": item, "note": "not a readable image; kept as a file"})
                     continue
+            elif earlier and ws.kind(earlier) == "file" and ws.entry(earlier)["file"].endswith(suffix or ".bin"):
+                ws.replace_bytes(earlier, p.read_bytes(), made)
+                item = earlier
             else:
-                item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip(".") or "bin", name=rel,
-                                    meta={"from": "run_python"})
+                item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip(".") or "bin", name=rel, meta=made)
         except (ToolError, ValueError, OSError) as exc:
             out.append({"path": rel, "note": f"not registered: {exc}"})
             continue
-        out.append({"path": rel, "id": item})
+        out.append({"path": rel, "id": item, **({"updated": True} if item == earlier else {})})
     if len(new) > MAX_NEW_FILES:
         out.append({"note": f"{len(new) - MAX_NEW_FILES} more files were written but not registered"})
     return out

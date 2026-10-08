@@ -59,7 +59,7 @@ def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
     first = main.requests[0]
     assert first["system"].startswith(MAIN) and "Now:" not in first["system"]  # no clock in the system prompt
     assert {t["name"] for t in first["tools"]} == {"get_weather", "generate_image", "view_image", "draw_diagram",
-                                                    "calculate", "save_note", "ask_user", "files", "research_web",
+                                                    "calculate", "notes", "ask_user", "files", "research_web",
                                                     "ask_knowledge", "write_code"}  # analyze_data once there is a table
     assert store.chat(chat["id"])["title"] == "What is 15% of 2400?"
     _, index = store.open(chat["workspace_id"])

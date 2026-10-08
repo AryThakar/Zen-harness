@@ -13,7 +13,7 @@ export async function loadTools() { try { Object.assign(TOOLS, await api("/tools
 export const isDelegate = name => Boolean(TOOLS[name]?.helper);
 export const helperName = name => TOOLS[name]?.helper;
 export function stepLabel(name, done, input) {
-  const t = TOOLS[name], pair = (name === "files" && t?.modes?.[input?.mode]) || (t && [t.doing, t.done]);
+  const t = TOOLS[name], pair = t?.modes?.[input?.mode] || (t && [t.doing, t.done]);
   return (pair || [name.replace(/_/g, " "), name.replace(/_/g, " ")])[done ? 1 : 0];
 }
 

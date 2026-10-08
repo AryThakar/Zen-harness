@@ -45,6 +45,8 @@ class Scratch:
     last: dict | None = None  # the last run: code, ok, seconds, output, errors, files
     made: list[str] = field(default_factory=list)
     images: list[str] = field(default_factory=list)  # images the runs made (a helper that sees images is shown them)
+    outputs: dict[str, str] = field(default_factory=dict)  # path a run wrote -> its item, updated when written again
+    input: str | None = None  # the typed input of the last run (fix_code runs again with it unless given another)
 
     @property
     def runs(self) -> bool:
@@ -52,17 +54,19 @@ class Scratch:
         return self.name is None or self.name.lower().endswith(".py")
 
 
-def run_code(ws: Workspace, scratch: Scratch, code: str, timeout: int = DEFAULT_TIMEOUT) -> ToolResult:
-    """Write the whole scratch file and run it."""
+def run_code(ws: Workspace, scratch: Scratch, code: str, timeout: int = DEFAULT_TIMEOUT,
+             input: str | None = None) -> ToolResult:
+    """Write the whole scratch file and run it (input: what a person would type, for a program that asks)."""
     code = str(code)
     if not code.strip():
         return _invalid("code is empty: write the whole script.", "code")
     scratch.code = code  # exactly as written: the code that is saved is the code that ran
+    scratch.input = input
     return _run(ws, scratch, timeout)
 
 
 def fix_code(ws: Workspace, scratch: Scratch, from_line: int, to_line: int, new_code: str,
-             timeout: int = DEFAULT_TIMEOUT) -> ToolResult:
+             timeout: int = DEFAULT_TIMEOUT, input: str | None = None) -> ToolResult:
     """Replace lines from_line-to_line (inclusive) of the scratch file with new_code, and run it.
     to_line = from_line - 1 inserts before from_line without removing anything."""
     if not scratch.code:
@@ -75,6 +79,8 @@ def fix_code(ws: Workspace, scratch: Scratch, from_line: int, to_line: int, new_
     if len("\n".join(new)) > MAX_CODE:
         return _invalid(f"The script would be longer than {MAX_CODE:,} characters.", "new_code")
     scratch.code = "\n".join(new) + ("\n" if scratch.code.endswith("\n") else "")
+    if input is not None:
+        scratch.input = input
     return _run(ws, scratch, timeout)
 
 
@@ -82,12 +88,13 @@ def _run(ws: Workspace, scratch: Scratch, timeout: int = DEFAULT_TIMEOUT) -> Too
     if not scratch.runs:
         return ok({"lines": len(scratch.code.splitlines()),
                    "note": f"{scratch.name} isn't Python: kept in your scratch file, not run (only Python runs here)."})
-    result = run_python(ws, scratch.code, timeout)
+    result = run_python(ws, scratch.code, timeout, reuse=scratch.outputs, stdin=scratch.input)
     res = result.result
-    scratch.last = {"code": scratch.code, "ok": result.status == "ok", "seconds": res.get("seconds"),
+    scratch.last = {"code": scratch.code, "ok": result.status == "ok", "seconds": res.get("seconds"), "input": scratch.input,
                     "output": res.get("output", ""), "errors": res.get("errors", ""),
                     "files": [f["id"] for f in res.get("files", []) if f.get("id")]}
-    scratch.made += scratch.last["files"]
+    scratch.made += [i for i in scratch.last["files"] if i not in scratch.made]
+    scratch.outputs.update({f["path"]: f["id"] for f in res.get("files", []) if f.get("id")})
     res["lines"] = len(scratch.code.splitlines())
     scratch.images += [i for i in scratch.last["files"] if ws.kind(i) == "image"]  # the runner shows them
     found = ERROR_LINE.findall(res.get("errors", "")) if result.status != "ok" else []
@@ -198,6 +205,9 @@ def facts(ws: Workspace, scratch: Scratch, name: str, item: str, outputs: list[s
     else:
         error = next((ln for ln in reversed((last or {}).get("errors", "").splitlines()) if ln.strip()), "an error")
         lines.append(f"Last run: failed - {error.strip()[:200]}")
+    if last and last.get("input"):
+        typed = last["input"].splitlines()
+        lines.append(f"Run with typed input: {len(typed)} line(s) ({', '.join(typed[:5])}{' ...' if len(typed) > 5 else ''})")
     printed = " ".join((last or {}).get("output", "").split())
     if printed:
         lines.append("It printed: " + (printed if len(printed) <= PRINTED else printed[:PRINTED] + " ..."))

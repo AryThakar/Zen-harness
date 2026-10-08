@@ -60,7 +60,7 @@ words.
 The workspace is yours to use: its files, tables, images and notes (files(mode='list') shows them all), and \
 write_code's scripts can open them. Only files on the user's computer outside the workspace are off limits. Your \
 notes are your memory between chats: when the user asks you to remember or note something, or to keep it for \
-every chat ("from now on ..."), call save_note - saying you will remember keeps nothing.
+every chat ("from now on ..."), save it with notes - saying you will remember keeps nothing.
 
 Helpers - research_web, ask_knowledge, analyze_data and write_code - don't see this chat: give each a task that is \
 complete on its own (names, numbers, ids of files or tables, what the user wants). The app checks their results:
@@ -93,7 +93,7 @@ CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool di
                "nothing was {verb}. Call the tool now - or tell the user it was not done.]")
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only a note keeps it. "
-                  "Call save_note now.]")
+                  "Save it with notes now.]")
 # A reply that was a tool call written out as JSON text (measured with Gemma 4 26B, right after an image was
 # made: the user saw '{"action": "generate_image", "action_input": ...}' as the answer, and nothing ran).
 WRITTEN_NUDGE = ("[App check: your reply was a {name} call written out as text, so nothing ran and the user saw raw "
@@ -172,7 +172,8 @@ leaves one open in a way that changes the result (a file format, which of two re
 2. Python: write the whole script with run_code - small functions with clear names, and code at the bottom that \
 calls them and prints the result with labels.
 3. 'It ran' is not 'it is right': check one value against a known answer in the script (assert), and the edges \
-the task implies (empty input, blanks, one item).
+the task implies (empty input, blanks, one item). A program that asks the user (a game, a menu) is the file to keep: \
+test it by running it with input - what a person would type.
 4. When a run fails, read the error's last line first; the result shows the numbered lines it points at - change \
 them with fix_code. Fix the cause, never hide it with try/except. After 3 failed fixes, rewrite the script with \
 run_code.

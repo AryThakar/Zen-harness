@@ -102,7 +102,10 @@ def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():
         assert asked_to_remember(said), said
     user = {"role": "user", "content": "[Mon 05 Oct 2026, 14:00] remember my name is Ary", "text": "remember my name is Ary"}
     assert nudge_for("Got it, Ary. I will remember that.", [user]) == REMEMBER_NUDGE
-    saved = [user, {"role": "assistant", "text": "", "tool_calls": [{"id": "c1", "name": "save_note", "input": {}}]},
+    listed = [user, {"role": "assistant", "text": "", "tool_calls": [{"id": "c0", "name": "notes", "input": {"mode": "list"}}]},
+              {"role": "tool", "tool_call_id": "c0", "content": "{}", "is_error": False}]
+    assert nudge_for("Noted: your name is Ary.", listed) is not None  # listing notes saves nothing
+    saved = [user, {"role": "assistant", "text": "", "tool_calls": [{"id": "c1", "name": "notes", "input": {"mode": "save"}}]},
              {"role": "tool", "tool_call_id": "c1", "content": "{}", "is_error": False}]
     assert nudge_for("Saved: your name is Ary.", saved) is None
 
@@ -131,7 +134,7 @@ def answer(text: str) -> ModelTurn:
 
 def test_an_announcement_gets_one_nudge_then_the_tool_runs(store, chat):
     main = ScriptedProvider([answer("I will now save a note with your name.\n\nOne moment."),
-                             turn(call("save_note", title="Name", content="The user is Ary.")),
+                             turn(call("notes", mode="save", title="Name", content="The user is Ary.")),
                              answer("Saved a note: you are Ary.")])
     events = list(send(store, chat["id"], "put my name, Ary, in a note", main, ScriptedProvider([])))
     assert events[-1]["answer"] == "Saved a note: you are Ary."
@@ -184,9 +187,9 @@ def test_a_helper_task_with_the_users_own_numbers_runs(store, chat):
 def test_remember_without_a_note_is_nudged_and_the_note_saved(store, chat):
     """Measured: "your name is Zen and my name is Ary, remember that" -> "I will remember that", no note."""
     main = ScriptedProvider([answer("Understood, Ary. I will remember that."),
-                             turn(call("save_note", title="Names", content="The user is Ary; the assistant is Zen.")),
+                             turn(call("notes", mode="save", title="Names", content="The user is Ary; the assistant is Zen.")),
                              answer("Saved: you are Ary, and I am Zen.")])
     events = list(send(store, chat["id"], "your name is Zen and my name is Ary, remember that", main, ScriptedProvider([])))
     assert events[-1]["answer"] == "Saved: you are Ary, and I am Zen."
     assert main.requests[1]["messages"][-1]["content"] == REMEMBER_NUDGE
-    assert any(m["role"] == "tool" and m["name"] == "save_note" for m in store.messages(chat["id"]))
+    assert any(m["role"] == "tool" and m["name"] == "notes" for m in store.messages(chat["id"]))

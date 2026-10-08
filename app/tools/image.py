@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from contextlib import nullcontext
 from typing import Literal
 from urllib.parse import quote
@@ -35,6 +36,7 @@ MODEL = "zimage"
 KEYS_PAGE = "https://enter.pollinations.ai/keys"
 SIZES = {"square": (1024, 1024), "wide": (1344, 768), "tall": (768, 1344)}
 MAX_PROMPT = 4000
+NAME_CHARS = 40  # of the file name made from the prompt
 MAX_BYTES = 25 * 1024 * 1024
 FORMATS = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"), "WEBP": ("webp", "image/webp")}
 SELF_CHECK = "Describe this image in one or two sentences. If it contains any writing, quote it exactly."
@@ -82,12 +84,25 @@ def generate_image(ws: Workspace, prompt: str, size: Literal["square", "wide", "
     if fmt not in FORMATS:
         raise ToolError(f"The image service sent an unsupported format ({fmt}).", invalid=False)
     mime = FORMATS[fmt][1]
-    image_id = ws.add_image(data, prompt[:80], meta={"prompt": prompt, "provider": f"pollinations/{model}"})
+    image_id = ws.add_image(data, file_name(prompt, FORMATS[fmt][0]),
+                            meta={"prompt": prompt, "provider": f"pollinations/{model}"})
     result = {"image": image_id, "width": w, "height": h, "summary": "The image was generated and is shown to the user."}
     seen = _look(look, data)
     if seen:
         result.update(what_it_shows=seen, check=CHECK)
     return ok(result, {"type": "image", "id": image_id, "mime": mime, "width": w, "height": h, "prompt": prompt})
+
+
+def file_name(prompt: str, ext: str) -> str:
+    """A short file name from the prompt's first words, with its extension: 'a-teal-square.png'. Measured:
+    named after the prompt itself, with no extension, a script couldn't open the picture by its name."""
+    words = re.findall(r"[a-z0-9]+", prompt.lower())
+    stem = ""
+    for word in words:
+        if len(stem) + len(word) + 1 > NAME_CHARS:
+            break
+        stem = f"{stem}-{word}" if stem else word
+    return f"{stem or 'image'}.{ext}"
 
 
 def _look(look, data: bytes) -> str | None:

@@ -7,7 +7,7 @@ note and file has an id (data_1, image_1, note_1, file_1), and every tool takes 
 FTS5 + local embeddings, fused by rank). Deleting, downloading and replacing the user's file wait for
 the user's click (approval.py); scripts have no network (sandbox.py).
 
-main's own:     files (file_ops.py, read_file.py), save_note (notes.py), get_weather (weather.py),
+main's own:     files (file_ops.py, read_file.py), notes (notes.py), get_weather (weather.py),
                 generate_image (image.py), draw_diagram (diagram.py), calculate (calc.py),
                 ask_user (ask.py), view_image (vision.py)
 web:            web_search, read_webpage (web.py)

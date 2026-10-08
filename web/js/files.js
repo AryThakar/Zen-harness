@@ -1,6 +1,7 @@
 // The project's files: the Files & data panel (everything in the project), the file panel beside the chat
-// (view only: code like an editor, Markdown as a page, text, tables as a grid, HTML in a frame that runs
-// nothing, PDFs in the browser's viewer) and uploads (drop, paste or pick), each showing its progress.
+// (view only: code like an editor, Markdown as a page, text, tables as a grid, HTML running in a sealed frame -
+// a page or game the coder made can be played - PDFs in the browser's viewer) and uploads (drop, paste or
+// pick), each showing its progress.
 
 import { api, itemUrl, KEYS, rowsUrl, state, uploadFile } from "./api.js";
 import { openViewer, viewerOpen } from "./viewer.js";
@@ -31,6 +32,12 @@ function shape(item) {
 }
 export const canView = item => !!shape(item);
 const LIMIT = 4 << 20;  // larger text files are downloaded, not shown
+// An HTML file runs - its scripts, styles and inline pictures - in a frame sealed two ways: the sandbox gives it
+// an origin of its own (no access to this app, its storage or its API), and this policy, read before anything
+// in the file, lets it load nothing from anywhere (no network, no other pages).
+const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; ` +
+  `script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; ` +
+  `font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'">`;
 
 /* ═══ The file panel ════════════════════════════════════════════════════ */
 const fv = { item: null, mode: "preview", text: null, table: null, blob: null };
@@ -112,8 +119,9 @@ function show() {
     body.append(page);
     status = ["Markdown", "preview"];
   } else {
-    body.append(h("iframe", { class: "html-view", sandbox: "", srcdoc: fv.text, title: item.name }));  // runs nothing, reaches nothing
-    status = ["HTML", "preview", "scripts off"];
+    body.append(h("iframe", { class: "html-view", sandbox: "allow-scripts allow-modals allow-pointer-lock",
+      srcdoc: SEALED + fv.text, title: item.name }));
+    status = ["HTML", "runs here", "no network"];
   }
   $("#fvStatus").innerHTML = status.filter(Boolean).map(s => `<span>${escapeHtml(s)}</span>`).join("") + "<span>View only</span>";
 }

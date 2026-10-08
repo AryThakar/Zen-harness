@@ -73,7 +73,7 @@ def test_a_tool_result_with_plain_notes_is_traced(ctx):
 
 def test_main_slot_sees_data_delegate_only_with_a_table(ctx):
     names = set(main_tools(ScriptedProvider([]), ctx))
-    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "save_note", "ask_user",
+    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "ask_user",
                      "files", "research_web", "ask_knowledge", "write_code"}
     ctx.ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
     assert "analyze_data" in main_tools(ScriptedProvider([]), ctx)

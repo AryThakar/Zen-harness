@@ -36,6 +36,38 @@ def test_fix_code_changes_only_those_lines_and_runs_again(ws):
     assert r.status == "ok" and len(scratch.code.splitlines()) == 5
 
 
+def test_running_again_updates_what_the_task_made_instead_of_adding_copies(ws):
+    """Measured: 3 runs of one script left 3 copies of its chart and its table in the workspace."""
+    scratch = Scratch()
+    draws = ("from PIL import Image\nImage.new('RGB', ({w}, 20)).save('chart.png')\n"
+             "open('out.csv', 'w').write('a,b\\n{w},2\\n')\n")
+    first = run_code(ws, scratch, draws.format(w=10))
+    again = run_code(ws, scratch, draws.format(w=30))
+    assert [f["id"] for f in again.result["files"]] == [f["id"] for f in first.result["files"]]
+    assert all(f.get("updated") for f in again.result["files"])
+    image, table = (f["id"] for f in again.result["files"])
+    assert ws.ids() == [image, table] and ws.entry(image)["meta"]["width"] == 30
+    assert ws.table(table)["a"].tolist() == [30] and ws.entry(table)["meta"]["from"] == "run_python"
+    other = run_code(ws, Scratch(), draws.format(w=40))  # another task: its own new items
+    assert {f["id"] for f in other.result["files"]}.isdisjoint({image, table})
+
+
+def test_a_program_that_asks_is_run_with_typed_input(ws):
+    """Measured: a game waiting for keyboard input couldn't run, so the coder saved its test script instead."""
+    game = ("secret = 7\nwhile True:\n    guess = int(input('Guess: '))\n    if guess == secret:\n"
+            "        print('You win!')\n        break\n    print('Higher' if guess < secret else 'Lower')\n")
+    scratch = Scratch()
+    blind = run_code(ws, scratch, game)
+    assert blind.status == "invalid_arguments" and "waits for typed input" in blind.result["error"]["message"]
+    played = run_code(ws, scratch, game, input="3\n9\n7")
+    assert played.status == "ok" and played.result["output"].split() == ["Guess:", "Higher", "Guess:", "Lower", "Guess:",
+                                                                         "You", "win!"]
+    again = fix_code(ws, scratch, 5, 5, "        print('Got it!')")  # the same typed input again
+    assert again.status == "ok" and "Got it!" in again.result["output"]
+    from app.tools.scratch import facts
+    assert "Run with typed input: 3 line(s) (3, 9, 7)" in facts(ws, scratch, "game.py", "file_1", [])
+
+
 def test_fix_code_says_what_lines_exist(ws):
     assert "run_code first" in fix_code(ws, Scratch(), 1, 1, "x = 1").result["error"]["message"]
     scratch = Scratch()

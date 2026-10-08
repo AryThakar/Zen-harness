@@ -175,5 +175,5 @@ DELEGATES = {
 DELEGATE_OF = {d.profile: name for name, d in DELEGATES.items()}  # helper -> main's tool for it
 
 
-MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "save_note", "ask_user",
+MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "ask_user",
                "files")

@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from app.tools import weather
-from app.tools.image import generate_image
+from app.tools.image import file_name, generate_image
 from app.tools.weather import get_weather
 from app.tools.workspace import Workspace
 
@@ -142,6 +142,9 @@ def test_image_is_checked_and_stored(ws, keyed):
     assert url.raw_path.split(b"?")[0] == b"/image/a%20teal%20square" and url.params["width"] == "1344"
     assert url.params["model"] == "zimage" and calls[0].headers["Authorization"] == "Bearer sk_test"
     assert "prompt" not in r.result  # the model gets the id, not its own prompt back
+    assert ws.entry("image_1")["name"] == "a-teal-square.png"  # a name a script can open, with its extension
+    long = file_name("A photo-real red fox, sitting in deep snow at dawn; soft light, 85mm lens", "jpg")
+    assert long == "a-photo-real-red-fox-sitting-in-deep.jpg" and file_name("!!!", "png") == "image.png"
 
 
 def test_a_generated_image_is_looked_at_so_main_can_check_the_request(ws, keyed):

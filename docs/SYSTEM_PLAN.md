@@ -58,6 +58,27 @@ first, click/type tools only if the fallback proves its worth); EmbeddingGemma 2
 **Order:** foundations and the read-through → the rest of Tier 1 → one evaluation (fixed tasks, a held-out
 set, honest numbers) → README and clean-up. Tier 2 items enter only when chosen.
 
+**Progress (2026-10-09), all tests passing (437):**
+- Read-through of app/ (every module, plus a static scan for dead code and unused imports). Found and
+  fixed: a script run again in one task registered its outputs again (3 runs left 3 copies of a chart and
+  a table) - now the same items are updated in place. Removed: the "model" item kind (never created).
+  app/ and tests/ no longer import legacy/ (it has its own config and search code), so it can be deleted.
+- Foundations: one tool definition (labels with each tool; the UI reads them from GET /assistant/tools,
+  its own copy - with a stale train_model - gone); each helper defined once (Delegate); one result shape
+  (answer, sources, report, files, briefing); workers.py split into a package (contracts, runner,
+  evidence, checks, repairs); a trace per turn (steps, tool times, helper checks, errors - GET
+  /assistant/chats/{id}/traces); the slot size read from llama-server instead of a constant.
+- Tier 1: notes(save, list, delete - delete asks first); web: a status on every read (ok, cut, partial;
+  failures with a reason: blocked, not_found, unreachable, unsupported), a /wiki/ page that blocks the
+  plain read is read through its MediaWiki API (measured live: the Fandom page that gave 403 now reads),
+  and recent= for search; the coder's programs take typed input (input=); HTML files run in the viewer in
+  a sealed frame (scripts on; no network, no access to the app - checked in the browser); generated
+  images get file names with extensions.
+- Changed from the plan: no separate capability list (main already reads every tool's and helper's
+  description); the coder's code is grouped by function in the package, not in a module of its own;
+  run_python is the one place a real sandbox would plug in.
+- Next: one evaluation on the 26B (fixed tasks + a held-out set), then README and clean-up.
+
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
 ---

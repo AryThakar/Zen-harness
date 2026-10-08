@@ -93,10 +93,12 @@ class CalcIn(_In):
                                         "(radians: write degrees as 35°), round abs min max, pi and e")
 
 
-class NoteIn(_In):
-    title: str = Field(description="short title; saving again with the same title updates the note")
-    content: str = Field(description="a few lines; it is read later on its own, so say 'the user' and 'the "
-                                     "assistant', not I or you")
+class NotesIn(_In):
+    mode: Literal["save", "list", "delete"]
+    title: str | None = Field(None, description="save: a short title (saving again with the same title updates "
+                                                "the note); delete: the note's title or id")
+    content: str | None = Field(None, description="save: a few lines; it is read later on its own, so say 'the user' "
+                                                  "and 'the assistant', not I or you")
 
 
 class AskIn(_In):
@@ -264,9 +266,13 @@ class TextIn(_In):
     value: str | None = Field(None, description="themes, classify: a number to average per theme, e.g. a rating")
 
 
+TYPED = "what a person would type when the program asks (input()), one line per answer, e.g. 'w\\nw\\nq'"
+
+
 class RunCodeIn(_In):
     code: str = Field(description="the whole Python script; print what you need")
     timeout: int = Field(30, ge=1, le=120)
+    input: str | None = Field(None, description=TYPED)
 
 
 class FixCodeIn(_In):
@@ -274,6 +280,7 @@ class FixCodeIn(_In):
     to_line: int = Field(ge=0, description="the last line to change (from_line - 1 inserts before from_line)")
     new_code: str = Field(description="the lines that replace them (may be more or fewer lines)")
     timeout: int = Field(30, ge=1, le=120)
+    input: str | None = Field(None, description="typed input as for run_code; omit to type what the last run typed")
 
 
 # ---------------------------------------------------------------- the tools
@@ -299,10 +306,16 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("calculate", "Exact arithmetic: use it for every number you work out - even a sum or an average - "
        "instead of doing it in your head; one call can hold a whole expression. Maths problems: solve them yourself, "
        "step by step, and check the numbers here.",
-       CalcIn, lambda c, a: calc.calculate(a.expression)),
-    Tool("save_note", "Save a short note: a decision, preference, constraint, conclusion or fact worth keeping (not "
-       "tool output). Your 5 latest notes stay in view in every chat; older ones are found by search.",
-       NoteIn, lambda c, a: notes.save_note(c.ws, a.title, a.content, index=c.index)),
+       CalcIn, lambda c, a: calc.calculate(a.expression),
+       labels=("Calculating", "Calculated")),
+    Tool("notes", "Your notes - your memory across chats. save: a decision, preference, constraint, conclusion or "
+       "fact worth keeping (not tool output); your 5 latest notes stay in view in every chat, older ones are found "
+       "by search. list: every note, when the user asks what you remember. delete: one note, when the user asks you "
+       "to forget it - the user confirms with a button, so call it straight away.",
+       NotesIn, lambda c, a: notes.notes(c.ws, a.mode, a.title, a.content, index=c.index),
+       labels=("Working with notes", "Worked with notes"),
+       mode_labels={"save": ("Saving a note", "Saved a note"), "list": ("Looking at your notes", "Looked at your notes"),
+                    "delete": ("Asking to delete a note", "Asked to delete a note")}),
     Tool("ask_user", "Ask the user one question, only when the request could reasonably mean different things "
        "with different results. When one reading can be answered as it stands (e.g. a record, a top or a total), "
        "answer that one and say which reading you took instead. Never ask about preferences that don't change the "
@@ -335,7 +348,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                     "delete": ("Asking to delete a file", "Asked to delete a file"),
                     "download": ("Asking to download", "Asked to download")}),
     Tool("search_files", "Find passages in the user's documents and saved notes that match a query.", FilesQueryIn,
-       lambda c, a: files.search_files(c.index, a.query)),
+       lambda c, a: files.search_files(c.index, a.query),
+       labels=("Searching your documents and notes", "Searched your documents and notes")),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
        FilesQueryIn,
        lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since),
@@ -401,10 +415,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "themselves (pandas, openpyxl). Files the script writes are kept as new items (.csv / .parquet become tables, "
        "images are shown); a stored item is never changed - write under a new name. No internet. "
        "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunCodeIn,
-       lambda c, a: scratch.run_code(c.ws, c.scratch, a.code, a.timeout)),
+       lambda c, a: scratch.run_code(c.ws, c.scratch, a.code, a.timeout, a.input),
+       labels=("Running code", "Ran code")),
     Tool("fix_code", "Change lines from_line-to_line of your scratch script and run it again - after an error, "
        "the lines it shows. Cheaper and safer than sending the whole script again.", FixCodeIn,
-       lambda c, a: scratch.fix_code(c.ws, c.scratch, a.from_line, a.to_line, a.new_code, a.timeout)),
+       lambda c, a: scratch.fix_code(c.ws, c.scratch, a.from_line, a.to_line, a.new_code, a.timeout, a.input),
+       labels=("Fixing the code", "Fixed the code")),
 ]}
 
 

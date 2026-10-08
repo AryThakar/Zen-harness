@@ -67,19 +67,11 @@ class Workspace:
 
     # ------------------------------------------------------------------ adding
 
-    def add_file(self, path: str | Path, sheet: str | None = None) -> str:
+    def add_file(self, path: str | Path, sheet: str | None = None, meta: dict | None = None) -> str:
         """Read a CSV / Excel file (title lines, encodings and delimiters are handled by the
         reader), type its columns losslessly, and store it as a new table."""
-        try:
-            raw = read_file(path, sheet)
-        except ReadError as exc:
-            raise ToolError(str(exc), invalid=False) from exc
-        df, info = type_columns(raw.df)
-        df = df.reset_index(drop=True)
-        return self.add_table(df, name=Path(path).name, meta={
-            "columns": info, "original_names": raw.original_names, "header_row": raw.header_row,
-            **({"sheet": raw.sheet} if raw.sheet else {}),
-            **({"skipped_lines": [n for n, _ in raw.bad_lines]} if raw.bad_lines else {})})
+        df, read = read_table(path, sheet)
+        return self.add_table(df, name=Path(path).name, meta={**read, **(meta or {})})
 
     def add_table(self, df: pd.DataFrame, name: str, parent: str | None = None, meta: dict | None = None) -> str:
         meta = dict(meta or {})
@@ -113,18 +105,8 @@ class Workspace:
         """An image item - uploaded, generated or drawn by a script, all the same kind - stored only when
         the bytes really are an image, with its format and size (vision and the UI need them; listings
         said 'image NonexNone' when they were missing). ToolError when it isn't an image."""
-        from PIL import Image, UnidentifiedImageError
-        try:
-            with Image.open(io.BytesIO(data)) as img:
-                fmt, (width, height) = img.format, img.size
-                img.verify()
-        except (UnidentifiedImageError, OSError, SyntaxError) as exc:
-            raise ToolError(f"{name} is not a readable image.", invalid=False) from exc
-        if fmt not in IMAGE_FORMATS:
-            raise ToolError(f"{name} is a {fmt} image; images are kept as PNG, JPEG, WebP or GIF.", invalid=False)
-        ext, mime = IMAGE_FORMATS[fmt]
-        return self.add_bytes("image", data, ext, name, parent,
-                              meta={**(meta or {}), "width": width, "height": height, "mime": mime})
+        ext, info = image_info(data, name)
+        return self.add_bytes("image", data, ext, name, parent, meta={**(meta or {}), **info})
 
     @_locked
     def replace_bytes(self, item_id: str, data: bytes, meta: dict | None = None) -> None:
@@ -137,6 +119,33 @@ class Workspace:
         e.update(bytes=len(data), updated=datetime.now().isoformat(timespec="seconds"))
         if meta is not None:
             e["meta"] = meta
+        self._save()
+
+    @_locked
+    def replace_image(self, item_id: str, data: bytes, meta: dict | None = None) -> None:
+        """A new version of an image item, under the same id (a script's chart drawn again in the same
+        task): checked like add_image; the stored file follows the new format."""
+        e = self.entry(item_id)
+        self._expect(item_id, "image")
+        ext, info = image_info(data, e["name"])
+        old, new = e["file"], f"{item_id}.{ext}"
+        if new != old:
+            e["file"] = new
+        self.replace_bytes(item_id, data, {**(meta or {}), **info})
+        if new != old:
+            (self.root / old).unlink(missing_ok=True)
+
+    @_locked
+    def replace_table(self, item_id: str, df: pd.DataFrame, meta: dict | None = None) -> None:
+        """A new version of a table under the same id (a script's output written again in the same task).
+        Its meta starts over: an inspection of the old rows says nothing about the new ones."""
+        e = self.entry(item_id)
+        self._expect(item_id, "table")
+        tmp = self.root / f".{item_id}.parquet.part"
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, self.root / f"{item_id}.parquet")
+        e.update(rows=len(df), columns=list(map(str, df.columns)), meta=dict(meta or {}),
+                 updated=datetime.now().isoformat(timespec="seconds"))
         self._save()
 
     @_locked
@@ -328,6 +337,36 @@ class Workspace:
 
 def _a(noun: str) -> str:
     return ("an " if noun[:1] in "aeiou" else "a ") + noun
+
+
+def read_table(path: str | Path, sheet: str | None = None) -> tuple[pd.DataFrame, dict]:
+    """A CSV / Excel file as a typed table and what reading it found (column types, the header row,
+    skipped lines) - the meta a table item keeps."""
+    try:
+        raw = read_file(path, sheet)
+    except ReadError as exc:
+        raise ToolError(str(exc), invalid=False) from exc
+    df, info = type_columns(raw.df)
+    return df.reset_index(drop=True), {
+        "columns": info, "original_names": raw.original_names, "header_row": raw.header_row,
+        **({"sheet": raw.sheet} if raw.sheet else {}),
+        **({"skipped_lines": [n for n, _ in raw.bad_lines]} if raw.bad_lines else {})}
+
+
+def image_info(data: bytes, name: str) -> tuple[str, dict]:
+    """(file extension, {width, height, mime}) of image bytes; ToolError when they aren't a PNG, JPEG,
+    WebP or GIF image."""
+    from PIL import Image, UnidentifiedImageError
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            fmt, (width, height) = img.format, img.size
+            img.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError) as exc:
+        raise ToolError(f"{name} is not a readable image.", invalid=False) from exc
+    if fmt not in IMAGE_FORMATS:
+        raise ToolError(f"{name} is a {fmt} image; images are kept as PNG, JPEG, WebP or GIF.", invalid=False)
+    ext, mime = IMAGE_FORMATS[fmt]
+    return ext, {"width": width, "height": height, "mime": mime}
 
 
 def resolve_column(df: pd.DataFrame, name: str, field: str = "column") -> str:

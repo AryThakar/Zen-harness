@@ -56,6 +56,26 @@ def test_notes_are_pruned_oldest_first_past_the_limits(ws, monkeypatch):
     assert [ws.entry(i)["meta"]["title"] for i in ws.ids("note")] == ["New"]
 
 
+def test_notes_are_listed_newest_first_and_deleted_only_after_the_user_allows_it(ws):
+    """'What do you remember?' and 'forget that' - before, the AI could only save."""
+    from app.tools.approval import carry_out
+    base = datetime(2026, 10, 1, 9, 0)
+    for n, title in enumerate(["Fiscal year", "Revenue column", "Favourite colour"]):
+        save_note(ws, title, f"Note number {n}.", now=base + timedelta(minutes=n))
+    listed = notes.notes(ws, "list").result
+    assert [n["title"] for n in listed["notes"]] == ["Favourite colour", "Revenue column", "Fiscal year"]
+    assert listed["total"] == 3 and all(n.get("pinned") for n in listed["notes"])
+    asked = notes.notes(ws, "delete", "favourite COLOUR")  # a title in any case, or the id
+    assert asked.status == "ok" and asked.artifact["type"] == "question" and asked.artifact["options"] == ["Delete", "Cancel"]
+    target = asked.artifact["approval"]["items"]
+    assert len(ws.ids("note")) == 3  # nothing deleted until the user clicks
+    carry_out(ws, None, asked.artifact["approval"], ["Delete", "Cancel"], "Delete")
+    assert target[0] not in ws.ids("note") and len(ws.ids("note")) == 2
+    missing = notes.notes(ws, "delete", "Birthday")
+    assert missing.status == "invalid_arguments" and "Fiscal year" in missing.result["error"]["message"]
+    assert notes.notes(ws, "rename").status == "invalid_arguments"
+
+
 def test_note_arguments(ws):
     assert save_note(ws, "", "x").status == "invalid_arguments"
     assert save_note(ws, "t", "   ").status == "invalid_arguments"

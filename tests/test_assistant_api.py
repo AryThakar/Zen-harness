@@ -160,7 +160,7 @@ def test_upload_size_is_limited(app_and_slots):
 def test_the_latest_notes_are_pinned_and_only_they_are_listed(app_and_slots):
     client, slots, store = app_and_slots
     ws_id, chat_id = workspace_and_chat(client)
-    slots.main.turns = [ModelTurn(text="", tool_calls=[call("save_note", title="Revenue", content="Use net_sales.")],
+    slots.main.turns = [ModelTurn(text="", tool_calls=[call("notes", mode="save", title="Revenue", content="Use net_sales.")],
                                   stop="tool_use"),
                         ModelTurn(text="Saved.", stop="end")]
     stream = events(client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Remember: revenue is net_sales"}))

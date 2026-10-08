@@ -1,8 +1,10 @@
-"""save_note: the AI's short memory - a decision, constraint, conclusion or fact worth keeping.
+"""notes: the AI's short memory - a decision, constraint, conclusion or fact worth keeping. One tool with
+three modes, like files(): save, list and delete.
 
 Saving again under the same title updates that note (no 'Summary', 'Summary (2)' ...), and the model
 mostly reuses titles, so notes update in place. Notes are not workspace files (files() doesn't show
-them); older ones are found with search_files.
+them); older ones are found with search_files, and list shows them all. Deleting one ("forget that")
+asks the user with a button, like deleting a file (approval.py) - the AI's memory is the user's too.
 
 The 5 latest notes (by last save) are pinned automatically: always in main's view, and shown live in
 the UI, so the user sees what the AI keeps in mind (the user's design: no approval step).
@@ -60,6 +62,56 @@ def save_note(ws: Workspace, title: str, content: str, *, index: SearchIndex | N
     if pruned:
         result["pruned"] = f"{len(pruned)} oldest note(s) removed to make room"
     return ok(result, {"type": "note", "id": note_id, "title": title, "action": action})
+
+
+LIST_SHOWN = 30  # notes a list shows, newest first
+
+
+@tool
+def notes(ws: Workspace, mode: str, title: str | None = None, content: str | None = None, *,
+          index: SearchIndex | None = None) -> ToolResult:
+    """save (title, content), list, or delete (title: the note's title or id) - delete asks the user first."""
+    mode = str(mode).strip().lower()
+    if mode == "save":
+        return save_note(ws, title or "", content or "", index=index)
+    if mode == "list":
+        return list_notes(ws)
+    if mode == "delete":
+        if not title or not str(title).strip():
+            raise ToolError("delete needs title: the note's title or id.", field="title")
+        from .approval import delete_request
+        return delete_request(ws, [_find(ws, str(title))])
+    raise ToolError("mode must be save, list or delete.", field="mode")
+
+
+def list_notes(ws: Workspace) -> ToolResult:
+    """Every note, newest first: id, title, when it was saved, its first words."""
+    ordered = sorted(ws.ids("note"), key=lambda i: saved_at(ws, i), reverse=True)
+    if not ordered:
+        return ok({"notes": [], "note": "There are no notes yet."})
+    pinned_ids = {n["id"] for n in pinned(ws)}
+    shown = []
+    for i in ordered[:LIST_SHOWN]:
+        text = " ".join(body(ws, i).split())
+        shown.append({"id": i, "title": ws.entry(i)["meta"]["title"], "saved": saved_at(ws, i).strftime("%d %b %Y"),
+                      "text": text if len(text) <= 120 else text[:120].rstrip() + " ...",
+                      **({"pinned": True} if i in pinned_ids else {})})
+    result = {"total": len(ordered), "notes": shown}
+    if len(ordered) > LIST_SHOWN:
+        result["more"] = f"{len(ordered) - LIST_SHOWN} older notes not shown: search_files finds them by topic."
+    return ok(result)
+
+
+def _find(ws: Workspace, title: str) -> str:
+    """The note a title or id names; a ToolError with the notes there are when none matches."""
+    text = " ".join(title.split()).strip("'\"")
+    if text in ws.ids("note"):
+        return text
+    found = _by_title(ws, text)
+    if found:
+        return found
+    titles = [f"{i} ({ws.entry(i)['meta']['title']})" for i in ws.ids("note")]
+    raise ToolError(f"No note called '{text}'. Notes: {', '.join(titles) or 'none yet'}.", field="title")
 
 
 def prune(ws: Workspace, index: SearchIndex | None = None, *, now: datetime | None = None) -> list[str]:

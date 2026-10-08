@@ -3,7 +3,7 @@
 Documents enter through add_document (from store_file: an upload, or a file downloaded from GitHub
 with the user's approval - never by the model directly): the text is
 extracted (PDF, Word, .txt, .md - claude-cloud's tested extractor), split into ~250-word passages
-that never cross a page or heading, and indexed. Notes are indexed by save_note. Scanned PDFs
+that never cross a page or heading, and indexed. Notes are indexed when they are saved (notes.py). Scanned PDFs
 (images of pages) have no text and are refused with that reason.
 """
 
