@@ -94,6 +94,11 @@ CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool di
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only a note keeps it. "
                   "Call save_note now.]")
+# A reply that was a tool call written out as JSON text (measured with Gemma 4 26B, right after an image was
+# made: the user saw '{"action": "generate_image", "action_input": ...}' as the answer, and nothing ran).
+WRITTEN_NUDGE = ("[App check: your reply was a {name} call written out as text, so nothing ran and the user saw raw "
+                 "JSON. If the call is still needed, make it as a real tool call; otherwise answer the user in plain "
+                 "words.]")
 # Added to the result of main's own tools whose card the user already sees (measured: without it the model
 # wrote the week's forecast out again as a table under the weather card).
 SHOWN = {"weather": "The user sees all of this in a weather card: answer in one or two sentences with what "

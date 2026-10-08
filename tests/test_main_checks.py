@@ -27,6 +27,9 @@ ANNOUNCEMENTS = [
     "Once it runs, I will provide you with the model's accuracy.\n\nStarting the ML model creation now.",
     "This is an attempt to see if spatial data improves the model.\n\nI am writing and executing an updated Python "
     "script now.",
+    # chat dacb378f2781: the turn ended here, the text never added
+    "I'm having a little trouble locating the exact filename for that image to use in my script. I'll try one more "
+    "time to find the right file name and add the text for you.",
 ]
 # Endings that are not promises to act now: commitments, offers, waiting for the user, finished answers.
 NOT_ANNOUNCEMENTS = [
@@ -42,6 +45,10 @@ NOT_ANNOUNCEMENTS = [
     "I haven't noted down your coffee preferences yet.\n\nTell me, and I'll make sure to remember it for next time.",
     "Regarding your coffee, I want to make sure I save that correctly. Please tell me what you like to drink and "
     "when, and I will add it to your notes immediately.",
+    # a question in bold still asks the user (chat dacb378f2781: nudged, 50 s of checking)
+    "Once you pick a topic, I will ask you a series of questions one by one. At the end, I'll calculate your "
+    "score.\n\n**What topic would you like?**",
+    "I'll calculate it again whenever you like. Have fun :)",
 ]
 
 
@@ -64,6 +71,19 @@ def test_a_claim_is_flagged_only_when_no_tool_did_anything():
     assert "downloaded" in nudge_for("The file has been downloaded to your workspace.", [user])
     nudged = [user, {"role": "user", "content": ANNOUNCE_NUDGE, "hidden": True, "check": True}]
     assert nudge_for(claim, nudged) is None  # once per turn
+
+
+def test_a_tool_call_written_as_text_is_nudged():
+    tools = {"generate_image": None, "calculate": None}
+    user = {"role": "user", "content": "a lion flying over the Himalayas"}
+    # as measured (chat dacb378f2781): not valid JSON, an object quoted inside
+    written = ('{\n  "action": "generate_image",\n  "action_input": "{ \\"prompt\\": \\"A majestic lion\\", '
+               '\\"size\\": \\"wide\\" }"\n}')
+    nudge = nudge_for(written, [user], tools)
+    assert nudge and "generate_image call written out as text" in nudge
+    assert "calculate" in nudge_for('```json\n{"name": "calculate", "arguments": {"expression": "2+2"}}\n```', [user], tools)
+    for other in ('{"total": 12}', 'Here is the call: {"action": "generate_image"}', '{"action": "fly_away"}'):
+        assert "written out" not in (nudge_for(other, [user], tools) or ""), other
 
 
 def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():

@@ -221,7 +221,7 @@ def _agent(state: TurnState, config) -> dict:
         t.store.append(t.chat_id, nudge)
         new.append(nudge)
         return {"messages": new, "rounds": state["rounds"] + 1}
-    check = nudge_for(turn.text, this_turn(history + [message])) if not turn.tool_calls and not last else None
+    check = nudge_for(turn.text, this_turn(history + [message]), t.tools) if not turn.tool_calls and not last else None
     if check:  # announced or claimed an action no tool did: one hidden nudge per turn (checks.py)
         nudge = {"role": "user", "content": check, "hidden": True, "check": True}
         t.store.append(t.chat_id, nudge)

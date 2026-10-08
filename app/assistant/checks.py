@@ -17,6 +17,8 @@ main itself, each from a measured failure in the user's own test chat (docs/SYST
     claimed, not done   a reply claiming an action ("I saved a note", "has been downloaded") in a turn
                         where no tool did anything gets one hidden nudge to do it or correct the reply
                         ("remember X" answered "I saved a note" without save_note, 4 of 6)
+    written, not called a reply that is a tool call written out as JSON text gets one hidden nudge to make
+                        the call or answer in words (the user saw '{"action": "generate_image", ...}')
 
 Each nudge is sent at most once per turn; after it the reply stands. Claims about what a tool that did
 run really did (an image "with the date added") are checked where they happen: the coder's report
@@ -25,9 +27,10 @@ against its run, vision after generate_image.
 
 from __future__ import annotations
 
+import json
 import re
 
-from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE
+from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE, WRITTEN_NUDGE
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
@@ -42,14 +45,15 @@ ANNOUNCED = re.compile(
     r"|\bI(?:'ll| will) (?:now |next |then |first |also |continue to )?(?:retrieve|download|fetch|run|execute|write|"
     r"create|save|update|analy[sz]e|perform|generate|read|start|continue|proceed|call|use|get|gather|check|assign|"
     r"present|compute|calculate|search|look|open|draw|plot|build|make|convert|extract|send|prepare|apply|test|train|"
-    r"fix|edit|add|load|import|clean|query|chart|forecast|delete|rename|research|summari[sz]e|go ahead)\b"
+    r"fix|edit|add|load|import|clean|query|chart|forecast|delete|rename|research|summari[sz]e|go ahead|try|retry|"
+    r"find|locate)\b"
     r"|^\W*action\W*:",
     re.I)
 # Not a promise to act now: an offer ("Let me know if ... and I'll update it"), or waiting for the user
 # ("Once you provide these numbers, I will run the model"). Commitments ("I will always use ...", "I will
 # remember ...") don't use the action verbs above. Measured on the 188 replies stored so far: the 9
 # real announcements caught, no other reply.
-OFFER = re.compile(r"\b(?:if|let me know|would you|do you want|want me|shall I|should I|feel free|once|when you|"
+OFFER = re.compile(r"\b(?:if|let me know|would you|do you want|want me|shall I|should I|feel free|once|when(?:ever)? you|"
                    r"as soon as|after you|until|tell me|send me|give me|share (?:it|them|that|this|with me)|"
                    r"please (?:tell|share|send|give|upload|provide|let))\b", re.I)
 # ("Tell me, and I'll make sure to remember it" and "Please tell me what you like ..., and I will add it to
@@ -126,21 +130,50 @@ def _year(raw: str) -> bool:
 def announced(text: str) -> bool:
     """Whether a reply ends by promising an action: a promise among its last three sentences that isn't
     an offer, or a last line that opens something it never gives ('Here is the next section:'). A
-    reply ending with a question asks the user - fine."""
+    reply ending with a question asks the user - fine, also in bold or before an emoji ('**What topic
+    would you like?**' was nudged: 50 s of checking, measured)."""
     ending = text.strip()
-    if not ending or ending.endswith("?"):
+    plain = re.sub(r"[^\w?.!:]+$", "", ending)
+    if not plain or plain.endswith("?"):
         return False
-    if ending.endswith(":"):
+    if re.sub(r"[\s*_]+$", "", ending).endswith(":"):  # (not plain: "Have fun :)" opens nothing)
         return True
     last = [s for s in SENTENCES.split(ending) if s.strip()][-3:]
     return any(ANNOUNCED.search(s) and not OFFER.search(s) for s in last)
 
 
-def nudge_for(text: str, turn: list[dict]) -> str | None:
-    """The one nudge a tool-less reply gets, or None: asked to remember but nothing saved first, then
-    announced-not-done, then claimed-not-done. None once the turn already had a nudge of these kinds."""
+CALL_KEYS = ("action", "tool", "tool_name", "name", "function")
+FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+
+
+def written_call(text: str, tools) -> str | None:
+    """The tool's name when the whole reply is a call to it written out as JSON text, else None. The
+    measured one wasn't valid JSON (a quoted object inside), so a name key is also read from the text."""
+    body = FENCE.sub("", text.strip())
+    if not (body.startswith("{") and body.endswith("}")):
+        return None
+    try:
+        data = json.loads(body)
+    except ValueError:
+        named = re.search(rf'"(?:{"|".join(CALL_KEYS)})"\s*:\s*"(\w+)"', body)
+        return named.group(1) if named and named.group(1) in tools else None
+    for key in CALL_KEYS if isinstance(data, dict) else ():
+        value = data.get(key)
+        value = value.get("name") if isinstance(value, dict) else value
+        if isinstance(value, str) and value in tools:
+            return value
+    return None
+
+
+def nudge_for(text: str, turn: list[dict], tools=()) -> str | None:
+    """The one nudge a tool-less reply gets, or None: a call written as text first, then asked to remember
+    but nothing saved, then announced-not-done, then claimed-not-done. None once the turn already had a
+    nudge of these kinds."""
     if any(m.get("check") for m in turn if m["role"] == "user"):
         return None
+    name = written_call(text, tools)
+    if name:
+        return WRITTEN_NUDGE.format(name=name)
     said = next((str(m.get("text") or m.get("content") or "") for m in turn if m["role"] == "user"), "")
     kept = any(c["name"] in ("save_note", "files") for m in turn if m["role"] == "assistant"
                for c in m.get("tool_calls") or [])
