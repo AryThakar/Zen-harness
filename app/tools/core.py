@@ -33,11 +33,16 @@ class ToolResult:
 
 class ToolError(Exception):
     """A tool could not do what was asked. ``invalid`` = the arguments were wrong (the model can
-    fix them); otherwise the data or a service did not allow it."""
+    fix them); otherwise the data or a service did not allow it. ``reason``: one word code can act on
+    (a page read: blocked, not_found, unreachable, unsupported), beside the message the model reads."""
 
-    def __init__(self, message: str, field: str | None = None, invalid: bool = True):
+    def __init__(self, message: str, field: str | None = None, invalid: bool = True, reason: str | None = None):
         super().__init__(message)
-        self.message, self.field, self.invalid = message, field, invalid
+        self.message, self.field, self.invalid, self.reason = message, field, invalid, reason
+
+    def error(self) -> dict:
+        return {"message": self.message, **({"field": self.field} if self.field else {}),
+                **({"reason": self.reason} if self.reason else {})}
 
 
 def ok(result: dict, artifact: dict | None = None, partial: bool = False) -> ToolResult:
@@ -52,8 +57,7 @@ def tool(fn):
         try:
             return fn(*args, **kwargs)
         except ToolError as exc:
-            error = {"message": exc.message, **({"field": exc.field} if exc.field else {})}
-            return ToolResult("invalid_arguments" if exc.invalid else "failed", {"error": error})
+            return ToolResult("invalid_arguments" if exc.invalid else "failed", {"error": exc.error()})
         except ValidationError as exc:
             first = exc.errors()[0]
             where = ".".join(str(p) for p in first["loc"])

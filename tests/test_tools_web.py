@@ -17,13 +17,14 @@ def engine(*answers):
     """A fake search engine: one answer (list of results, or an exception) per tier asked."""
     asked = []
 
-    def search(query, k, tier, timeout):
+    def search(query, k, tier, timeout, timelimit=None):
         asked.append((query, tier))
+        search.timelimits.append(timelimit)
         answer = answers[len(asked) - 1]
         if isinstance(answer, Exception):
             raise answer
         return answer
-    search.asked = asked
+    search.asked, search.timelimits = asked, []
     return search
 
 
@@ -70,7 +71,7 @@ def test_site_restricts_results():
 
 # ---------------------------------------------------------------- read_webpage
 
-PUBLIC = {"news.example.com": "93.184.216.34", "docs.example.com": "93.184.216.35",
+PUBLIC = {"news.example.com": "93.184.216.34", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
           "sneaky.example.com": "10.0.0.5", "rebind.example.com": "127.0.0.1"}
 
 
@@ -362,3 +363,55 @@ def test_a_page_says_how_old_it_is_and_which_files_it_offers():
     assert r["files"] == ["https://news.example.com/files/trips-2025.csv", "https://news.example.com/files/stations.xlsx",
                           "https://github.com/city/bikes/blob/main/clean.py"]  # tables and GitHub files only
     assert "give its link in downloads" in r["files_note"]
+
+
+# ---------------------------------------------------------------- statuses, wiki pages, recent searches
+
+def test_recent_searches_use_the_engines_time_filter():
+    e = engine(HITS)
+    r = web_search("one piece latest episode", recent="week", engine=e)
+    assert r.status == "ok" and r.result["recent"] == "week" and e.timelimits == ["w"]
+    assert web_search("x y", recent="decade", engine=e).status == "invalid_arguments"
+    plain = engine(HITS)
+    web_search("x y", engine=plain)
+    assert plain.timelimits == [None]
+
+
+def test_every_read_says_how_it_went():
+    long_page = b"<html><body><article>" + b"<p>" + b"word " * 4000 + b"</p></article></body></html>"
+    http = site({"https://news.example.com/rates": httpx.Response(200, content=ARTICLE, headers={"content-type": "text/html"}),
+                 "https://news.example.com/long": httpx.Response(200, content=long_page, headers={"content-type": "text/html"}),
+                 "https://news.example.com/gone": httpx.Response(404),
+                 "https://news.example.com/locked": httpx.Response(403)})
+    assert read_webpage("https://news.example.com/rates", http=http, resolve=resolve).result["read"] == "ok"
+    assert read_webpage("https://news.example.com/long", http=http, resolve=resolve).result["read"] == "cut"
+    gone = read_webpage("https://news.example.com/gone", http=http, resolve=resolve).result["error"]
+    locked = read_webpage("https://news.example.com/locked", http=http, resolve=resolve).result["error"]
+    assert gone["reason"] == "not_found" and locked["reason"] == "blocked" and "another source" in locked["message"]
+    nowhere = read_webpage("https://nowhere.example.com/", http=http, resolve=resolve).result["error"]
+    assert nowhere["reason"] == "not_found"
+
+
+WIKI_JSON = {"parse": {"title": "Episode 1071", "pageid": 1, "text":
+             '<div class="mw-parser-output"><aside class="portable-infobox"><h2>Episode 1071</h2>'
+             '<div>Airdate: August 6, 2023</div></aside><p>Luffy awakens Gear 5 against Kaido.</p></div>'}}
+
+
+def test_a_wiki_page_that_blocks_readers_is_read_through_its_api():
+    """Measured: Fandom answers its pages with Cloudflare's 'Just a moment' (403), and its api.php with the page."""
+    import json as _json
+    challenge = httpx.Response(403, content=b"<html><title>Just a moment...</title></html>", headers={"content-type": "text/html"})
+    api = ("https://wiki.example.com/api.php?action=parse&page=Episode_1071&prop=text|displaytitle&format=json"
+           "&formatversion=2&redirects=1&disableeditsection=1")
+    http = site({"https://wiki.example.com/wiki/Episode_1071": challenge,
+                 api: httpx.Response(200, content=_json.dumps(WIKI_JSON).encode(), headers={"content-type": "application/json"}),
+                 "https://wiki.example.com/wiki/Missing": challenge,
+                 api.replace("Episode_1071", "Missing"): httpx.Response(200, json={"error": {"code": "missingtitle"}}),
+                 "https://news.example.com/wiki/Thing": challenge})
+    r = read_webpage("https://wiki.example.com/wiki/Episode_1071", http=http, resolve=resolve)
+    assert r.status == "ok" and r.result["title"] == "Episode 1071" and r.result["via"] == "the wiki's API"
+    assert "Gear 5" in r.result["text"] and "Airdate: August 6, 2023" in r.result["text"]  # the infobox is kept
+    missing = read_webpage("https://wiki.example.com/wiki/Missing", http=http, resolve=resolve).result["error"]
+    assert missing["reason"] == "not_found" and "no page called 'Missing'" in missing["message"]
+    no_api = read_webpage("https://news.example.com/wiki/Thing", http=http, resolve=resolve).result["error"]
+    assert no_api["reason"] == "blocked"  # no wiki API there: the page's own refusal stands

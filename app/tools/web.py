@@ -1,6 +1,7 @@
 """web_search and read_webpage: find pages, then read one, with the source for every fact.
 
-web_search  - titles, links and snippets from public search engines via the ddgs package (no key).
+web_search  - titles, links and snippets from public search engines via the ddgs package (no key);
+              recent (day, week, month, year) uses the engines' own time filter, for "latest" questions.
               Engines are named in two tiers and the second is asked only when the first finds
               nothing; ddgs's 'auto' mode is never used, so only these engines are contacted. ddgs
               reports an empty search by raising, which is told apart from a real failure.
@@ -69,22 +70,29 @@ CHROME = re.compile(r"\b[\w-]*(?:nav|menu|sidebar|breadcrumb|related|footer|cook
 
 # ---------------------------------------------------------------- web_search
 
+RECENT = {"day": "d", "week": "w", "month": "m", "year": "y"}  # ddgs's timelimit codes
+
+
 @tool
-def web_search(query: str, site: str | None = None, k: int = 5, *, engine=None) -> ToolResult:
+def web_search(query: str, site: str | None = None, k: int = 5, recent: str | None = None, *,
+               engine=None) -> ToolResult:
     """Search the web; returns titles, links and snippets (read a page before quoting details)."""
     query = " ".join(str(query).split())
     if len(query) < 2:
         raise ToolError("query is empty.", field="query")
+    if recent is not None and recent not in RECENT:
+        raise ToolError(f"recent must be one of {', '.join(RECENT)}.", field="recent")
     k = max(1, min(int(k), 10))
     domain = _domain(site) if site else None
     full_query = f"{query} site:{domain}" if domain else query
-    results, error = _search(engine or _ddgs, full_query, k * 2 if domain else k)
+    results, error = _search(engine or _ddgs, full_query, k * 2 if domain else k, RECENT.get(recent))
     if domain:
         results = [r for r in results if _host_in(r["url"], domain)]
     results = results[:k]
     if error and not results:
         raise ToolError(error, invalid=False)
-    out = {"query": query, **({"site": domain} if domain else {}), "results": results}
+    out = {"query": query, **({"site": domain} if domain else {}), **({"recent": recent} if recent else {}),
+           "results": results}
     if not results:
         out["note"] = "No results. Try other words, or read a known page with read_webpage."
         return ok(out)
@@ -94,7 +102,7 @@ def web_search(query: str, site: str | None = None, k: int = 5, *, engine=None) 
     return ok(out, {"type": "links", "query": query, "items": items})
 
 
-def _search(engine, query: str, k: int) -> tuple[list[dict], str | None]:
+def _search(engine, query: str, k: int, timelimit: str | None = None) -> tuple[list[dict], str | None]:
     """Ask tier 1, then tier 2 if it found nothing, within one overall deadline."""
     deadline = time.monotonic() + SEARCH_DEADLINE
     error = None
@@ -103,7 +111,7 @@ def _search(engine, query: str, k: int) -> tuple[list[dict], str | None]:
         if remaining <= 0:
             break
         try:
-            raw = engine(query, k, tier, remaining)
+            raw = engine(query, k, tier, remaining, timelimit) if timelimit else engine(query, k, tier, remaining)
         except Exception as exc:  # noqa: BLE001 - classified below; the next tier may still answer
             error = _search_failure(exc)
             continue
@@ -131,7 +139,7 @@ def _search_failure(exc: Exception) -> str | None:
     return f"Search failed ({name})."
 
 
-def _ddgs(query: str, k: int, tier: tuple[str, ...], timeout: float) -> list[dict]:
+def _ddgs(query: str, k: int, tier: tuple[str, ...], timeout: float, timelimit: str | None = None) -> list[dict]:
     try:
         from ddgs import DDGS
         from ddgs.engines import ENGINES
@@ -141,7 +149,8 @@ def _ddgs(query: str, k: int, tier: tuple[str, ...], timeout: float) -> list[dic
     names = [n for n in tier if n in available]
     if not names:
         return []
-    return DDGS(timeout=max(1, int(timeout))).text(query, max_results=k, backend=",".join(names))
+    return DDGS(timeout=max(1, int(timeout))).text(query, max_results=k, backend=",".join(names),
+                                                   **({"timelimit": timelimit} if timelimit else {}))
 
 
 def _domain(site: str) -> str:
@@ -181,10 +190,7 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         title, text, meta, final = _page(http, url, resolve)
     if not text.strip():
         raise ToolError("No readable text was found on the page (it may need JavaScript to show its content).",
-                        invalid=False)
-    if _bot_check(title, text, final):
-        raise ToolError("The site showed a bot check instead of its page (it only serves people in a browser); "
-                        "read another source.", invalid=False)
+                        invalid=False, reason="unsupported")
     truncated = len(text) > MAX_TEXT
     shown = None
     if truncated and find and find.strip():
@@ -192,8 +198,9 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
     elif truncated:
         text = text[:MAX_TEXT].rsplit(" ", 1)[0] + " ..."
     files = meta.pop("files", None)
-    result = {"url": final, "title": title, "site": meta["site"],
-              **{k: meta[k] for k in ("published", "updated", "author") if meta.get(k)},
+    status = "partial" if meta.pop("partial", False) else "cut" if truncated else "ok"
+    result = {"url": final, "read": status, "title": title, "site": meta["site"],
+              **{k: meta[k] for k in ("published", "updated", "author", "via") if meta.get(k)},
               **({"age": age} if (age := page_age(meta.get("published"), meta.get("updated"))) else {}),
               "text": text, "words": len(text.split())}
     if files:  # main can download these with the user's approval; the web helper never does
@@ -225,11 +232,61 @@ def _bot_check(title: str | None, text: str, url: str) -> bool:
 
 
 def _page(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:
-    """(title, text, card, final url): GitHub and YouTube through their own routes, anything else as is."""
+    """(title, text, card, final url): GitHub and YouTube through their own routes, anything else as is. A
+    wiki page (/wiki/...) that refuses the plain read - an HTTP 403 or a bot check - is read through the
+    site's own MediaWiki API instead: one general rule, not a list of sites (measured: Fandom answers its
+    pages with Cloudflare's 'Just a moment' and a 403, and its api.php with the page)."""
     special = _from_github(http, url, resolve) or _from_youtube(http, url, resolve)
     if special:
         return (*special, url)
-    return _read(http, url, resolve)
+    try:
+        title, text, meta, final = _read(http, url, resolve)
+        if _bot_check(title, text, final):
+            raise ToolError("The site showed a bot check instead of its page (it only serves people in a browser); "
+                            "read another source.", invalid=False, reason="blocked")
+        return title, text, meta, final
+    except ToolError as exc:
+        wiki = _from_wiki(http, url, resolve) if exc.reason == "blocked" else None
+        if wiki is None:
+            raise
+        return (*wiki, url)
+
+
+WIKI_PAGE = re.compile(r"^/wiki/([^?#]+)")
+WIKI_APIS = ("/api.php", "/w/api.php")  # where MediaWiki sites keep it: Fandom's, then Wikipedia's layout
+
+
+def _from_wiki(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict] | None:
+    """A /wiki/ page through its site's MediaWiki API (action=parse): (title, text, card), or None when the
+    site has no such API. The page's infobox (an <aside> in Fandom's HTML) is kept: it holds the facts."""
+    parts = urlsplit(url)
+    m = WIKI_PAGE.match(parts.path)
+    if not m:
+        return None
+    page = unquote(m.group(1))
+    query = {"action": "parse", "page": page, "prop": "text|displaytitle", "format": "json", "formatversion": "2",
+             "redirects": "1", "disableeditsection": "1"}
+    for path in WIKI_APIS:
+        api = f"{parts.scheme}://{parts.netloc}{path}?" + "&".join(f"{k}={quote(v, safe='|')}" for k, v in query.items())
+        try:
+            body, _, _, _ = _fetch(http, api, resolve, headers={"Accept": "application/json"})
+            data = json.loads(body)
+        except (ToolError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if (data.get("error") or {}).get("code") == "missingtitle":
+            raise ToolError(f"The wiki has no page called '{page.replace('_', ' ')}'.", invalid=False, reason="not_found")
+        html = str((data.get("parse") or {}).get("text") or "")
+        if not html:
+            continue
+        html = html.replace("<aside", "<div").replace("</aside>", "</div>")
+        _, text, _ = _html_text(f"<html><body><main>{html}</main></body></html>".encode("utf-8"), "utf-8", url)
+        if not text.strip():
+            continue
+        title = data["parse"].get("title") or page.replace("_", " ")
+        return title, text, {"site": _site(url), "favicon": urljoin(url, "/favicon.ico"), "via": "the wiki's API"}
+    return None
 
 
 def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:
@@ -247,10 +304,11 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
         if len(text.split()) < 20 and meta.get("description"):  # content drawn by JavaScript
             text = (f"{meta['description']}\n\n(This page shows its content with JavaScript; only its description "
                     "could be read.)")
+            meta["partial"] = True
     elif ctype.startswith("text/") or ctype in ("application/json", "application/xml"):
         title, text = None, body.decode(charset or "utf-8", "replace").strip()
     else:
-        raise ToolError(f"The page is not text (it is {ctype or 'an unknown type'}).", invalid=False)
+        raise ToolError(f"The page is not text (it is {ctype or 'an unknown type'}).", invalid=False, reason="unsupported")
     return title, text, meta, final
 
 
@@ -446,7 +504,8 @@ def _peek(http: httpx.Client, url: str, resolve) -> tuple[bytes, str, int | None
                     url = urljoin(url, r.headers["location"])
                     continue
                 if not r.is_success:
-                    raise ToolError(f"The link answered HTTP {r.status_code}{_why(r.status_code)}.", invalid=False)
+                    why, reason = _why(r.status_code)
+                    raise ToolError(f"The link answered HTTP {r.status_code}{why}.", invalid=False, reason=reason)
                 head = b""
                 for chunk in r.iter_bytes():
                     head += chunk
@@ -715,32 +774,34 @@ def _fetch(http: httpx.Client, url: str, resolve, max_bytes: int = MAX_BYTES,
                     url = urljoin(url, r.headers["location"])
                     continue
                 if not r.is_success:
-                    raise ToolError(f"The page answered HTTP {r.status_code}{_why(r.status_code)}.", invalid=False)
+                    why, reason = _why(r.status_code)
+                    raise ToolError(f"The page answered HTTP {r.status_code}{why}.", invalid=False, reason=reason)
                 chunks, size = [], 0
                 for chunk in r.iter_bytes():
                     size += len(chunk)
                     if size > max_bytes:
-                        raise ToolError(f"The page is larger than {max_bytes // (1024 * 1024) or 1} MB.", invalid=False)
+                        raise ToolError(f"The page is larger than {max_bytes // (1024 * 1024) or 1} MB.", invalid=False,
+                                        reason="unsupported")
                     chunks.append(chunk)
                 ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
                 return b"".join(chunks), ctype, r.charset_encoding, url
         except httpx.TimeoutException as exc:
-            raise ToolError("The page did not answer in time.", invalid=False) from exc
+            raise ToolError("The page did not answer in time.", invalid=False, reason="unreachable") from exc
         except httpx.HTTPError as exc:
-            raise ToolError("The page could not be reached.", invalid=False) from exc
-    raise ToolError(f"More than {MAX_REDIRECTS} redirects.", invalid=False)
+            raise ToolError("The page could not be reached.", invalid=False, reason="unreachable") from exc
+    raise ToolError(f"More than {MAX_REDIRECTS} redirects.", invalid=False, reason="unreachable")
 
 
-def _why(status: int) -> str:
+def _why(status: int) -> tuple[str, str | None]:
     """What a failed page means for the next step - so a model reads another source instead of
-    searching again."""
+    searching again - and its reason code."""
     if status in (401, 403, 429):
-        return " (the site refuses automated readers; read another source)"
+        return " (the site refuses automated readers; read another source)", "blocked"
     if status in (404, 410):
-        return " (the page does not exist)"
+        return " (the page does not exist)", "not_found"
     if status >= 500:
-        return " (the site is not answering right now; read another source)"
-    return ""
+        return " (the site is not answering right now; read another source)", "unreachable"
+    return "", None
 
 
 def _check_public(url: str, resolve) -> None:
@@ -758,7 +819,7 @@ def _check_public(url: str, resolve) -> None:
         try:
             infos = resolve(host, parts.port or (443 if parts.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
         except socket.gaierror as exc:
-            raise ToolError(f"The address {host} does not exist.", invalid=False) from exc
+            raise ToolError(f"The address {host} does not exist.", invalid=False, reason="not_found") from exc
         ips = [ipaddress.ip_address(info[4][0].split("%")[0]) for info in infos]
     if any(not ip.is_global or ip.is_multicast for ip in ips):
         raise private

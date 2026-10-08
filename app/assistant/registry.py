@@ -133,6 +133,8 @@ class QuestionIn(_In):
 class SearchIn(_In):
     query: str = Field(description="what to look for, in words a page would use")
     site: str | None = Field(None, description="only this domain, e.g. 'python.org'")
+    recent: Literal["day", "week", "month", "year"] | None = Field(
+        None, description="only pages from the last day, week, month or year - for news and 'latest' questions")
 
 
 class FilesIn(_In):
@@ -309,7 +311,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        labels=("Asking you", "Asked you")),
     # worker tools
     Tool("web_search", "Search the web: titles, links and snippets.",
-       SearchIn, lambda c, a: web.web_search(a.query, a.site)),
+       SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent),
+       labels=("Searching the web", "Searched the web")),
     Tool("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
        "channel, length, date and description (not what is said in it).", ReadPageIn,
        lambda c, a: web.read_webpage(a.url, a.find),
@@ -423,8 +426,7 @@ def execute(ctx: ToolContext, name: str, raw_input, tools: dict[str, Tool] | Non
         _resolve_items(ctx, args)
         result = tool.handler(ctx, args)
     except ToolError as exc:  # raised outside a @tool function too (a helper refusing a file): its message counts
-        error = {"message": exc.message, **({"field": exc.field} if exc.field else {})}
-        return ToolResult("invalid_arguments" if exc.invalid else "failed", {"error": error})
+        return ToolResult("invalid_arguments" if exc.invalid else "failed", {"error": exc.error()})
     except Exception as exc:  # noqa: BLE001 - a bug in one tool must not end the whole task
         log.exception("tool %s failed on %s", name, raw_input)
         return ToolResult("failed", {"error": {"message": f"{name} stopped with an internal error "
