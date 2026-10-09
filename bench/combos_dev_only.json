@@ -1,11 +1,75 @@
 [
  {
+  "id": "expense_memo",
+  "split": "dev",
+  "why": "messy table -> clean -> compare months -> chart -> Word memo -> note",
+  "ok": false,
+  "problem": "reply lacks growth=4500",
+  "seconds": 181.9,
+  "truth": {
+   "grew": "Travel",
+   "growth": 4500
+  },
+  "tools": [
+   "main:plan(ok)",
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:clean_data(ok)",
+   "data:query_data(ok)",
+   "data:query_data(ok)",
+   "data:query_data(ok)",
+   "main:write_code(ok)",
+   "coder:run_code(ok)",
+   "main:notes(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "I've cleaned your Q1 expenses and completed the analysis.\n\nTravel was the fastest-growing category, increasing by **225%** (from 2,000.00 in January to 6,500.00 in March).\n\nI've prepared a **memo.docx** containing the full monthly breakdown and a chart of your spending trends. I also saved the fastest-growing category to your notes.\n\n**Monthly Spending Totals:**\n\n| Month | Food | Rent | Software | Travel |\n| :--- | :--- | :--- | :--- | :--- |\n| January | 8,000.00 | 25,000.00 | 3,000.00 | 2,000.00 |\n| February | 8,600.01 | 25,000.00 | 3,200.01 | 4,100.00 |\n| March | 9,100.00 | 25,000.00 | 3,300.00 | 6,500.00 |\n\n[image_1: chart.png]"
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-expense_memo-ghfj3vus"
+ },
+ {
+  "id": "dice_fairness",
+  "split": "dev",
+  "why": "coder makes data -> it becomes a table -> the analyst tests it",
+  "ok": true,
+  "problem": null,
+  "seconds": 107.5,
+  "truth": {},
+  "tools": [
+   "main:plan(ok)",
+   "main:write_code(ok)",
+   "coder:run_code(ok)",
+   "main:analyze_data(None)",
+   "data:inspect_data(ok)",
+   "data:query_data(ok)",
+   "data:run_code(ok)"
+  ],
+  "cards": [
+   {
+    "question": "5,994 rows repeat an earlier row exactly, and no column tells them apart. Are they copies to remove, or real repeats (e.g. the same order placed twice)?",
+    "options": [
+     "Keep them (real repeats)",
+     "Remove the copies"
+    ],
+    "approval": null,
+    "via": null
+   }
+  ],
+  "answers": [
+   "I've created the script and analyzed the results for you, Arya.\n\nThe die looks fair. After 6,000 rolls with a seed of 42, the distribution is balanced enough that we can't statistically prove it's biased.\n\n**Roll Counts:**\n| Roll | Count |\n| :--- | :--- |\n| 1 | 970 |\n| 2 | 974 |\n| 3 | 989 |\n| 4 | 1,001 |\n| 5 | 999 |\n| 6 | 1,067 |\n\nThe Chi-square test resulted in a p-value of **0.2884**. Since this is well above the standard 0.05 threshold, the data is consistent with a fair die."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-dice_fairness-lf170tom"
+ },
+ {
   "id": "invoice_rupees",
   "split": "dev",
   "why": "live web rate + a table's total -> exact conversion",
   "ok": false,
   "problem": "reply lacks total_usd=11204.31",
-  "seconds": 153.9,
+  "seconds": 64.9,
   "truth": {
    "total_usd": 11204.31
   },
@@ -20,45 +84,36 @@
   ],
   "cards": [],
   "answers": [
-   "The USD to INR exchange rate for today is 96.66.\n\nThe total of `invoices.csv` is 1,083,008.60 INR."
+   "The exchange rate is approximately **1 USD = 96.7689 INR**.\n\nThe total of `invoices.csv` is **1,084,228.75 INR**."
   ],
   "errors": [],
-  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-invoice_rupees-4_qxkf0u"
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-invoice_rupees-jb_jjmup"
  },
  {
-  "id": "cancel_download",
+  "id": "plan_forecast_deck",
   "split": "dev",
-  "why": "a permission refused -> nothing done, said plainly",
+  "why": "plan card -> forecast -> slides",
   "ok": true,
   "problem": null,
-  "seconds": 7.7,
-  "truth": {},
+  "seconds": 119.9,
+  "truth": {
+   "best": "2024-12"
+  },
   "tools": [
-   "main:files(None)"
+   "main:plan(ok)",
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:clean_data(ok)",
+   "data:query_data(ok)",
+   "data:forecast(ok)",
+   "main:write_code(ok)",
+   "coder:run_code(ok)"
   ],
-  "cards": [
-   {
-    "question": "Download README.md (11.1 KB) from GitHub into this workspace?",
-    "options": [
-     "Download",
-     "Cancel"
-    ],
-    "approval": {
-     "action": "download_file",
-     "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/README.md",
-     "name": "README.md",
-     "type": "text/plain",
-     "bytes": 11348,
-     "host": "raw.githubusercontent.com",
-     "github": true
-    },
-    "via": null
-   }
-  ],
+  "cards": [],
   "answers": [
-   "I couldn't download it because the request was cancelled."
+   "The best month in `sales.csv` was **December 2024**, with **6,206.50** in sales.\n\nBased on the historical trend, the forecast for the next quarter is:\n*   **October 2025**: 6,061.28\n*   **November 2025**: 6,122.62\n*   **December 2025**: 6,183.97\n\nI have created the slide deck **outlook.pptx** for you, which includes a title slide and a forecast slide featuring the trend chart."
   ],
   "errors": [],
-  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-cancel_download-czlxop3u"
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-plan_forecast_deck-8hfqp8rl"
  }
 ]
