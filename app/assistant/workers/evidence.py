@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from app.tools.core import ToolResult
 from app.tools.scratch import Scratch
@@ -40,6 +41,7 @@ class Trace:
     questions: list[dict] = field(default_factory=list)  # questions tools raised for the user, with options
     scratch: Scratch | None = None  # the helper's scratch script (the coder's save checks its last run)
     table: str | None = None  # the table the task is about (the analyst's report is kept on it)
+    site_reads: dict[str, int] = field(default_factory=dict)  # site -> pages asked of it in this task
 
     def add(self, name: str, args: dict, result: ToolResult) -> None:
         self.calls[_call_key(name, args)] = result
@@ -58,6 +60,8 @@ class Trace:
                            if isinstance(q, dict) and q.get("question")]
         if name == "read_webpage":
             self.tried_urls.add(args.get("url", ""))
+            site = _site_of(args.get("url", ""))
+            self.site_reads[site] = self.site_reads.get(site, 0) + 1
             if result.status not in ("ok", "partial"):
                 self.failed_urls[args.get("url", "").strip()] = str((res.get("error") or {}).get("message", ""))
         if name == "read_webpage" and result.status == "ok":
@@ -79,6 +83,13 @@ class Trace:
         if name in SCRIPT_TOOLS:  # the whole script that ran (fix_code's input is only the changed lines)
             self.python_runs.append(((result.artifact or {}).get("code", args.get("code", "")), result.status == "ok"))
             self.python_outputs.append(res.get("output", ""))
+
+
+SITE_CAP = 6  # pages of one site in one task (the plan: a cap per task - a shop checked us after 2-3 quick visits)
+
+
+def _site_of(url: str) -> str:
+    return (urlsplit(str(url).strip()).hostname or "").lower().removeprefix("www.")
 
 
 TABLE_ID = re.compile(r"\bdata_\d+(?:_\w+)?\b")
@@ -129,6 +140,10 @@ def _repeat(trace: Trace, name: str, args: dict) -> ToolResult | None:
     """A call the worker already made with the same input is not run again - a small model re-runs
     a search after a failed read instead of reading another result - and it is told what to do
     instead. Running the script is exempt: the same code can give a new result once files have changed."""
+    site = _site_of(args.get("url", "")) if name == "read_webpage" else ""
+    if site and trace.site_reads.get(site, 0) >= SITE_CAP and str(args.get("url", "")).strip() not in trace.tried_urls:
+        return ToolResult("invalid_arguments", {"error": {"message": (
+            f"You have read {SITE_CAP} pages of {site} in this task: answer from them, or read another site.")}})
     if name == "read_webpage" and str(args.get("url", "")).strip() in trace.failed_urls:
         # The same page with other find words is the same failure (find only picks lines to show).
         why = trace.failed_urls[str(args["url"]).strip()]

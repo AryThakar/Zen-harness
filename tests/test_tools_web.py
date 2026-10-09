@@ -415,3 +415,34 @@ def test_a_wiki_page_that_blocks_readers_is_read_through_its_api():
     assert missing["reason"] == "not_found" and "no page called 'Missing'" in missing["message"]
     no_api = read_webpage("https://news.example.com/wiki/Thing", http=http, resolve=resolve).result["error"]
     assert no_api["reason"] == "blocked"  # no wiki API there: the page's own refusal stands
+
+
+# ---------------------------------------------------------------- one page per result, pacing, the page cache
+
+def test_the_same_page_twice_in_the_results_is_one_result():
+    hits = [{"title": "A", "href": "https://www.example.com/post/?utm_source=feed", "body": "a"},
+            {"title": "A again", "href": "https://example.com/post#comments", "body": "a"},
+            {"title": "B", "href": "https://example.com/post?id=2", "body": "b"}]
+    r = web_search("post", engine=engine(hits))
+    assert [x["title"] for x in r.result["results"]] == ["A", "B"]
+
+
+def test_a_page_read_again_within_the_hour_comes_from_the_cache(monkeypatch):
+    calls = []
+    monkeypatch.setattr(web, "_pages", {})
+    monkeypatch.setattr(web, "_page", lambda http, url, resolve: calls.append(url) or (
+        "Title", "Some text on the page.", {"site": "example.com", "files": ["https://example.com/a.csv"]}, url))
+    first = read_webpage("https://example.com/cached")
+    again = read_webpage("https://example.com/cached")
+    assert calls == ["https://example.com/cached"] and first.result == again.result
+    assert again.result["files"] == ["https://example.com/a.csv"]  # the cached card isn't changed by a read
+
+
+def test_pages_of_one_site_are_read_a_moment_apart(monkeypatch):
+    waits = []
+    monkeypatch.setattr(web, "_last_read", {})
+    monkeypatch.setattr(web.time, "sleep", waits.append)
+    web._pace("example.com")
+    web._pace("example.com")
+    web._pace("other.example")
+    assert len(waits) == 1 and 0 < waits[0] <= web.SITE_GAP

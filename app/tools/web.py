@@ -45,6 +45,7 @@ import json
 import re
 import socket
 import tempfile
+import threading
 import time
 from contextlib import nullcontext
 from datetime import date
@@ -115,16 +116,29 @@ def _search(engine, query: str, k: int, timelimit: str | None = None) -> tuple[l
         except Exception as exc:  # noqa: BLE001 - classified below; the next tier may still answer
             error = _search_failure(exc)
             continue
-        results = []
+        results, seen = [], set()
         for r in raw or []:
             url = str(r.get("href") or r.get("url") or "").strip()
-            if url.startswith(("http://", "https://")) and all(x["url"] != url for x in results):
+            if url.startswith(("http://", "https://")) and page_key(url) not in seen:
+                seen.add(page_key(url))
                 results.append({"title": " ".join(str(r.get("title") or "").split()), "url": url,
                                 "snippet": " ".join(str(r.get("body") or r.get("snippet") or "").split())[:400],
                                 "site": _site(url), "favicon": urljoin(url, "/favicon.ico")})
         if results:
             return results, None
     return [], error
+
+
+TRACKING = re.compile(r"^(?:utm_\w+|fbclid|gclid|msclkid|ref|ref_src)$", re.I)
+
+
+def page_key(url: str) -> str:
+    """One key per page: the same address with or without www., a trailing slash, a #part or tracking tags
+    (utm_source ...) is the same page - two results of one search were often one page twice."""
+    parts = urlsplit(url.strip())
+    query = "&".join(sorted(q for q in parts.query.split("&") if q and not TRACKING.match(q.split("=", 1)[0])))
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    return f"{host}{parts.path.rstrip('/') or '/'}" + (f"?{query}" if query else "")
 
 
 def _search_failure(exc: Exception) -> str | None:
@@ -181,11 +195,15 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
     if len(url) > 2048:
         raise ToolError("The address is too long.", field="url")
     resolve = resolve or socket.getaddrinfo
-    if http is None:  # a client made here is closed here
-        with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False,
-                          headers={"User-Agent": net.USER_AGENT,
-                                   "Accept": "text/html,text/plain,application/pdf,*/*;q=0.5"}) as own:
-            title, text, meta, final = _page(own, url, resolve)
+    if http is None:  # a real read: from the cache, or paced, with a client made (and closed) here
+        cached = _cached(url)
+        if cached is None:
+            _pace(urlsplit(url).hostname or "")
+            with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False,
+                              headers={"User-Agent": net.USER_AGENT,
+                                       "Accept": "text/html,text/plain,application/pdf,*/*;q=0.5"}) as own:
+                cached = _keep(url, _page(own, url, resolve))
+        title, text, meta, final = cached[0], cached[1], dict(cached[2]), cached[3]
     else:
         title, text, meta, final = _page(http, url, resolve)
     if not text.strip():
@@ -212,6 +230,36 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         result["truncated"] = (f"The page is long: only the first {MAX_TEXT:,} characters are shown. If what you need "
                                "is not here, call read_webpage again with find='a few words to look for'.")
     return ok(result, {"type": "webpage", "url": final, "title": title or meta["site"], **meta})
+
+
+PAGE_TTL = 3600  # seconds a page read stays cached: a repeat in the hour costs nothing and asks the site nothing
+SITE_GAP = 1.0  # seconds between two page reads of one site (a site that checks for bots counts quick visits)
+_pages: dict[str, tuple[float, tuple]] = {}
+_last_read: dict[str, float] = {}
+_web_lock = threading.Lock()
+
+
+def _cached(url: str) -> tuple | None:
+    with _web_lock:
+        hit = _pages.get(url)
+        return hit[1] if hit and time.monotonic() - hit[0] < PAGE_TTL else None
+
+
+def _keep(url: str, page: tuple) -> tuple:
+    with _web_lock:
+        if len(_pages) > 200:
+            _pages.clear()
+        _pages[url] = (time.monotonic(), page)
+    return page
+
+
+def _pace(host: str) -> None:
+    """Wait until SITE_GAP has passed since this site's last page read."""
+    with _web_lock:
+        wait = _last_read.get(host, 0.0) + SITE_GAP - time.monotonic()
+        _last_read[host] = time.monotonic() + max(0.0, wait)
+    if wait > 0:
+        time.sleep(wait)
 
 
 # Pages a site shows automated readers instead of its content (Cloudflare, reCAPTCHA, Imperva,

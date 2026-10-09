@@ -54,14 +54,21 @@ def test_truncated_or_tool_less_turns_run_no_tools():
     assert unreadable.stop == "tool_use" and unreadable.tool_calls[0]["input"] == '{"sql": "SEL'
 
 
+class QuietServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):  # a client that saw a cut connection: expected here
+        pass
+
+
 class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
-    def __init__(self, chunks=(), status=200, error=None, props=None):
+    def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False):
         self.requests = []
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1" if cut else "HTTP/1.0"
+
             def log_message(self, *args):
                 pass
 
@@ -83,12 +90,22 @@ class FakeServer:
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
+                if cut:  # chunked, then the connection drops part way through a chunk (a tunnel going down)
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    first = f"data: {json.dumps(chunks[0])}\n\n".encode()
+                    self.wfile.write(f"{len(first):x}\r\n".encode() + first + b"\r\n" + b"64\r\ndata: {")
+                    self.wfile.flush()
+                    self.close_connection = True
+                    return
                 self.end_headers()
+                if garbled:
+                    self.wfile.write(b"data: {not json\n\n")
                 for chunk in chunks:
                     self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.write(b"data: [DONE]\n\n")
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = QuietServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -176,6 +193,18 @@ def test_errors_become_provider_errors(fake):
         LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
     with pytest.raises(ProviderError, match="is llama-server running"):
         LlamaCppProvider("m", "http://127.0.0.1:9").complete("s", [{"role": "user", "content": "q"}], [])
+
+
+def test_an_answer_cut_off_part_way_is_a_provider_error(fake):
+    """The Kaggle bridge's kind of failure: the stream stops in the middle of a chunk
+    (http.client.IncompleteRead) - before, it was no ProviderError, so main said 'Something went wrong'
+    and a helper 'stopped with an internal error'. A garbled line is the same kind of failure."""
+    server = fake(chunks=[delta(content="The answer")], cut=True)
+    with pytest.raises(ProviderError, match="dropped in the middle of the answer"):
+        LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
+    server = fake(chunks=[delta(content="x")], garbled=True)
+    with pytest.raises(ProviderError, match="could not be read"):
+        LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
 
 
 def test_the_slot_size_comes_from_the_server():

@@ -6,7 +6,7 @@ slot, and returns a short structured result instead of raw pages or tables - one
 answer (what main tells the user from), sources, report, files (id, name, kind of what it saved or made)
 and the briefing below.
 
-    web        web_search, read_webpage                                 -> answer, sources (+ download links)
+    web        web_search, read_webpage, ask_user                       -> answer, sources (+ download links)
     knowledge  search_files, recall, read_file                          -> answer, sources
     data       the 9 data tools, run_code, fix_code, ask_user           -> save_report: answer, report, files
     coder      run_code, fix_code, read_file, ask_user                  -> save: answer, report, files (its file first)
@@ -28,7 +28,7 @@ The coder sees pictures: what its script draws, an image it reads and an image t
 into its own conversation as images (llama-server's vision part; at most IMAGES_SHOWN in view), so it
 looks at them with everything it knows about the task - no separate vision call (view_image is main's).
 
-The data and coder helpers can ask the user directly (ask_user, at most MAX_ASKS a task): the
+The web, data and coder helpers can ask the user directly (ask_user, at most MAX_ASKS a task): the
 card shows in the chat and the helper waits in place for the answer, keeping its work (main.Turn.ask).
 A question inspect_data raises (are dates day first?) is asked by the runner itself, at once, and the
 cleaning step of the option the user picks is applied by code - the model never relays or guesses it.

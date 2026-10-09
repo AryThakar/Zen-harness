@@ -1,5 +1,4 @@
-"""Check and run SQL written by the AI (query_data; the legacy product uses it through
-legacy/agent/sql_guard.py, with its own tables).
+"""Check and run SQL written by the AI (query_data).
 
 Defence in depth:
 1. This module parses the query (sqlglot, DuckDB dialect) and accepts only a
@@ -124,6 +123,18 @@ def run(cur: duckdb.DuckDBPyConnection, sql: str, max_rows: int = MAX_ROWS,
     finally:
         timer.cancel()
     return QueryResult(sql=safe_sql, columns=columns, rows=rows, total_rows=total, truncated=truncated)
+
+
+def frame(cur: duckdb.DuckDBPyConnection, safe_sql: str, timeout: float = TIMEOUT_SECONDS):
+    """The whole result of a query run() has checked, as a DataFrame - under the same time limit."""
+    timer = threading.Timer(timeout, cur.interrupt)
+    timer.start()
+    try:
+        return cur.execute(safe_sql).df()
+    except duckdb.InterruptException as exc:
+        raise SqlRejected(f"The query took longer than {timeout:g} seconds; simplify it.") from exc
+    finally:
+        timer.cancel()
 
 
 def _function_name(func: exp.Func) -> str:

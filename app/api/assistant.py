@@ -9,7 +9,8 @@
     GET    /assistant/workspaces/{ws}/chats                   list
     POST   /assistant/workspaces/{ws}/chats                   new chat
     DELETE /assistant/chats/{chat}                            delete (and forget it in recall)
-    GET    /assistant/chats/{chat}/messages                   the chat, for redisplay (rows of a running turn marked live)
+    GET    /assistant/chats/{chat}/messages                   the chat, for redisplay (rows of a running turn marked live;
+                                                              each turn's trace after it)
     GET    /assistant/chats/{chat}/traces                     how each turn went: steps, times, tokens, checks, errors
     GET    /assistant/chats/{chat}/stream                     the running turn's events from its start - events
     POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
@@ -19,6 +20,8 @@
     POST   /assistant/workspaces/{ws}/files   (upload)        a table, a document (indexed) or a file
     GET    /assistant/workspaces/{ws}/items/{item}/file       the stored file (images inline)
     GET    /assistant/workspaces/{ws}/items/{item}/rows       a table's first rows
+    PUT    /assistant/workspaces/{ws}/items/{item}/text  {text}     the user's own edit of a text file
+    POST   /assistant/workspaces/{ws}/items/{item}/run   {input?}   run a Python file (the sandbox's engine)
     GET    /assistant/web/icon?page=&favicon=   /web/image?url=   favicons and preview images,
                                                 fetched by the server with the public-address checks
 
@@ -32,6 +35,7 @@ import json
 import logging
 import re
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -43,6 +47,7 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
+from app.tools import file_ops, sandbox
 from app.tools import files as files_tool
 from app.tools import notes as notes_tool
 from app.tools import web
@@ -156,12 +161,13 @@ def delete_chat(chat_id: str, request: Request) -> Response:
 @router.get("/chats/{chat_id}/messages")
 def chat_messages(chat_id: str, request: Request) -> dict:
     """The chat as the UI shows it: what the user wrote (without the time stamp the model sees),
-    the answers, the tools used and what they showed - no model internals, no hidden notes."""
+    the answers, the tools used and what they showed, and how each turn ran (its trace, for the developer's
+    view under the answer) - no model internals, no hidden notes."""
     chat = _chat(request, chat_id)
     turn = main_slot.live(chat_id)
     out = []
     for m in _store(request).messages(chat_id):
-        if m.get("hidden") or m["role"] == "trace":
+        if m.get("hidden"):
             continue
         attached = {"files": m["files"]} if m["role"] == "user" and m.get("files") else {}
         if turn is not None and m["id"] > turn.after_id:  # the page follows these through /stream
@@ -178,6 +184,8 @@ def chat_messages(chat_id: str, request: Request) -> dict:
                         "summary": m["content"][:main_slot.SUMMARY_CHARS], **_answered(m["name"], m["content"])})
         elif m["role"] == "artifact":
             out.append({"role": "artifact", "artifact": m["artifact"], "at": m["at"]})
+        elif m["role"] == "trace":
+            out.append({"role": "trace", "trace": m["trace"], "at": m["at"]})
     return {"chat": chat, "messages": out, "running": turn is not None}
 
 
@@ -329,6 +337,55 @@ def item_rows(ws_id: str, item_id: str, request: Request, limit: int = 50) -> di
     head = df.head(max(1, min(limit, 500)))
     return jsonable({"columns": list(map(str, df.columns)), "rows": head.astype(object).where(head.notna(), None)
                      .values.tolist(), "total_rows": len(df)})
+
+
+class TextBody(BaseModel):
+    text: str = Field(max_length=file_ops.MAX_WRITE)
+
+
+class RunBody(BaseModel):
+    input: str | None = Field(None, max_length=10_000, description="what a person would type, one line per input()")
+    timeout: int = Field(30, ge=1, le=120)
+
+
+@router.put("/workspaces/{ws_id}/items/{item_id}/text")
+def save_text(ws_id: str, item_id: str, body: TextBody, request: Request) -> dict:
+    """The user's own edit of a text file, from the file panel: saved as it is - the user is the one changing
+    it. A report a helper kept on the file describes the version before, and now says so."""
+    ws = _item(request, ws_id, item_id)
+    _, index = _store(request).open(ws_id)
+    e = ws.entry(item_id)
+    if e["kind"] != "file" or e["name"].lower().endswith(".docx"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only text files can be edited here.")
+    try:
+        done = file_ops.replace_file(ws, index, item_id, body.text)
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
+    report = ws.report(item_id)
+    if report and "edited by the user" not in report.splitlines()[-1]:
+        ws.set_report(item_id, report.rstrip() + f"\n- Then edited by the user ({datetime.now():%Y-%m-%d %H:%M}): "
+                                                  "this report describes the version before.\n")
+        files_tool.index_report(ws, index, item_id)
+    return {"file": item_id, "bytes": done.result["bytes"]}
+
+
+@router.post("/workspaces/{ws_id}/items/{item_id}/run")
+def run_file(ws_id: str, item_id: str, body: RunBody, request: Request) -> dict:
+    """Run a stored Python file as the user's own run, from the file panel: the same engine, limits and rules as
+    a helper's (sandbox.ENGINE). Files it writes become items, made from this file; run again, it updates them."""
+    ws = _item(request, ws_id, item_id)
+    e = ws.entry(item_id)
+    if e["kind"] != "file" or not e["name"].lower().endswith(".py"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only Python files run here.")
+    code = ws.path(item_id).read_text("utf-8", errors="replace")
+    earlier = e.get("meta", {}).get("run_outputs") or {}
+    result = sandbox.ENGINE.run(ws, code, body.timeout, reuse=earlier, stdin=body.input)
+    made = {f["path"]: f["id"] for f in result.result.get("files", []) if f.get("id")}
+    for item in made.values():
+        ws.set_parent(item, item_id)
+    if made:
+        ws.set_meta(item_id, "run_outputs", {**earlier, **made})
+    return jsonable({"status": result.status, **result.result})
 
 
 # ---------------------------------------------------------------- web cards

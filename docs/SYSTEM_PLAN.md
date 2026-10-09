@@ -58,26 +58,38 @@ first, click/type tools only if the fallback proves its worth); EmbeddingGemma 2
 **Order:** foundations and the read-through → the rest of Tier 1 → one evaluation (fixed tasks, a held-out
 set, honest numbers) → README and clean-up. Tier 2 items enter only when chosen.
 
-**Progress (2026-10-09), all tests passing (437):**
-- Read-through of app/ (every module, plus a static scan for dead code and unused imports). Found and
-  fixed: a script run again in one task registered its outputs again (3 runs left 3 copies of a chart and
-  a table) - now the same items are updated in place. Removed: the "model" item kind (never created).
-  app/ and tests/ no longer import legacy/ (it has its own config and search code), so it can be deleted.
-- Foundations: one tool definition (labels with each tool; the UI reads them from GET /assistant/tools,
-  its own copy - with a stale train_model - gone); each helper defined once (Delegate); one result shape
-  (answer, sources, report, files, briefing); workers.py split into a package (contracts, runner,
-  evidence, checks, repairs); a trace per turn (steps, tool times, helper checks, errors - GET
-  /assistant/chats/{id}/traces); the slot size read from llama-server instead of a constant.
-- Tier 1: notes(save, list, delete - delete asks first); web: a status on every read (ok, cut, partial;
-  failures with a reason: blocked, not_found, unreachable, unsupported), a /wiki/ page that blocks the
-  plain read is read through its MediaWiki API (measured live: the Fandom page that gave 403 now reads),
-  and recent= for search; the coder's programs take typed input (input=); HTML files run in the viewer in
-  a sealed frame (scripts on; no network, no access to the app - checked in the browser); generated
-  images get file names with extensions.
-- Changed from the plan: no separate capability list (main already reads every tool's and helper's
-  description); the coder's code is grouped by function in the package, not in a module of its own;
-  run_python is the one place a real sandbox would plug in.
-- Next: one evaluation on the 26B (fixed tasks + a held-out set), then README and clean-up.
+**Progress (2026-10-09, second update) - every item against this section's text:**
+
+Tier 1
+- Done: one tool definition (labels served to the UI); one helper contract (Delegate) and one result shape;
+  workers.py split into a package; the slot size from llama-server; notes list and delete; web: a status per
+  read, the MediaWiki route, `recent`, the web helper asks the user (in place) and has 12 steps, page text
+  is data not instructions, one result per page (tracking tags, www and #parts ignored), a pause between
+  pages of one site, at most 6 pages of one site per task, read pages cached for an hour; the coder's typed
+  input, its one engine (sandbox.ENGINE - a real sandbox plugs in there) and one run at a time per sandbox;
+  playable HTML in a sealed frame; question chains (measured: a quiz of 10 questions runs to its end - each
+  answer starts the turn's rounds afresh); the item contract (one naming rule for every kind, workspace.py);
+  the turn trace, stored and shown in the UI (a button under each answer opens how it ran).
+- The read-through: every source file read whole (docs/REVIEW_LOG.md - 13 findings, each fixed or decided,
+  the fixes tested; the high one, a turn too big for main's slot, crashed before).
+- Versions: requirements.lock holds every library's tested version; the UI's libraries are pinned.
+- Decided not to build: a separate capability list - main reads every tool's and helper's own description,
+  and a second list would be a second copy to fall out of step.
+- Waiting for a download (the user's approval): trafilatura (the fast path, then its gate).
+- Waiting for the model (Kaggle): the prompt review (section 8), measuring the guessing checks with the trace
+  (section 9), the thinking policy, and the evaluation.
+
+Tier 2
+- Done: the coder's sandbox panel (a text file edited and saved in the file panel, a Python file run with
+  typed input, its output and the files it made shown - checked in the browser); finished documents (every
+  chart also kept as a picture; Word and slides written from Markdown with pictures and charts in them); the
+  plan card (main's plan as a checklist that ticks when its tools' calls end).
+- Waiting for downloads (the user's approval): Playwright MCP behind the web helper (needs the MCP Python
+  SDK; the Playwright MCP server itself is on this computer), EmbeddingGemma 2 (a llama.cpp build that knows
+  it, and its model files).
+
+Next: the docs merge (SYSTEM_MAP, TARGET_MAP and ASSISTANT_PLAN into this plan and ARCHITECTURE), the
+downloads above once approved, then the evaluation on the 26B, then the README.
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 

@@ -124,7 +124,6 @@ body.collapsed .side { margin-left: -260px; }
 /* ---------------------------------------------------------------- main */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 /* the top bar is glass: the chat scrolls on beneath it, blurred, and its lower edge fades out */
-.main { position: relative; }
 .top { position: absolute; top: 0; left: 0; right: 0; z-index: 5; height: 56px; display: flex; align-items: center;
   justify-content: space-between; padding: 0 14px; }
 .glass { position: absolute; left: 0; right: 0; top: 0; height: 72px; z-index: -1; pointer-events: none; }
@@ -238,8 +237,6 @@ code, pre, kbd { font-family: "Google Sans Code", "Cascadia Code", Consolas, mon
 .code-head button:hover { background: var(--hover); color: var(--ink); }
 .code-head svg.i { width: 14px; height: 14px; }
 pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-height: 1.65; }
-.t-k { color: var(--syn-k); } .t-s { color: var(--syn-s); } .t-n { color: var(--syn-n); } .t-f { color: var(--syn-f); }
-.t-c { color: var(--syn-c); font-style: italic; }  /* code: an editor's colours, in every mode */
 
 /* under a reply: copy, read aloud, and how long it took */
 .meta { display: flex; align-items: center; gap: 2px; margin: -6px 0 0 -8px; color: var(--soft); font-size: 12.5px; }
@@ -302,9 +299,6 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 .link .host { margin-left: auto; flex: none; color: var(--soft); font-size: 12px; }
 .fav { width: 16px; height: 16px; border-radius: 5px; flex: none; display: grid; place-items: center; color: #fff; filter: var(--fav-filter);
   font-size: 9.5px; font-weight: 700; --dials: "ROND" 100, "GRAD" 0; }
-.mini { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12.5px; }
-.mini th, .mini td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; }
-.mini th { color: var(--soft); font-weight: 500; }
 
 /* ---------------------------------------------------------------- cards */
 .card { border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); padding: 16px 18px; margin: 4px 0 16px; }
@@ -343,14 +337,9 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 .table-card th { text-align: left; font-weight: 500; color: var(--soft); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .table-card td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .table-card tr:last-child td { border-bottom: 0; }
-.table-card .n { text-align: right; font-variant-numeric: tabular-nums; }
 .more { margin-top: 8px; padding: 6px 12px; border-radius: 10px; font-size: 13px; color: var(--muted); }
 .more:hover { background: var(--hover); color: var(--ink); }
 .notes { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
-.answer-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 4px 0 16px; }
-.answer-table th { text-align: left; font-weight: var(--w-head); padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.answer-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.answer-table .n { text-align: right; font-variant-numeric: tabular-nums; }
 details.fold { margin-top: 10px; }
 details.fold summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 13px; color: var(--soft); }
 details.fold summary::-webkit-details-marker { display: none; }
@@ -431,7 +420,6 @@ button:focus { outline: none; }
 button:focus-visible, .opt:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--ink) 45%, transparent); outline-offset: 2px; }
 .opt.delete { border-color: transparent; background: var(--red); color: #fff; }
-.thinking { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
 
 /* ---------------------------------------------------------------- the files panel */
 .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; }
@@ -636,6 +624,29 @@ body.fv-full .fv-wide .a { transform: rotate(180deg); }
   font-variant-numeric: tabular-nums; }
 .fv-status span:last-child { margin-left: auto; }
 
+/* the sandbox: Edit / Save / Run in the panel's head; editing in a plain editor; a run's output below */
+.fv-actions { display: flex; gap: 4px; }
+.fv-actions button { padding: 5px 11px; border-radius: 9px; font-size: 12.5px; font-weight: 500; color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line); }
+.fv-actions button:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.fv-actions button:disabled { opacity: .45; cursor: default; }
+.fv-actions .run-btn { background: var(--send); color: var(--on-send); box-shadow: none; }
+.fv-actions .run-btn:hover:not(:disabled) { background: var(--send); color: var(--on-send); opacity: .88; }
+.edit-pane { display: flex; flex-direction: column; min-height: 100%; background: var(--editor); }
+.edit-area { flex: 1; min-height: 320px; width: 100%; margin: 0; padding: 12px 24px 24px 18px; border: 0; outline: 0; resize: none;
+  background: var(--editor); color: var(--ink); font: 13px/1.7 "Google Sans Code", Consolas, monospace; --dials: normal;
+  tab-size: 4; white-space: pre; overflow: auto; }
+.run-input { margin: 0 12px 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--ink); font: 12.5px/1.5 "Google Sans Code", Consolas, monospace; --dials: normal; resize: vertical; outline: 0; }
+.run-input:focus { border-color: color-mix(in srgb, var(--ink) 35%, transparent); }
+.run-out { margin: 0 12px 14px; padding: 10px 12px; border-radius: 12px; background: var(--code); box-shadow: 0 0 0 1px var(--line); }
+.run-out.failed { box-shadow: inset 2px 0 0 var(--red), 0 0 0 1px var(--line); }
+.run-out-head { font-size: 12.5px; font-weight: 500; color: var(--soft); }
+.run-out pre.code { margin-top: 6px; padding: 0; max-height: 320px; font-size: 12.5px; white-space: pre-wrap; }
+.run-out .tags { margin-top: 8px; }
+.run-out .tag { cursor: pointer; }
+.fv-body > .run-out { margin-top: 12px; }
+
 /* the editor: a tab, a gutter of line numbers beside the code, the pointer's line lit */
 .fv-tabs { display: flex; height: 36px; flex: none; background: var(--editor); border-bottom: 1px solid var(--line); }
 .fv-tab { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 12.5px; color: var(--ink);
@@ -687,7 +698,7 @@ body.fv-full .fv-wide .a { transform: rotate(180deg); }
 .grid-view td.rn, .grid-view th.rn { color: var(--gutter); text-align: right; padding-right: 10px; font-variant-numeric: tabular-nums; }
 .grid-view tr:hover td { background: var(--hover); }
 
-/* HTML: shown in a frame that runs nothing and can't reach the app */
+/* HTML: run in a sealed frame - its own scripts only, no network, no access to the app (files.js) */
 .html-view { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
 
 @media (max-width: 900px) {
@@ -734,8 +745,6 @@ body.empty .starters { display: flex; }
   border: 1px solid var(--line); font-size: 14px; font-weight: 450; color: var(--muted); }
 .starter:hover { background: var(--hover); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 35%, transparent); }
 .starter svg.i { width: 17px; height: 17px; color: var(--accent); }
-
-/* preview controls (not part of the app) */
 
 /* the message box: its edge lifts while you type in it */
 .composer:focus-within { box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 10px 30px rgba(0,0,0,.32); }
@@ -1101,5 +1110,22 @@ img.fav { object-fit: contain; }
 .df-text { min-width: 0; flex: 1; }
 .df-text b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
 .df-text small { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
+/* ---------------------------------------------------------------- a plan: a checklist that ticks as its tools end */
+.plan { margin: 10px 0 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 6px; }
+.plan-step { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
+.plan-mark { width: 20px; height: 20px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1.5px var(--soft); color: transparent; transition: background .25s, box-shadow .25s, color .25s; }
+.plan-mark svg.i { width: 12px; height: 12px; stroke-width: 3; }
+.plan-step.done .plan-mark { background: var(--ok); box-shadow: none; color: #fff; animation: pop .35s ease-out; }
+.plan-step.done > span:nth-child(2) { color: var(--muted); }
+.plan-tool { margin-left: auto; font-size: 12px; color: var(--soft); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- how an answer ran (the developer's view) */
+.trace-part + .trace-part { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.trace-head { font-size: 14px; font-weight: 500; }
+.trace-title { margin: 12px 0 0; font-size: 12.5px; font-weight: 500; color: var(--soft); }
+.trace .table-wrap.mini-wrap { margin-top: 4px; }
+.trace .step-note { margin-top: 6px; }
+.trace .notes { margin-top: 4px; }
 .df-text pre.code { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--code); box-shadow: 0 0 0 1px var(--line);
   font-size: 12.5px; white-space: pre-wrap; color: var(--muted); }

@@ -12,7 +12,7 @@ export function h(tag, props = {}, ...kids) {
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? "" : v);
   }
-  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
   return el;
 }
 
@@ -29,7 +29,6 @@ const ICONS = {
   expand: '<path d="M14 4.5h5.5V10M19.5 4.5 13 11M10 19.5H4.5V14M4.5 19.5 11 13"/>',
   doc: '<path d="M7 3.5h6.5L18 8v12.5H7z"/><path d="M13 3.5V8h5M10 12.5h5M10 16h5"/>',
   note: '<path d="M6 3.5h12a1.5 1.5 0 0 1 1.5 1.5v14.5l-4-3H6A1.5 1.5 0 0 1 4.5 15V5A1.5 1.5 0 0 1 6 3.5z"/><path d="M8.5 8.5h7M8.5 12h4.5"/>',
-  model: '<circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 11l8-4M8 13l8 4"/>',
   trash: '<path d="M4.5 7h15M10 11v6M14 11v6"/><path d="m6.5 7 .8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/>',
   pencil: '<path d="M16.5 4.5a2 2 0 0 1 2.8 2.8L8.5 18.1 5 19l.9-3.5z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -51,6 +50,7 @@ const ICONS = {
   table: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/>',
   code2: '<path d="m8.5 8-4.5 4 4.5 4M15.5 8l4.5 4-4.5 4M13.3 5.5l-2.6 13"/>',
   flow: '<rect x="3.5" y="4" width="7" height="5" rx="1.5"/><rect x="13.5" y="15" width="7" height="5" rx="1.5"/><path d="M7 9v4.5a2 2 0 0 0 2 2h4.5"/>',
+  trace: '<path d="M3 12h4l2.5-6.5 5 13 2.5-6.5h4"/>',
 };
 export const svg = (name, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -110,7 +110,6 @@ const MARKS = {
   py: '<path d="m13 14.3-3.3 3.4 3.3 3.4M19 14.3l3.3 3.4-3.3 3.4"/>',
   md: LINES, pdf: LINES, doc: LINES,
   img: '<rect x="9.5" y="12.5" width="13" height="10.5" rx="1.8"/><circle cx="13.3" cy="16" r="1.2"/><path d="m22.5 20.8-3.6-3.6-7.2 5.6"/>',
-  model: '<circle cx="11.5" cy="17.7" r="1.7"/><circle cx="20.5" cy="13.7" r="1.7"/><circle cx="20.5" cy="21.7" r="1.7"/><path d="m13 17 6-2.6M13 18.4l6 2.6"/>',
 };
 const sheet = (kind, tag) => `<svg class="fdoc" viewBox="0 0 32 40" aria-hidden="true">` +
   `<path class="pg" d="M7 1.5h12.6l8.9 8.9v25.1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-31a3 3 0 0 1 3-3z"/>` +

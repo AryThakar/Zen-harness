@@ -39,8 +39,10 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from typing import Protocol
 
 import pandas as pd
 
@@ -219,6 +221,37 @@ finally:
 '''
 
 
+class Engine(Protocol):
+    """Where a helper's script runs: one call, the same result for every engine (printed output, errors, the
+    files it made as workspace items, a code card). Today's is LocalPython; a real sandbox (a container, a VM)
+    would be another class with this run(), and nothing else in the app would change."""
+    name: str
+
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
+            stdin: str | None = None) -> ToolResult: ...
+
+
+class LocalPython:
+    """A separate Python process on this computer, with the limits and the audit hook above."""
+    name = "local Python"
+
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
+            stdin: str | None = None) -> ToolResult:
+        return run_python(ws, code, timeout, reuse, stdin)
+
+
+ENGINE: Engine = LocalPython()  # scratch.py runs every script through it
+
+
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock(box: Path) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(str(box.resolve()), threading.Lock())
+
+
 def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
                stdin: str | None = None) -> ToolResult:
     """Run a Python script; returns its printed output, errors and the files it made. reuse: the items an
@@ -231,29 +264,30 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: 
         return _invalid(f"code is longer than {MAX_CODE:,} characters.", "code")
     timeout = max(1, min(int(timeout), MAX_TIMEOUT))
     box = ws.root / "sandbox"
-    tmp = box / ".tmp"
-    tmp.mkdir(parents=True, exist_ok=True)
-    (box / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=SCRIPT, images=tuple(IMAGES)),
-                            encoding="utf-8")
-    (box / SCRIPT).write_text(code, encoding="utf-8")
-    before = _snapshot(box)
+    with _lock(box):  # one run at a time in this sandbox: each writes script.py and registers what changed
+        tmp = box / ".tmp"
+        tmp.mkdir(parents=True, exist_ok=True)
+        (box / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=SCRIPT, images=tuple(IMAGES)),
+                                encoding="utf-8")
+        (box / SCRIPT).write_text(code, encoding="utf-8")
+        before = _snapshot(box)
 
-    started = time.perf_counter()
-    typed = stdin is not None and stdin != ""
-    proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", CELL], cwd=box, env=_env(box, tmp),
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            stdin=subprocess.PIPE if typed else subprocess.DEVNULL, **_new_group())
-    timed_out = False
-    try:
-        out, err = proc.communicate(input=(stdin if stdin.endswith("\n") else stdin + "\n").encode("utf-8")
-                                    if typed else None, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_tree(proc)
-        out, err = proc.communicate()
-    seconds = round(time.perf_counter() - started, 2)
+        started = time.perf_counter()
+        typed = stdin is not None and stdin != ""
+        proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", CELL], cwd=box, env=_env(box, tmp),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.PIPE if typed else subprocess.DEVNULL, **_new_group())
+        timed_out = False
+        try:
+            out, err = proc.communicate(input=(stdin if stdin.endswith("\n") else stdin + "\n").encode("utf-8")
+                                        if typed else None, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_tree(proc)
+            out, err = proc.communicate()
+        seconds = round(time.perf_counter() - started, 2)
 
-    files = _register(ws, box, before, reuse or {})
+        files = _register(ws, box, before, reuse or {})
     result = {"exit_code": proc.returncode, "seconds": seconds,
               "output": _cut(out.decode("utf-8", "replace"))}
     errors = OWN_FRAME.sub("", _cut(err.decode("utf-8", "replace")).replace(str(box), "."))

@@ -80,7 +80,7 @@ def analyze_text(ws: Workspace, data: str, kind: Literal["themes", "classify", "
         for g in result["themes" if kind == "themes" else "labels"]:
             g[f"average_{value}"] = number(float(means.get(g[key], np.nan)))
         result["overall_average"] = number(float(df[value].mean()))
-    saved = ws.add_table(out, name=f"{ws.entry(data)['name']} {new_col}s", parent=data, meta={"text": column})
+    saved = ws.add_table(out, name=ws.derived_name(data, f"{new_col}s"), parent=data, meta={"text": column})
     result = {"kind": kind, "data": data, "column": column, "texts": int(freq.sum()), "distinct_texts": len(unique),
               "method": method, **result, "saved_as": saved,
               "saved_note": f"{saved} is {data} with a {new_col} column (rows without text have none)."}

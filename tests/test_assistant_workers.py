@@ -9,9 +9,9 @@ from app.providers.base import ModelTurn
 from app.providers.scripted import ScriptedProvider, call
 from app.assistant import registry, workers
 from app.providers.base import estimate_tokens
-from app.assistant.context import fit_turns, shorten_tool_results
+from app.assistant.context import cut_turns, fit_turns, shorten_tool_results
 from app.assistant.registry import Tool, ToolContext, execute
-from app.assistant.workers import PROFILES, main_tools, run_worker, ungrounded_numbers
+from app.assistant.workers import PROFILES, evidence, main_tools, run_worker, ungrounded_numbers
 from app.tools.core import ToolResult, ok
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
@@ -73,8 +73,8 @@ def test_a_tool_result_with_plain_notes_is_traced(ctx):
 
 def test_main_slot_sees_data_delegate_only_with_a_table(ctx):
     names = set(main_tools(ScriptedProvider([]), ctx))
-    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "ask_user",
-                     "files", "research_web", "ask_knowledge", "write_code"}
+    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "plan",
+                     "ask_user", "files", "research_web", "ask_knowledge", "write_code"}
     ctx.ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
     assert "analyze_data" in main_tools(ScriptedProvider([]), ctx)
     assert "run_code" not in names  # only inside the data and coder workers
@@ -103,7 +103,7 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
     assert out == {"status": "ok", "worker": "web", "answer": "Rates rose by 0.25 points.",
                    "sources": ["https://news.example.com/rates"]}
     first = model.requests[0]
-    assert {t["name"] for t in first["tools"]} == {"web_search", "read_webpage", "submit_result"}
+    assert {t["name"] for t in first["tools"]} == {"web_search", "read_webpage", "ask_user", "submit_result"}
     # the system prompt is the role's fixed instructions (cached across tasks); what changes is in the task
     assert first["system"] == PROFILES["web"].instructions
     opening = first["messages"][0]["content"]
@@ -131,11 +131,36 @@ def test_a_second_bad_submission_returns_with_a_warning(ctx, fake_web):
 
 
 def test_step_limit_forces_a_plain_answer(ctx, fake_web):
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(6)]
+    steps = PROFILES["web"].max_steps
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
                              + [ModelTurn(text="I could not finish.")])
     out = run_worker(model, PROFILES["web"], "loop forever", ctx)
     assert model.requests[-1]["allow_tools"] is False
     assert out["answer"] == "I could not finish." and out["note"] == "answered at the step limit" and "warnings" not in out
+
+
+def test_the_web_helper_asks_the_user_in_place_when_the_task_is_unclear(ctx, fake_web):
+    asked = []
+    ctx.ask = lambda card: asked.append(card) or {"answer": "India"}
+    model = ScriptedProvider([tools_turn(call("ask_user", question="Which country's prices?", options=["India", "US"])),
+                              tools_turn(call("web_search", query="iPhone 17 price India")),
+                              tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                              submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"])])
+    out = run_worker(model, PROFILES["web"], "What does the iPhone 17 cost?", ctx)
+    assert asked[0]["tool"] == "research_web" and asked[0]["options"] == ["India", "US"]
+    assert '"answer": "India"' in model.requests[1]["messages"][-1]["content"] and "warnings" not in out
+
+
+def test_one_site_is_read_at_most_a_few_pages_in_one_task(ctx, monkeypatch):
+    read = []
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: read.append(a.url) or ok({"url": a.url})))
+    cap = evidence.SITE_CAP
+    model = ScriptedProvider([tools_turn(call("read_webpage", url=f"https://shop.example/item/{i}")) for i in range(cap + 1)]
+                             + [tools_turn(call("read_webpage", url="https://other.example/review")), ModelTurn(text="done")])
+    run_worker(model, PROFILES["web"], "compare prices", ctx)
+    assert len(read) == cap + 1 and read[-1] == "https://other.example/review"  # the 7th page of the shop was refused
+    assert f"read {cap} pages of shop.example" in model.requests[cap + 1]["messages"][-1]["content"]
 
 
 def test_tools_outside_the_profile_are_refused(ctx, fake_web):
@@ -251,6 +276,10 @@ def test_the_current_turn_is_never_dropped():
     huge = [{"role": "user", "content": "z" * 20_000}]
     visible, dropped = fit_turns(turns(3) + huge, 1000, count)
     assert visible == huge and dropped == 3
+    # Measured: once the older turns were already cut, the next step indexed past the last turn (IndexError).
+    visible, dropped, fits = cut_turns(turns(3) + huge, 1000, count, dropped=3)
+    assert visible == huge and dropped == 3 and not fits  # kept, and said not to fit: main shortens instead
+    assert cut_turns(turns(3), 10**6, count)[2]
 
 
 def test_long_worker_tasks_shorten_old_tool_results():
@@ -404,12 +433,13 @@ def test_any_worker_can_hand_a_question_to_the_user(ctx):
 
 
 def test_the_last_steps_are_announced(ctx, fake_web):
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(6)]
+    steps = PROFILES["web"].max_steps
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
                              + [ModelTurn(text="I could not finish.")])
     run_worker(model, PROFILES["web"], "loop forever", ctx)
-    assert "[2 steps left" in model.requests[4]["messages"][-1]["content"]
-    assert "[Last step" in model.requests[5]["messages"][-1]["content"]
-    assert "steps left" not in model.requests[3]["messages"][-1]["content"]
+    assert "[2 steps left" in model.requests[steps - 2]["messages"][-1]["content"]
+    assert "[Last step" in model.requests[steps - 1]["messages"][-1]["content"]
+    assert "steps left" not in model.requests[steps - 3]["messages"][-1]["content"]
 
 
 def test_addresses_differing_only_in_case_are_different_calls(ctx, monkeypatch):
@@ -526,7 +556,7 @@ def test_a_reply_cut_off_by_the_length_limit_gets_another_step(ctx, fake_web):
 
 
 def test_a_reply_cut_off_at_the_last_step_is_marked(ctx, fake_web):
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(6)]
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(PROFILES["web"].max_steps)]
                              + [ModelTurn(text="The bank raised rates by", stop="max_tokens")])
     out = run_worker(model, PROFILES["web"], "rates?", ctx)
     assert out["note"] == "answered at the step limit; the reply was cut off by the length limit"

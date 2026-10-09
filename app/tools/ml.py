@@ -305,7 +305,7 @@ def _score_table(ws: Workspace, data: str, df: pd.DataFrame, bundle: dict, teste
         values = pd.Series(m.predict(X), index=df.index, dtype=object if bundle["classify"] else float)
         values.loc[tested.index] = tested
         out[col] = values
-    new_id = ws.add_table(out, name=f"{ws.entry(data)['name']} + predicted {target}", parent=data,
+    new_id = ws.add_table(out, name=ws.derived_name(data, f"predicted {target}"), parent=data,
                           meta={"predicted": target})
     unknown = df[target].isna()
     summary = {"saved_as": new_id, "column": col, "how": f"{how}: their prediction comes from a model that did not "
@@ -340,7 +340,7 @@ def _score_new(ws: Workspace, new_data: str, bundle: dict, better: bool) -> dict
     if bundle["binary"]:
         out[f"probability_{bundle['positive']}"] = m.predict_proba(X)[:, list(m.classes_).index(bundle["positive"])].round(4)
     out[col] = m.predict(X)
-    new_id = ws.add_table(out, name=f"{ws.entry(new_data)['name']} + predicted {target}", parent=new_data,
+    new_id = ws.add_table(out, name=ws.derived_name(new_data, f"predicted {target}"), parent=new_data,
                           meta={"predicted": target})
     res = {"saved_as": new_id, "rows": len(out), "column": col, **_prediction_summary(out, col, bundle)}
     if missing:

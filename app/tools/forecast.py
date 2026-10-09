@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .chart_image import keep_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import (CODE, OFFSET, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq,
                       split_dates, split_time)
@@ -69,7 +70,7 @@ def forecast(ws: Workspace, data: str, date: str | None = None, value: str | Non
     warning = ws.issues_warning(data)
     notes = made + ([warning] if warning else [])
     if by:
-        return _by_group(frame, date, value, by, agg, freq, horizon, data, label, notes)
+        return _by_group(ws, frame, date, value, by, agg, freq, horizon, data, label, notes)
     y, series_notes = _series(frame, date, value, agg, freq)
     facts, chart = _forecast(y, freq, horizon, agg)
     notes = notes + series_notes + facts.pop("notes", [])
@@ -78,7 +79,8 @@ def forecast(ws: Workspace, data: str, date: str | None = None, value: str | Non
         result["notes"] = notes
     artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast ({WORD[freq]}s)", **chart,
                 "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
-    return ok(result, artifact)
+    picture = keep_chart(ws, artifact, parent=data)
+    return ok({**result, **({"picture": picture} if picture else {})}, artifact)
 
 
 def _date_column(ws, data, df, date):
@@ -200,7 +202,7 @@ def _forecast(y: pd.Series, freq: str, horizon: int | None, agg: str) -> tuple[d
     return facts, chart
 
 
-def _by_group(frame, date, value, by, agg, freq, horizon, data, label, notes) -> ToolResult:
+def _by_group(ws, frame, date, value, by, agg, freq, horizon, data, label, notes) -> ToolResult:
     keys = frame[by].astype(str)
     size = (frame.groupby(keys)[value].sum() if value and agg == "sum" else keys.value_counts()).abs()
     groups = [str(g) for g in size.sort_values(ascending=False).index[:MAX_GROUPS]]
@@ -232,7 +234,8 @@ def _by_group(frame, date, value, by, agg, freq, horizon, data, label, notes) ->
         result["notes"] = notes + [f"Not forecast - {s}" for s in skipped]
     artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast by {by} ({WORD[freq]}s)",
                 "series": series, "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
-    return ok(result, artifact)
+    picture = keep_chart(ws, artifact, parent=data)
+    return ok({**result, **({"picture": picture} if picture else {})}, artifact)
 
 
 # ---------------------------------------------------------------- trend and season

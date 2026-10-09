@@ -24,7 +24,9 @@ cache keeps working. Dropped turns are still findable: every turn is indexed for
 
 Inside one worker task the history is short, but tool results can be big (a web page is ~3,000
 tokens): when it runs over, older tool results are shortened, newest kept whole - again to 25%
-below the limit, and the number shortened stays put until it overflows again.
+below the limit, and the number shortened stays put until it overflows again. main does the same
+when its current turn alone outgrows the slot (several helpers' results in one turn): cut_turns
+says so, since the current turn itself is never dropped.
 
 How much to drop is found by binary search over exact counts (a handful of calls, ~10 ms each).
 Approach (exact counts accept a fit, a sticky boundary, a bite well under the limit) from Unsloth
@@ -141,15 +143,26 @@ def turn_starts(messages: list[dict]) -> list[int]:
 
 def fit_turns(messages: list[dict], limit: int, count: Count, dropped: int = 0) -> tuple[list[dict], int]:
     """(the messages to send, how many turns are dropped). ``dropped`` is the cut used last time."""
+    visible, dropped, _ = cut_turns(messages, limit, count, dropped)
+    return visible, dropped
+
+
+def cut_turns(messages: list[dict], limit: int, count: Count, dropped: int = 0) -> tuple[list[dict], int, bool]:
+    """fit_turns, and whether what is left fits: the current turn is never cut, so when it alone is too
+    big (several helper results in one turn) it doesn't - main then shortens its older tool results
+    (shorten_tool_results), as a helper does."""
     starts = turn_starts(messages)
     if not starts:
-        return messages, 0
-    dropped = min(dropped, len(starts) - 1)
+        return messages, 0, True
+    last = len(starts) - 1
+    dropped = min(dropped, last)
     if count(messages[starts[dropped]:]) <= limit:
-        return messages[starts[dropped]:], dropped
-    fits = _fewest(dropped + 1, len(starts) - 1,
-                   lambda n: count(messages[starts[n]:]) <= int(limit * (1 - HEADROOM)))
-    return messages[starts[fits]:], fits
+        return messages[starts[dropped]:], dropped, True
+    if dropped == last:  # only the current turn is left, and it is too big
+        return messages[starts[last]:], last, False
+    n = _fewest(dropped + 1, last, lambda k: count(messages[starts[k]:]) <= int(limit * (1 - HEADROOM)))
+    window = messages[starts[n]:]
+    return window, n, n < last or count(window) <= limit
 
 
 def shorten_tool_results(messages: list[dict], limit: int, count: Count, shortened: int = 0,

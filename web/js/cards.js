@@ -4,9 +4,10 @@
 import { iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
 import { canView, openItem } from "./files.js";
+import { stepLabel } from "./steps.js";
 import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, noteTile, plural, polish, svg } from "./util.js";
 
-export const CARD_TYPES = new Set(["chart", "image", "diagram", "weather", "note", "file", "report"]);
+export const CARD_TYPES = new Set(["chart", "image", "diagram", "weather", "note", "file", "report", "plan"]);
 const stickHooks = [];
 export const onDrawn = fn => stickHooks.push(fn);  // the thread keeps to the bottom as late drawings land
 const drawnLate = () => stickHooks.forEach(fn => fn());
@@ -69,7 +70,7 @@ let mermaid = null, seq = 0;
 const diagrams = [];  // each one drawn, so a theme change can draw it again
 async function drawMermaid(box, code, failed) {
   try {
-    mermaid ??= (await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs")).default;
+    mermaid ??= (await import("https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs")).default;
     const dark = document.documentElement.dataset.theme !== "light";
     mermaid.initialize({ startOnLoad: false, securityLevel: "strict", suppressErrorRendering: true, theme: "base",
       flowchart: { curve: "basis", padding: 14, useMaxWidth: false },  // full size: a wide one scrolls, never shrinks
@@ -128,6 +129,26 @@ export function finishAnswer(root) {
       span.replaceWith(h("img", { class: "zoomable answer-pic", src: itemUrl(id), alt: id, loading: "lazy" }));
     }
   });
+}
+
+/* ═══ A plan ════════════════════════════════════════════════════════════ */
+// main's plan for a job of several steps, as a checklist: a step is ticked when a call of its tool ends well
+// (tick(name)), so what is ticked is what ran - not what the model says it did
+function planCard(a) {
+  const steps = (a.steps || []).map(s => ({ ...s, done: false,
+    el: h("li", { class: "plan-step" }, h("span", { class: "plan-mark", html: svg("check") }), h("span", {}, s.do),
+      h("span", { class: "plan-tool" }, stepLabel(s.tool, false).replace(/…$/, ""))) }));
+  const { el } = card("Plan", plural(steps.length, "step"));
+  el.classList.add("plan-card");
+  el.append(h("ol", { class: "plan" }, steps.map(s => s.el)));
+  el.tick = name => {
+    const next = steps.find(s => !s.done && s.tool === name);
+    if (!next) return;
+    next.done = true;
+    next.el.classList.add("done");
+    el.querySelector(".sub-t").textContent = `${steps.filter(s => s.done).length} of ${steps.length} done`;
+  };
+  return el;
 }
 
 /* ═══ Weather ═══════════════════════════════════════════════════════════ */
@@ -273,7 +294,7 @@ export function codeCard(a) {
 
 export function artifactCard(a) {
   const make = { chart: chartCard, image: imageCard, diagram: diagramCard, weather: weatherCard, note: noteCard,
-                 table: tableCard, code: codeCard, file: fileCard, report: reportCard }[a.type];
+                 table: tableCard, code: codeCard, file: fileCard, report: reportCard, plan: planCard }[a.type];
   return make ? make(a) : null;
 }
 

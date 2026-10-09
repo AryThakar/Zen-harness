@@ -15,11 +15,11 @@
 </script>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <link rel="stylesheet" href="/static/app.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
-<script defer src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/katex.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script type="module" src="/static/js/app.js"></script>
 </head>
@@ -120,6 +120,7 @@
       <span class="ficon" id="fvIcon"></span>
       <div class="fv-title"><b id="fvName"></b><small id="fvMeta"></small></div>
       <div class="fv-modes" id="fvModes" hidden><button type="button" data-mode="preview">Preview</button><button type="button" data-mode="source">Source</button></div>
+      <div class="fv-actions" id="fvActions" hidden><button type="button" id="fvEdit">Edit</button><button type="button" id="fvSave" hidden disabled>Save</button><button type="button" id="fvRun" class="run-btn" hidden>Run</button></div>
       <button class="icon-btn" id="fvCopy" type="button" title="Copy" aria-label="Copy the file"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg></button>
       <a class="icon-btn" id="fvDownload" title="Download" aria-label="Download the file"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg></a>
       <button class="icon-btn fv-wide" id="fvWide" type="button" title="Full width" aria-label="Full width"><svg class="i" viewBox="0 0 24 24"><path class="a" d="M14 4.5h5.5V10M19.5 4.5 13 11"/><path class="a" d="M10 19.5H4.5V14M4.5 19.5 11 13"/></svg></button>

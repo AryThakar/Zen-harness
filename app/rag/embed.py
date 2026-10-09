@@ -1,13 +1,12 @@
 """Text embeddings for semantic search.
 
 An Embedder turns passages and questions into L2-normalised float32 vectors, so
-a dot product is the cosine similarity. Chunks remember which model embedded
-them; after a model change they are re-embedded (Library.reindex).
+a dot product is the cosine similarity. Passages remember which model embedded
+them (search_index.py): search only compares vectors of the current model.
 
 * FastEmbedder - a small ONNX model run on the CPU by fastembed (default
   BAAI/bge-small-en-v1.5: 384 dimensions, ~65 MB, downloaded on first use).
   No GPU, no PyTorch, no service to run.
-* Ollama (week 6) - nomic-embed-text from the local model server.
 * HashEmbedder - word hashing, for tests: deterministic and instant, but only
   lexical, not semantic.
 """

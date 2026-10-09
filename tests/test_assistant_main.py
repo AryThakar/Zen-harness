@@ -7,7 +7,8 @@ import json
 import pandas as pd
 import pytest
 
-from app.providers.base import ModelTurn
+from app.assistant.context import prompt_limit
+from app.providers.base import ModelTurn, estimate_tokens
 from app.providers.scripted import ScriptedProvider, call
 from app.assistant import main as main_slot
 from app.assistant import registry
@@ -59,7 +60,7 @@ def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
     first = main.requests[0]
     assert first["system"].startswith(MAIN) and "Now:" not in first["system"]  # no clock in the system prompt
     assert {t["name"] for t in first["tools"]} == {"get_weather", "generate_image", "view_image", "draw_diagram",
-                                                    "calculate", "notes", "ask_user", "files", "research_web",
+                                                    "calculate", "notes", "plan", "ask_user", "files", "research_web",
                                                     "ask_knowledge", "write_code"}  # analyze_data once there is a table
     assert store.chat(chat["id"])["title"] == "What is 15% of 2400?"
     _, index = store.open(chat["workspace_id"])
@@ -82,6 +83,34 @@ def test_ask_user_pauses_the_turn_and_the_answer_continues_it(store, chat):
     assert store.chat(chat["id"])["pending"] is None
     resumed = main.requests[1]["messages"][-1]
     assert resumed["role"] == "tool" and json.loads(resumed["content"])["answer"] == "Day first"
+
+
+def test_a_chain_of_questions_is_not_cut_by_the_round_limit(store, chat):
+    """A quiz: one question per call, more of them than MAX_ROUNDS - each answer starts the turn's rounds
+    afresh, so the chain runs to its end."""
+    n = main_slot.MAX_ROUNDS + 2
+    main = ScriptedProvider([tools_turn(call("ask_user", question=f"Question {i + 1}?", options=["A", "B"]))
+                             for i in range(n)] + [answer("You got 10 of 10.")])
+    events = run(send(store, chat["id"], "Quiz me.", main, ScriptedProvider([])))
+    for i in range(n):
+        assert events[-1]["type"] == "question" and events[-1]["question"] == f"Question {i + 1}?"
+        events = run(reply(store, chat["id"], "A", main, ScriptedProvider([])))
+    assert events[-1]["type"] == "done" and events[-1]["answer"] == "You got 10 of 10."
+    assert all(r["allow_tools"] for r in main.requests)  # never forced to answer early
+
+
+def test_a_plan_is_shown_as_a_card_and_names_only_real_tools(store, chat):
+    main = ScriptedProvider([
+        tools_turn(call("plan", steps=[{"do": "work it out", "tool": "calculate"}, {"do": "draw it", "tool": "make_chart"}])),
+        tools_turn(call("plan", steps=[{"do": "work it out", "tool": "calculate"}, {"do": "keep it", "tool": "notes"}])),
+        answer("Planned.")])
+    events = run(send(store, chat["id"], "Plan it.", main, ScriptedProvider([])))
+    ends = [e for e in events if e["type"] == "tool_end"]
+    assert ends[0]["status"] == "invalid_arguments" and "No tool make_chart" in ends[0]["summary"]  # a helper's tool
+    cards = [e["artifact"] for e in events if e["type"] == "artifact"]
+    assert cards == [{"tool": "plan", "type": "plan", "steps": [{"do": "work it out", "tool": "calculate"},
+                                                                  {"do": "keep it", "tool": "notes"}]}]
+    assert "start on its first step" in ends[1]["summary"]  # the card is said to be on show
 
 
 def test_typing_while_a_question_waits_answers_it(store, chat):
@@ -173,6 +202,20 @@ def test_the_rolling_window_cut_is_kept_between_turns(store, chat):
     assert not any(s.startswith("from now on") for s in said)  # the turn itself was cut; its instruction kept
 
 
+def test_a_turn_that_outgrows_the_slot_shortens_its_older_tool_results(store, chat, monkeypatch):
+    """Several big results in one turn: the current turn is never dropped, so its older tool results are
+    shortened (newest two whole) - before, the step crashed (IndexError) or was sent over the limit."""
+    big = Tool("calculate", "test", registry.CalcIn, lambda c, a: ok({"text": "r" * 12_000}))
+    monkeypatch.setitem(registry.TOOLS, "calculate", big)
+    main = ScriptedProvider([tools_turn(call("calculate", expression=str(i))) for i in range(3)] + [answer("Done.")])
+    events = run(send(store, chat["id"], "Work it out.", main, ScriptedProvider([])))
+    assert events[-1]["type"] == "done"
+    last = main.requests[-1]
+    results = [m["content"] for m in last["messages"] if m["role"] == "tool"]
+    assert "shortened to save space" in results[0] and all("r" * 12_000 in r for r in results[1:])
+    assert estimate_tokens(last["system"], last["messages"], last["tools"]) <= prompt_limit(main)
+
+
 def test_a_reply_cut_off_in_its_text_gets_another_step(store, chat):
     main = ScriptedProvider([ModelTurn(text="The answer is", stop="max_tokens"), answer("The answer is 42.")])
     events = run(send(store, chat["id"], "Question?", main, ScriptedProvider([])))
@@ -202,6 +245,16 @@ def test_skipping_try_again_ends_the_turn(store, chat):
     done = run(reply(store, chat["id"], None, main, ScriptedProvider([])))
     assert done == [{"type": "done", "answer": ""}] and store.chat(chat["id"])["pending"] is None
     assert len(main.requests) == 1
+
+
+def test_a_message_typed_while_try_again_waits_is_a_new_message(store, chat):
+    """'Try again' takes no text: words sent meanwhile were taken as its click, and lost."""
+    main = ScriptedProvider([ModelTurn(text="", stop="max_tokens"), answer("Hello!")])
+    run(send(store, chat["id"], "Find 7I1 + 12I2.", main, ScriptedProvider([])))
+    done = run(send(store, chat["id"], "Never mind, just say hello.", main, ScriptedProvider([])))
+    assert done[-1]["answer"] == "Hello!" and store.chat(chat["id"])["pending"] is None
+    said = [m["content"] for m in main.requests[1]["messages"] if m["role"] == "user"]
+    assert "Never mind, just say hello." in said[-1] and main.requests[1]["budget"] is None
 
 
 def test_one_turn_at_a_time(store, chat):

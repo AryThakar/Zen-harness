@@ -6,17 +6,17 @@ styles, scripts, fonts and sound served from web/ under /static).
     open http://localhost:8000/docs   (API)
 
 Both model slots are served by one llama-server (settings.llamacpp_url): slot 0 is main, slot 1 the
-helpers - or, with BIZ_LLM_PROVIDER=groq, by a model on Groq's cloud (for testing). The legacy product
-has its own app (legacy/main.py).
+helpers - or, with BIZ_LLM_PROVIDER=groq, by a model on Groq's cloud (for testing).
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.assistant import main as main_slot
@@ -30,6 +30,26 @@ from .api import assistant
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 WEB_PAGE = WEB / "index.html"
+
+
+class SameSiteOnly:
+    """A change (any request but GET or HEAD) is taken only from this app's own page: another site open in the
+    same browser can't upload, send or delete here (a file upload is a 'simple' request - the browser sends it
+    to any site without asking first), nor can a sandboxed page (Origin 'null'). Plain ASGI, so the streamed
+    answers pass through untouched."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] not in ("GET", "HEAD"):
+            headers = dict(scope["headers"])
+            origin = headers.get(b"origin", b"").decode("latin-1")
+            if origin and urlsplit(origin).netloc != headers.get(b"host", b"").decode("latin-1"):
+                await JSONResponse({"detail": "Requests from another site are refused."}, status_code=403)(
+                    scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class PageFiles(StaticFiles):
@@ -49,7 +69,7 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
     async def lifespan(app: FastAPI):
         own_store = assistant_parts is None
         if own_store:
-            def slot(n: int) -> LlamaCppProvider:
+            def slot(n: int) -> Provider:
                 if settings.llm_provider == "groq":
                     return GroqProvider(settings.groq_model, settings.groq_api_key, thinking=settings.assistant_thinking,
                                         cancel=main_slot.STOP)
@@ -69,6 +89,7 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
     app = FastAPI(title=f"{settings.assistant_name} - a local assistant",
                   description="Chat, workspaces, helpers (web, knowledge, data, code) and their tools.",
                   version="0.6.0", lifespan=lifespan)
+    app.add_middleware(SameSiteOnly)
     app.include_router(assistant.router)
     app.mount("/static", PageFiles(directory=WEB), name="static")
 

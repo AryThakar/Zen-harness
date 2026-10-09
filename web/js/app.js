@@ -5,9 +5,9 @@ import { api, detail, KEYS, send, serverEvents, state, API } from "./api.js";
 import { closeAsk, decision, openAsk } from "./ask.js";
 import { CARD_TYPES, addRun, artifactCard, codeCard, finishAnswer, onDrawn, passagesEl, redrawDiagrams, resultsCard, webSourcesEl } from "./cards.js";
 import { forgetCharts, redrawCharts } from "./charts.js";
-import { attachedCount, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
-import { activityEl, loadTools } from "./steps.js";
-import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, svg, toast, copyText, projectHue } from "./util.js";
+import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
+import { activityEl, loadTools, traceEl } from "./steps.js";
+import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, showDialog, svg, toast, copyText, projectHue } from "./util.js";
 import { wireViewer } from "./viewer.js";
 
 const thread = $("#thread"), scroller = $("#scroller"), input = $("#input"), composer = $("#composer");
@@ -392,7 +392,20 @@ function assistantView() {
   root.append(activity.el, cards, answer, foot);
   thread.append(root);
   let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
-  const stats = [], web = new Map(), passages = [];
+  const stats = [], web = new Map(), passages = [], traces = [];
+  let plan = null;  // the plan card, ticked as its steps' tools end
+  let finished = false, traceBtn = null;
+  // How the reply ran (the server's trace of each part of the turn): one small button beside the answer's
+  // copy and read-aloud, opening the developer's view
+  const traceButton = () => {
+    if (!finished || !traces.length || traceBtn) return;
+    traceBtn = h("button", { class: "icon-btn", type: "button", title: "How this answer ran: steps, times, tools, checks",
+      "aria-label": "How this answer ran", html: svg("trace") });
+    traceBtn.addEventListener("click", () => showDialog({ title: "How this answer ran", extra: traceEl(traces), ok: "Close", cancel: null, wide: true }));
+    const meta = foot.querySelector(".meta");
+    if (meta) meta.insertBefore(traceBtn, meta.querySelector(".stats, .stopped"));
+    else foot.append(h("div", { class: "meta" }, traceBtn));
+  };
   const paint = () => {
     frame = 0;
     answer.innerHTML = markdown(text.replace(SOURCE_TAG, (_, s) => `<span class="cite">${s.replace(/[<>&"]/g, "")}</span>`)
@@ -466,6 +479,7 @@ function assistantView() {
         activity.end(d);
       }
       if (step?.delegate) { promote(step); if (current === step) current = null; }
+      if (plan && ["ok", "partial"].includes(d.status)) plan.tick(d.name);
     },
     artifact(a) {
       if (a.type === "question") {
@@ -478,6 +492,7 @@ function assistantView() {
       } else if (CARD_TYPES.has(a.type) || !current) {
         const el = artifactCard(a);
         if (a.type === "file" && current && el) current.fileCard = el;
+        if (a.type === "plan") plan = el;
         show(el);
       } else {  // a helper's working: shown in its step; its result tables and last code also as cards
         activity.evidence(current, a);
@@ -486,6 +501,7 @@ function assistantView() {
       }
     },
     worker(e) { if (current) activity.worker(current, e); if (e.event === "turn" && e.usage) stats.push(e.usage); },
+    trace(t) { if (t) { traces.push(t); traceButton(); } },
     stats(s) { stats.push(s); fresh = true; },
     ask(pending) {  // the turn pauses here until the user answers, in the message box
       streaming = false;
@@ -521,6 +537,8 @@ function assistantView() {
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));
       if (timing || text.trim()) foot.append(metaEl({ ...(timing || {}), stats, answer: text.trim() }, answer));
+      finished = true;
+      traceButton();
       stick();
     },
     error(message) {
@@ -528,6 +546,8 @@ function assistantView() {
       paint();
       activity.stop();
       foot.append(h("div", { class: "callout" }, h("b", {}, "This reply didn't finish."), message));
+      finished = true;
+      traceButton();
       stick();
     },
     stop(timing) {
@@ -535,6 +555,8 @@ function assistantView() {
       paint();
       activity.stop(timing?.seconds);
       foot.append(metaEl({ ...timing, stats, stopped: true, answer: text.trim() }, answer));
+      finished = true;
+      traceButton();
     },
   };
   return view;
@@ -562,6 +584,8 @@ function replay(messages, chat, keepOpen = false) {  // returns the last reply's
         ...("answer" in m ? { answer: m.answer } : {}), ...(m.skipped ? { skipped: true } : {}) });
     } else if (m.role === "artifact") {
       view.artifact(m.artifact);
+    } else if (m.role === "trace") {
+      view.trace(m.trace);
     }
   }
   if (keepOpen) return view;  // the running turn goes on in it
@@ -628,7 +652,7 @@ async function run(path, body, view) {
   const controller = new AbortController();
   state.controller = controller;
   const started = performance.now();
-  let first = null, ended = false, seen = false;
+  let first = null, ended = false, seen = false, closedBy = null;
   const timing = () => ({ seconds: (performance.now() - started) / 1000, first: first && (first - started) / 1000 });
   try {
     const r = await fetch(API + path, body === null ? { signal: controller.signal }
@@ -643,11 +667,13 @@ async function run(path, body, view) {
       else if (event === "worker") view.worker(data);
       else if (event === "stats") view.stats(data);
       else if (event === "checking") view.checking();
-      else if (event === "question") { ended = true; state.pending = { ...data, view }; view.ask(data); }  // the stream ends here; the answer's request streams the rest
-      else if (event === "done") { ended = true; view.finish(data.answer, timing()); }
-      else if (event === "stopped") { ended = true; view.stop(timing()); }
-      else if (event === "error") { ended = true; view.error(data.message); }
+      else if (event === "question") { ended = true; closedBy = data.inplace ? "inplace" : event; state.pending = { ...data, view }; view.ask(data); }  // the stream ends here; the answer's request streams the rest
+      else if (event === "done") { ended = true; closedBy = event; view.finish(data.answer, timing()); }
+      else if (event === "stopped") { ended = true; closedBy = event; view.stop(timing()); }
+      else if (event === "error") { ended = true; closedBy = event; view.error(data.message); }
     }
+    // the part of the turn that just ended has its trace stored by now (a helper asking in place goes on: not yet)
+    if (closedBy && closedBy !== "inplace") api(`/chats/${chatId}/traces`).then(all => view.trace(all.at(-1))).catch(() => {});
     if (!ended && body === null && !seen) {  // the turn ended meanwhile: show the chat as stored
       controller.detached = true;
       state.controller = null;
@@ -741,7 +767,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   if (dialogOpen()) closeDialog();
   else if (drawerOpen()) closeDrawer();
-  else if (fileOpen()) closeFile();
+  else if (fileOpen()) closeAsked();
   else if (searching()) closeSearch();
   else if (document.body.classList.contains("side-open")) closeSide();
   else if (state.busy) stopTurn();

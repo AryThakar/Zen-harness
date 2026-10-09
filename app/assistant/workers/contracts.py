@@ -123,7 +123,7 @@ def _ask_tool(delegate: str) -> Tool:
 
 
 PROFILES = {p.name: p for p in [
-    Profile("web", prompts.WEB, ("web_search", "read_webpage"), 6, WebResult, _check_web),
+    Profile("web", prompts.WEB, ("web_search", "read_webpage"), 12, WebResult, _check_web, asks=True),
     Profile("knowledge", prompts.KNOWLEDGE, ("search_files", "recall", "read_file"), 6, SourcedResult, _check_knowledge),
     Profile("data", prompts.DATA,
             ("inspect_data", "clean_data", "query_data", "make_chart", "compare", "forecast", "predict",
@@ -175,5 +175,5 @@ DELEGATES = {
 DELEGATE_OF = {d.profile: name for name, d in DELEGATES.items()}  # helper -> main's tool for it
 
 
-MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "ask_user",
-               "files")
+MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "plan",
+               "ask_user", "files")

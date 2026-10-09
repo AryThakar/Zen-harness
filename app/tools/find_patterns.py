@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .chart_image import keep_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .forecast import MAX_GROUPS, SEASON, _positions, _series
 from .periods import CODE, ORDER, WORD, native_freq, split_dates, split_time
@@ -62,6 +63,8 @@ def find_patterns(ws: Workspace, data: str, kind: Literal["segments", "unusual",
                                      resolve_column(df, item, "item") if item else None)
     if warning:
         result["data_warning"] = warning
+    if artifact.get("type") == "chart" and (picture := keep_chart(ws, artifact, parent=data)):
+        result["picture"] = picture  # unusual periods' chart, kept as an image item for documents and slides
     return ok({"kind": kind, "data": data, **result}, artifact)
 
 
@@ -134,7 +137,7 @@ def _segments(ws, data, df, roles, entity, columns):
     out = table.copy()
     out.insert(0, "segment", group_of)
     out = out.reset_index()
-    saved = ws.add_table(out, name=f"{ws.entry(data)['name']} segments", parent=data, meta={"segments": k})
+    saved = ws.add_table(out, name=ws.derived_name(data, "segments"), parent=data, meta={"segments": k})
     result = {"what": noun, "count": len(table), "described_by": list(table.columns), "how": how, "groups": groups,
               "separation": {"silhouette": number(score, 2), "meaning": f"{clarity} (silhouette: 1 = distinct, "
                              "0 = overlapping)"},
@@ -338,7 +341,7 @@ def _unusual_rows(ws, data, df, columns):
         out = df.loc[flagged.index].copy()
         out.insert(0, "unusual_in", worst.to_numpy())
         out.insert(1, "score", flagged.round(1).to_numpy())
-        result["saved_as"] = ws.add_table(out.reset_index(names="row"), name=f"{ws.entry(data)['name']} unusual rows",
+        result["saved_as"] = ws.add_table(out.reset_index(names="row"), name=ws.derived_name(data, "unusual rows"),
                                           parent=data)
     else:
         result["finding"] = "No row is extreme on any of these columns."
@@ -403,7 +406,7 @@ def _together(ws, data, df, roles, basket, item):
         result["finding"] = f"No pair of {item} values occurs together more than chance would explain."
     else:
         result["saved_as"] = ws.add_table(strong.head(1000).reset_index(drop=True),
-                                          name=f"{ws.entry(data)['name']} pairs", parent=data)
+                                          name=ws.derived_name(data, "pairs"), parent=data)
     if notes:
         result["notes"] = notes
     artifact = {"type": "table", "title": f"{item} that go together (per {basket})",

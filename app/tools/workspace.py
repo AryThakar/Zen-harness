@@ -5,6 +5,17 @@
     file_1   any other file (code, documents, text)
     note_1   a note (the AI's memory; never listed as a file)
 
+Every item has a kind, an id, a name, where it came from (parent) and when it was made; a stored file
+also its file (named by its id, with the right extension), and an item a helper worked on its report.
+Names follow one rule:
+    a file the user brought, a download, a file a script wrote   its own file name ('sales.csv', 'out/chart.png')
+    a generated picture, a chart kept as one                     a slug of its prompt or title and its format
+                                                                ('a-teal-square.png', 'sales-by-month.png')
+    a table made from another (cleaned, queried, predicted ...)  '<the source without its extension> - <step>'
+                                                                ('sales - cleaned', 'sales - cleaned - predicted churn')
+    a note                                                      its title
+so a derived table never passes for a CSV file of its own, and a name a script opens is a real file name.
+
 Tools return ids, and take an id or a name: Workspace.resolve is the one resolver every tool uses
 (registry.execute applies it to every 'data', 'image' and 'file' input), so the model never has to
 tell 'sales_cleaned_v2.csv' from 'sales_cleaned.csv', and a copied listing line still works.
@@ -39,6 +50,7 @@ PREFIX = {"table": "data", "image": "image", "file": "file", "note": "note"}
 IMAGE_FORMATS = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"), "WEBP": ("webp", "image/webp"),
                  "GIF": ("gif", "image/gif")}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+TABLE_FILES = {".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".parquet", ".json"}  # left off a derived table's name
 ITEM_REF = re.compile(r"\b((?:data|image|file|note)_\d+(?:_\w+)?)\b")
 # The tool that does handle an item of the wrong kind, said in the error so the model's next call fits.
 WRONG_KIND = {("table", "file"): " A table: a script reads it with table('{id}'), and analyze_data works with it.",
@@ -303,6 +315,14 @@ class Workspace:
             return "Workspace: empty (no files attached yet)."
         more = f"\n({len(lines) - limit} older items not shown)" if len(lines) > limit else ""
         return "Workspace:\n" + "\n".join(lines[-limit:]) + more
+
+    def derived_name(self, parent: str, step: str) -> str:
+        """The name of a table made from ``parent`` by ``step``: 'sales.csv' + 'cleaned' -> 'sales - cleaned'.
+        The same step again adds nothing ('sales - cleaned' cleaned once more stays 'sales - cleaned')."""
+        base = self.entry(parent)["name"]
+        if Path(base).suffix.lower() in TABLE_FILES:
+            base = Path(base).stem
+        return base if base.endswith(f" - {step}") else f"{base} - {step}"
 
     def describe(self, item_id: str) -> str:
         e = self.entry(item_id)

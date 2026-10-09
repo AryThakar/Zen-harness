@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from app.tools import (analyze_text, ask, calc, clean_data, compare, diagram, file_ops, files, find_patterns,
                        forecast, image, inspect_data, make_chart, memory, ml, notes, query_data, read_file,
                        sandbox, scratch, vision, weather, web)
-from app.tools.core import ToolError, ToolResult
+from app.tools.core import ToolError, ToolResult, ok
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -63,7 +63,7 @@ class Tool:
     mode_labels: dict[str, tuple[str, str]] | None = None
 
     def spec(self) -> dict:
-        schema = self.input_model.model_json_schema()
+        schema = _inline_refs(self.input_model.model_json_schema())
         _strip_titles(schema)
         typed_optionals(schema)
         return {"name": self.name, "description": self.description, "input_schema": schema}
@@ -114,6 +114,28 @@ class AskIn(_In):
             return [re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip() for line in value.splitlines()
                     if line.strip()]
         return value
+
+
+class PlanStep(_In):
+    do: str = Field(description="the step, in a few words, e.g. 'find this year's prices'")
+    tool: str = Field(description="the tool or helper that does it, e.g. 'research_web'")
+
+
+class PlanIn(_In):
+    steps: list[PlanStep] = Field(min_length=2, max_length=8)
+
+
+def show_plan(steps: list[PlanStep]) -> ToolResult:
+    """The plan as a card; the page ticks a step off when its tool's call ends."""
+    from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
+    names = [*MAIN_DIRECT, *DELEGATES]
+    unknown = sorted({s.tool for s in steps} - set(names))
+    if unknown:
+        return ToolResult("invalid_arguments", {"error": {"message": f"No tool {', '.join(unknown)}: each step's tool is "
+                                                                     f"one of {', '.join(n for n in names if n != 'plan')}.",
+                                                          "field": "steps"}})
+    return ok({"plan": f"{len(steps)} steps, shown to the user"},
+              {"type": "plan", "steps": [{"do": " ".join(s.do.split())[:120], "tool": s.tool} for s in steps]})
 
 
 class TaskIn(_In):
@@ -316,6 +338,11 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        labels=("Working with notes", "Worked with notes"),
        mode_labels={"save": ("Saving a note", "Saved a note"), "list": ("Looking at your notes", "Looked at your notes"),
                     "delete": ("Asking to delete a note", "Asked to delete a note")}),
+    Tool("plan", "Show the user your plan before a job of several steps that build on each other (find data, then "
+       "analyse it, then make a file): one short line per step, with the tool or helper that does it. The user sees it "
+       "as a checklist that ticks off as the tools finish. Not for a single step or a plain answer.",
+       PlanIn, lambda c, a: show_plan(a.steps),
+       labels=("Planning", "Planned")),
     Tool("ask_user", "Ask the user one question, only when the request could reasonably mean different things "
        "with different results. When one reading can be answered as it stands (e.g. a record, a top or a total), "
        "answer that one and say which reading you took instead. Never ask about preferences that don't change the "
@@ -334,7 +361,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "to open, show, save, change, rename, delete or download one. list: everything, a page at a time; find: whether "
        "a name exists; read: a file's report (what a helper did with it), or its text from line start on (an "
        "image or a table says which tool reads it); write: a new file the user asked for (.md, .txt, .csv, .json, "
-       ".py ...; a .docx is made from Markdown); update: change an existing file - its whole text, or lines "
+       ".py ...; a Word .docx or slides .pptx are made from Markdown - for slides, each # heading starts a slide - and "
+       "a line that is only ![caption](image_7) puts in that picture or chart); update: change an existing file - its "
+       "whole text, or lines "
        "start-end; rename; delete: one "
        "file; download: one file from GitHub, or a data table (CSV, Excel) from any public link. Delete, "
        "download and updating the user's own file ask the user with a button - call it straight away, don't ask "
@@ -369,7 +398,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100.",
        SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save),
        labels=("Querying the data", "Queried the data")),
-    Tool("make_chart", "Draw a chart of a table, computed from all its rows: line (over time; by = one line per "
+    Tool("make_chart", "Draw a chart of a table, computed from all its rows (also kept as a picture - its id "
+       "comes back as picture - for documents and slides): line (over time; by = one line per "
        "group), bar (by category; by = grouped or stacked), scatter (two numbers, with a trend line), histogram "
        "(how one number spreads), box (a number's spread per group), heatmap (two categories, e.g. weekday x hour) "
        "or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with query_data "
@@ -487,6 +517,22 @@ def typed_optionals(schema) -> None:
     elif isinstance(schema, list):
         for item in schema:
             typed_optionals(item)
+
+
+def _inline_refs(schema: dict) -> dict:
+    """Nested models written in place of their '$ref's (plan's steps): a chat template renders a parameter from
+    its own keys, and has no '$defs' to look one up in."""
+    defs = schema.pop("$defs", {})
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return walk({**defs[node["$ref"].rsplit("/", 1)[-1]], **{k: v for k, v in node.items() if k != "$ref"}})
+            return {k: walk(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+    return walk(schema)
 
 
 def _strip_titles(schema) -> None:

@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import re
 import socket
@@ -59,6 +60,9 @@ NO_MORE_TOOLS = ("(The tool limit for this question is reached. Answer now in pl
 LOOK_TOKENS = 600  # an answer about an image: a few sentences
 LOOK_TIMEOUT = 120
 TEXT_TOOL_CALL = re.compile(r"<tool_call>.*?(?:</tool_call>|$)", re.DOTALL)
+# What a connection to the server can fail with: no answer at all (URLError, OSError), or an answer cut off
+# part way - the Kaggle tunnel dropping mid-stream raises http.client.IncompleteRead, which is neither.
+NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
 
 
 def template_switches(thinking: bool) -> dict:
@@ -98,7 +102,7 @@ class LlamaCppProvider:
             if exc.code == 503:
                 return False, "The local model is still loading; try again in a moment."
             return False, f"llama-server at {self.base_url} answered {exc.code}; check its window for errors."
-        except (urllib.error.URLError, OSError):
+        except NET_ERRORS:
             return False, f"Start llama-server (address {self.base_url}), then reload this page."
         return True, f"{self.loaded_model()} (local, llama.cpp)"
 
@@ -124,7 +128,7 @@ class LlamaCppProvider:
         try:
             with urllib.request.urlopen(f"{self.base_url}/props", timeout=3) as response:
                 props = json.loads(response.read())
-        except (urllib.error.URLError, OSError, ValueError):
+        except (*NET_ERRORS, ValueError):
             return {}
         if not isinstance(props, dict):
             return {}
@@ -169,13 +173,13 @@ class LlamaCppProvider:
         body = self._body(system, messages, tools, allow_tools)
         try:
             return int(self._post("/v1/chat/completions/input_tokens", body)["input_tokens"])
-        except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        except (*NET_ERRORS, ValueError, KeyError, TypeError):
             pass
         try:  # an older llama-server: render with the model's template, then tokenize
             prompt = self._post("/apply-template", {k: body[k] for k in ("messages", "tools", "chat_template_kwargs")
                                                     if k in body})["prompt"]
             return len(self._post("/tokenize", {"content": prompt, "add_special": True})["tokens"])
-        except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        except (*NET_ERRORS, ValueError, KeyError, TypeError):
             return estimate_tokens(system, messages, tools)
 
     def _headers(self) -> dict:
@@ -207,7 +211,7 @@ class LlamaCppProvider:
             out = self._post("/v1/chat/completions", body, timeout=LOOK_TIMEOUT)
         except urllib.error.HTTPError as exc:
             raise ProviderError(_error_message(exc)) from exc
-        except (urllib.error.URLError, OSError) as exc:
+        except NET_ERRORS as exc:
             raise ProviderError(f"Could not reach llama-server at {self.base_url}.") from exc
         return out["choices"][0]["message"].get("content") or ""
 
@@ -222,8 +226,12 @@ class LlamaCppProvider:
             raise ProviderError(f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}") from exc
         except (socket.timeout, TimeoutError) as exc:
             raise ProviderError(f"{self.where.capitalize()} took too long to respond; try a simpler question.") from exc
-        except (urllib.error.URLError, ConnectionError) as exc:
+        except (urllib.error.URLError, ConnectionRefusedError) as exc:
             raise ProviderError(self._unreachable()) from exc
+        except (http.client.HTTPException, OSError) as exc:  # the answer was cut off part way
+            raise ProviderError(f"The connection to {self.where} dropped in the middle of the answer; try again.") from exc
+        except json.JSONDecodeError as exc:
+            raise ProviderError(f"{self.where.capitalize()} sent an answer that could not be read; try again.") from exc
         turn = parse_turn(text, calls, finish, allow_tools, self.model, {t["name"] for t in tools or []})
         turn.thinking = thinking
         if timings:

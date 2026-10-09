@@ -1,11 +1,12 @@
 // The project's files: the Files & data panel (everything in the project), the file panel beside the chat
-// (view only: code like an editor, Markdown as a page, text, tables as a grid, HTML running in a sealed frame -
-// a page or game the coder made can be played - PDFs in the browser's viewer) and uploads (drop, paste or
-// pick), each showing its progress.
+// (code like an editor, Markdown as a page, text, tables as a grid, HTML running in a sealed frame - a page or
+// game the coder made can be played - PDFs in the browser's viewer), the sandbox in it (a text file edited
+// and saved by the user, a Python file run with typed input, its output and the files it made shown below)
+// and uploads (drop, paste or pick), each showing its progress.
 
-import { api, itemUrl, KEYS, rowsUrl, state, uploadFile } from "./api.js";
+import { api, itemUrl, KEYS, rowsUrl, send, state, uploadFile } from "./api.js";
 import { openViewer, viewerOpen } from "./viewer.js";
-import { $, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText } from "./util.js";
+import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
 
 export const hooks = { thread: null, stick: () => {}, loadItems: async () => {}, submit: () => {}, hideHello: () => {}, updateComposer: () => {} };
 
@@ -40,11 +41,17 @@ const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" conten
   `font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'">`;
 
 /* ═══ The file panel ════════════════════════════════════════════════════ */
-const fv = { item: null, mode: "preview", text: null, table: null, blob: null };
+const fv = { item: null, mode: "preview", text: null, table: null, blob: null, editing: false, draft: "", input: "", output: null };
 export const fileOpen = () => document.body.classList.contains("viewing");
+// The sandbox: a text file the user can change and save, and a Python file they can run
+const editable = item => item?.kind === "file" && ["code", "text", "md", "html"].includes(shape(item));
+const runnable = item => item?.kind === "file" && ext(item.name) === "py";
+const dirty = () => fv.editing && fv.draft !== fv.text;
+const keepOrDrop = async () => !dirty() || await confirmDialog("Discard your changes?", `${fv.item.name} has changes that aren't saved.`, "Discard");
 
 export async function openItem(item, from) {
   const kind = shape(item);
+  if (kind !== "image" && fileOpen() && !await keepOrDrop()) return;
   if (kind === "image") {  // pictures open in the viewer
     const img = from?.tagName === "IMG" ? from : Object.assign(new Image(), { src: itemUrl(item.id), alt: item.name || item.id });
     if (!from) { await img.decode().catch(() => {}); }
@@ -52,7 +59,7 @@ export async function openItem(item, from) {
   }
   if (!kind) { location.href = itemUrl(item.id); return; }
   closeDrawer();
-  fv.item = item; fv.mode = "preview"; fv.text = fv.table = null;
+  fv.item = item; fv.mode = "preview"; fv.text = fv.table = null; fv.editing = false; fv.output = null;
   if (fv.blob) { URL.revokeObjectURL(fv.blob); fv.blob = null; }
   const name = item.name || item.title || item.id;
   const icon = item.kind === "note" ? noteTile() : fileTile(item.kind === "table" ? `${name}.csv`.replace(/\.csv\.csv$/, ".csv") : name);
@@ -60,6 +67,7 @@ export async function openItem(item, from) {
   $("#fvName").textContent = name;
   $("#fvMeta").textContent = "Loading…";
   $("#fvModes").hidden = !(kind === "md" || kind === "html");
+  $("#fvActions").hidden = true;
   $("#fvBody").replaceChildren(h("p", { class: "muted", style: "padding:20px" }, "Loading…"));
   $("#fvStatus").replaceChildren();
   $("#fvTabs").hidden = true;
@@ -84,18 +92,25 @@ export async function openItem(item, from) {
   }
   if (fv.item !== item) return;  // another file was opened meanwhile
   const bytes = fv.text != null ? new Blob([fv.text]).size : item.bytes;
-  $("#fvMeta").textContent = [item.id, kind === "table" ? `${count(fv.table.total_rows)} rows × ${fv.table.columns.length} columns` : fileSize(bytes), "view only"].filter(Boolean).join(" · ");
+  $("#fvMeta").textContent = [item.id, kind === "table" ? `${count(fv.table.total_rows)} rows × ${fv.table.columns.length} columns` : fileSize(bytes), editable(item) ? "editable" : "view only"].filter(Boolean).join(" · ");
   const link = $("#fvDownload");
   link.href = kind === "table" ? URL.createObjectURL(new Blob([toCsv(fv.table)], { type: "text/csv" })) : itemUrl(item.id);
   link.download = kind === "table" ? `${name.replace(/\.(csv|xlsx?|tsv)$/i, "")}.csv` : name;
+  $("#fvActions").hidden = !editable(item);
   show();
 }
 
 function show() {
   const item = fv.item, kind = shape(item), body = $("#fvBody");
   const lang = kind === "code" ? CODE[ext(item.name)] : kind === "md" ? "markdown" : kind === "html" ? "xml" : "plaintext";
-  const source = kind === "code" || kind === "text" || (fv.mode === "source" && (kind === "md" || kind === "html"));
+  const source = fv.editing || kind === "code" || kind === "text" || (fv.mode === "source" && (kind === "md" || kind === "html"));
   document.querySelectorAll("#fvModes button").forEach(b => b.classList.toggle("on", b.dataset.mode === fv.mode));
+  $("#fvModes").hidden = fv.editing || !(kind === "md" || kind === "html");
+  $("#fvEdit").textContent = fv.editing ? "Done" : "Edit";
+  $("#fvEdit").title = fv.editing ? "Back to the view" : "Change this file here";
+  $("#fvSave").hidden = !fv.editing;
+  $("#fvSave").disabled = !dirty();
+  $("#fvRun").hidden = !runnable(item);
   $("#fvTabs").hidden = !source;
   $("#fvTabName").textContent = item.name || item.title || item.id;
   $("#fvDot").style.background = DOT[lang] || "#8e8e8e";
@@ -109,6 +124,9 @@ function show() {
   } else if (kind === "pdf") {
     body.append(h("iframe", { class: "pdf-view", src: fv.blob, title: item.name }));
     status = ["PDF"];
+  } else if (fv.editing) {
+    body.append(editPane());
+    status = [LANG[lang], plural(fv.draft.replace(/\n$/, "").split("\n").length, "line"), dirty() ? "not saved" : "saved"];
   } else if (source) {
     body.append(editorView(fv.text, lang));
     status = [LANG[lang], plural(fv.text.replace(/\n$/, "").split("\n").length, "line"), fileSize(new Blob([fv.text]).size), "UTF-8"];
@@ -123,7 +141,83 @@ function show() {
       srcdoc: SEALED + fv.text, title: item.name }));
     status = ["HTML", "runs here", "no network"];
   }
-  $("#fvStatus").innerHTML = status.filter(Boolean).map(s => `<span>${escapeHtml(s)}</span>`).join("") + "<span>View only</span>";
+  if (fv.output && !fv.editing && runnable(item)) body.append(fv.output);  // the last run stays in view
+  const mode = fv.editing ? "Editing" : editable(item) ? "Edit to change it" : "View only";
+  $("#fvStatus").innerHTML = status.filter(Boolean).map(s => `<span>${escapeHtml(s)}</span>`).join("") + `<span>${mode}</span>`;
+}
+
+// Editing: the file's text in a plain editor (Tab indents, Ctrl+S saves); a Python file gets a box for what a
+// person would type when it asks (input()) and its last run's output below
+function editPane() {
+  const area = h("textarea", { class: "edit-area", spellcheck: "false", autocapitalize: "off", "aria-label": `Edit ${fv.item.name}` });
+  area.value = fv.draft;
+  area.addEventListener("input", () => {
+    fv.draft = area.value;
+    $("#fvSave").disabled = !dirty();
+    const [, lines, saved] = $("#fvStatus").children;
+    if (lines) lines.textContent = plural(fv.draft.replace(/\n$/, "").split("\n").length, "line");
+    if (saved) saved.textContent = dirty() ? "not saved" : "saved";
+  });
+  area.addEventListener("keydown", e => {
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey) {
+      e.preventDefault();
+      area.setRangeText("    ", area.selectionStart, area.selectionEnd, "end");
+      area.dispatchEvent(new Event("input"));
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveEdit(); }
+  });
+  setTimeout(() => area.focus({ preventScroll: true }));
+  if (!runnable(fv.item)) return h("div", { class: "edit-pane" }, area);
+  const typed = h("textarea", { class: "run-input", rows: "2", spellcheck: "false",
+    placeholder: "What a person would type when it asks (input()), one line each - optional" });
+  typed.value = fv.input;
+  typed.addEventListener("input", () => { fv.input = typed.value; });
+  return h("div", { class: "edit-pane" }, area, typed, fv.output);
+}
+
+async function saveEdit() {
+  if (!fv.editing || !dirty()) return true;
+  const item = fv.item, text = fv.draft;
+  try { await send("PUT", `/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/text`, { text }); }
+  catch (e) { toast(`Couldn't save: ${e.message}`, true); return false; }
+  if (fv.item !== item) return true;
+  fv.text = text;
+  $("#fvMeta").textContent = [item.id, fileSize(new Blob([text]).size), "editable"].join(" · ");
+  show();
+  toast(`Saved ${item.name}`);
+  hooks.loadItems();
+  return true;
+}
+
+async function runFile() {
+  const item = fv.item;
+  if (!fv.editing) { fv.editing = true; fv.draft = fv.text; }
+  if (!await saveEdit()) return;
+  const button = $("#fvRun");
+  button.disabled = true;
+  button.textContent = "Running…";
+  fv.output = h("div", { class: "run-out" }, h("div", { class: "run-out-head" }, "Running…"));
+  show();
+  let r;
+  try { r = await send("POST", `/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/run`, { input: fv.input || null }); }
+  catch (e) { r = { status: "failed", errors: e.message }; }
+  button.disabled = false;
+  button.textContent = "Run";
+  if (fv.item !== item) return;
+  const made = (r.files || []).filter(f => f.id);
+  const head = r.status === "ok" ? `Ran in ${r.seconds} s` : r.error?.message?.startsWith("Stopped after") ? r.error.message
+    : `Stopped with an error${r.seconds != null ? ` after ${r.seconds} s` : ""}`;
+  fv.output = h("div", { class: `run-out${r.status === "ok" ? "" : " failed"}` },
+    h("div", { class: "run-out-head" }, head),
+    r.output ? h("pre", { class: "code" }, r.output.trimEnd()) : null,
+    r.errors ? h("pre", { class: "code err-out" }, r.errors.trimEnd()) : null,
+    made.length ? h("div", { class: "tags" }, made.map(f => {
+      const kind = f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file";
+      const it = { id: f.id, kind, name: f.path };
+      return h("button", { class: "tag", type: "button", onclick: () => openItem(it) }, `${f.path}${f.updated ? " (updated)" : ""}`);
+    })) : null,
+    !r.output && !r.errors && !made.length ? h("div", { class: "muted" }, "It printed nothing.") : null);
+  show();
+  if (made.length) hooks.loadItems();
 }
 
 function editorView(text, lang) {
@@ -152,16 +246,25 @@ function gridView(columns, rows) {
 }
 const toCsv = t => [t.columns, ...t.rows].map(r => r.map(v => v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(",")).join("\n") + "\n";
 
-export function closeFile() { document.body.classList.remove("viewing", "fv-full"); }
+export function closeFile() { fv.editing = false; document.body.classList.remove("viewing", "fv-full"); }
+export async function closeAsked() { if (await keepOrDrop()) closeFile(); }  // unsaved edits are asked about first
 
 function wireFilePanel() {
-  $("#fvClose").addEventListener("click", closeFile);
+  $("#fvClose").addEventListener("click", closeAsked);
+  $("#fvEdit").addEventListener("click", async () => {
+    if (fv.editing && !await keepOrDrop()) return;
+    fv.editing = !fv.editing;
+    fv.draft = fv.text ?? "";
+    show();
+  });
+  $("#fvSave").addEventListener("click", saveEdit);
+  $("#fvRun").addEventListener("click", runFile);
   $("#fvWide").addEventListener("click", e => {
     const wide = document.body.classList.toggle("fv-full");
     e.currentTarget.title = wide ? "Back to the side" : "Full width";
     e.currentTarget.setAttribute("aria-label", e.currentTarget.title);
   });
-  $("#fvCopy").addEventListener("click", e => copyText(fv.table ? toCsv(fv.table) : fv.text ?? "", e.currentTarget));
+  $("#fvCopy").addEventListener("click", e => copyText(fv.table ? toCsv(fv.table) : fv.editing ? fv.draft : fv.text ?? "", e.currentTarget));
   document.querySelectorAll("#fvModes button").forEach(b => b.addEventListener("click", () => { fv.mode = b.dataset.mode; show(); }));
   // its width: drag the left edge (the chat keeps 380px, the panel 360px), arrows nudge, double-click resets
   const MIN = 360, CHAT = 380, handle = $(".fv-resize");

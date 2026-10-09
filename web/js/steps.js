@@ -4,7 +4,7 @@
 
 import { api } from "./api.js";
 import { favicon, tableEl } from "./cards.js";
-import { errorText, h, host, plural, svg } from "./util.js";
+import { cap, errorText, h, host, plural, svg } from "./util.js";
 
 // How each tool and helper is named while it works ("Reading a page" / "Read a page"): defined with the
 // tools on the server and loaded once at start (GET /assistant/tools), so the page keeps no list of its own.
@@ -78,6 +78,35 @@ function evidenceEl(a, titled, shown) {
       h("div", { class: "tags" }, names.slice(0, 6).map(n => h("span", { class: "tag" }, n))));
   }
   return null;
+}
+
+// How a reply ran, for a developer: the server's trace of each part of the turn (a question to the user ends a
+// part) - main's model steps with their tokens, every tool call, each helper's steps, tools and checks, the
+// hidden checks that fired and the error, if any. Facts measured by the server, not the model's account.
+export function traceEl(traces) {
+  const secs = v => v == null ? "" : `${Number(v).toFixed(1)} s`;
+  const usage = u => [u?.output_tokens, u?.prompt_tokens, u?.cached_tokens, u?.tokens_per_second ? Math.round(u.tokens_per_second) : null];
+  const USAGE = ["tokens out", "prompt", "cached", "tok/s"];
+  const table = (columns, rows) => { const t = tableEl(columns, rows); t.classList.add("mini-wrap"); return t; };
+  const title = text => h("div", { class: "trace-title" }, text);
+  return h("div", { class: "trace" }, traces.map((t, i) => {
+    const steps = t.steps || [], tools = t.tools || [], helpers = t.helpers || [];
+    const head = [`${cap(t.ended || "ran")} after ${secs(t.seconds)}`, plural(steps.length, "model step"), plural(tools.length, "tool call"),
+      helpers.length ? plural(helpers.length, "helper task") : null].filter(Boolean).join(" · ");
+    return h("div", { class: "trace-part" },
+      h("div", { class: "trace-head" }, traces.length > 1 ? `Part ${i + 1}: ${head}` : head),
+      t.error ? h("div", { class: "step-note err" }, t.error) : null,
+      steps.length ? [title("Main model"), table(["#", "at", "took", "stop", "calls", ...USAGE],
+        steps.map((s, j) => [j + 1, secs(s.at), secs(s.seconds), s.stop, (s.calls || []).join(", ") || "—", ...usage(s.usage)]))] : null,
+      tools.length ? [title("Tool calls"), table(["at", "tool", "status", "took"],
+        tools.map(c => [secs(c.at), c.name, c.refused ? `refused: ${String(c.refused).slice(0, 90)}` : c.status, secs(c.seconds)]))] : null,
+      helpers.map(w => [title(`Helper: ${w.worker}`),
+        w.steps?.length ? table(["at", "stop", "calls", ...USAGE], w.steps.map(s => [secs(s.at), s.stop, (s.calls || []).join(", ") || "—", ...usage(s.usage)])) : null,
+        w.tools?.length ? table(["at", "tool", "status", "characters back"], w.tools.map(c => [secs(c.at), c.name, c.status, c.chars])) : null,
+        (w.checks || []).map(c => h("div", { class: `step-note${c.problems?.length ? " err" : ""}` },
+          `${secs(c.at)} · result checked: ${c.problems?.length ? c.problems.join("; ") + (c.retry ? " (sent back to fix)" : "") : "passed"}`))]),
+      t.checks?.length ? [title("Hidden checks that fired"), h("ul", { class: "notes" }, t.checks.map(c => h("li", {}, c)))] : null);
+  }));
 }
 
 export function activityEl() {

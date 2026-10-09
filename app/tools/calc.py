@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import math
 import re
+from decimal import Decimal
 
 from simpleeval import InvalidExpression, SimpleEval
 
 from .core import ToolError, ToolResult, ok, tool
 
 MAX_FACTORIAL = 1000  # bigger arguments would hang the evaluator
+MAX_DIGITS = 50  # a longer whole number is given in scientific notation, with its number of digits
 
 
 def _factorial(n):
@@ -66,10 +68,17 @@ def calculate(expression: str) -> ToolResult:
     except (InvalidExpression, SyntaxError, TypeError, ValueError, OverflowError) as exc:
         known = f" Functions: {', '.join(FUNCTIONS)}; names: pi, e." if "not defined" in str(exc) else ""
         raise ToolError(f"Can't evaluate that expression: {str(exc).rstrip('.')}.{known}", field="expression") from exc
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or (isinstance(value, float)
+                                                                          and not math.isfinite(value)):
         raise ToolError("The expression must produce a finite number.", field="expression")
-    shown = value if isinstance(value, int) else float(f"{value:.12g}")
-    result = {"expression": expr, "result": shown}
+    result = {"expression": expr, "result": value if isinstance(value, int) else float(f"{value:.12g}")}
+    if isinstance(value, int) and abs(value) >= 10 ** MAX_DIGITS:
+        # A whole number too long to read (200! has 375 digits) - and too large for a float, which made the
+        # finite check itself fail: its first 13 digits and its length, worked out exactly.
+        shown = format(Decimal(value), ".12e")
+        digits = int(shown.split("e+")[1]) + 1
+        result.update(result=shown, digits=digits,
+                      note=f"A whole number with {digits:,} digits, shown to 13 significant digits.")
     bare = BARE_ANGLE.findall(expr)
     if bare:  # the unit is said, not guessed: the model can only catch a wrong unit when it sees one
         result["note"] = (f"{', '.join(f'{f}({a})' for f, a in bare)} took the angle as radians. If degrees were "

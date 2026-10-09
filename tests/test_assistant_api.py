@@ -59,6 +59,19 @@ def test_the_chat_page_and_health_are_served(app_and_slots):
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_changes_from_another_site_are_refused(app_and_slots):
+    """An upload is a 'simple' request: a page on another site could send one with no preflight."""
+    client, _, _ = app_and_slots
+    ws = client.post("/assistant/workspaces", json={"name": "Shop"}).json()
+    upload = {"file": ("notes.txt", b"hello", "text/plain")}
+    for origin in ("https://evil.example", "null"):  # another site; a sandboxed page
+        r = client.post(f"/assistant/workspaces/{ws['id']}/files", files=upload, headers={"Origin": origin})
+        assert r.status_code == 403, origin
+    assert client.post(f"/assistant/workspaces/{ws['id']}/files", files=upload,
+                       headers={"Origin": "http://testserver"}).status_code == 201  # this app's own page
+    assert client.get("/assistant/workspaces", headers={"Origin": "https://evil.example"}).status_code == 200
+
+
 def test_workspaces_and_chats_lifecycle(app_and_slots):
     client, _, store = app_and_slots
     ws_id, chat_id = workspace_and_chat(client)
@@ -85,7 +98,10 @@ def test_a_turn_streams_events_and_redisplays_without_internals(app_and_slots):
     shown = client.get(f"/assistant/chats/{chat_id}/messages").json()
     assert shown["chat"]["title"] == "15% of 2400?"
     roles = [m["role"] for m in shown["messages"]]
-    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert roles == ["user", "assistant", "tool", "assistant", "trace"]  # how the turn ran, for the developer view
+    trace = shown["messages"][-1]["trace"]
+    assert trace["ended"] == "done" and [t["name"] for t in trace["tools"]] == ["calculate"]
+    assert client.get(f"/assistant/chats/{chat_id}/traces").json()[-1]["steps"] == trace["steps"]
     assert shown["messages"][0]["text"] == "15% of 2400?"  # without the time stamp the model sees
     assert shown["messages"][1]["tools"][0]["name"] == "calculate" and "raw" not in shown["messages"][1]
 
@@ -180,3 +196,25 @@ def test_web_icons_are_served_sandboxed(app_and_slots, monkeypatch):
     r = client.get("/assistant/web/icon", params={"page": "https://example.com/a"})
     assert r.status_code == 200 and "sandbox" in r.headers["content-security-policy"]
     assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_the_user_edits_a_file_and_runs_it_from_the_file_panel(app_and_slots):
+    client, _, store = app_and_slots
+    ws_id, _ = workspace_and_chat(client)
+    base = f"/assistant/workspaces/{ws_id}"
+    up = client.post(f"{base}/files", files={"file": ("game.py", b"print('v1')", "text/x-python")}).json()
+    item = up["id"]
+    ws, _ = store.open(ws_id)
+    ws.set_report(item, "# A game\n\n## Facts (written by the app)\n- Last run: passed")
+    saved = client.put(f"{base}/items/{item}/text", json={"text": "name = input()\nprint('hi', name)\n"})
+    assert saved.status_code == 200 and client.get(f"{base}/items/{item}/file").text.startswith("name = input()")
+    assert "edited by the user" in ws.report(item)  # the report says it describes the version before
+    ran = client.post(f"{base}/items/{item}/run", json={"input": "Ary"}).json()
+    assert ran["status"] == "ok" and ran["output"].strip() == "hi Ary"
+    client.put(f"{base}/items/{item}/text", json={"text": "open('out.txt', 'w').write('x')\n"})
+    first = client.post(f"{base}/items/{item}/run", json={}).json()["files"][0]["id"]
+    again = client.post(f"{base}/items/{item}/run", json={}).json()["files"][0]
+    assert again["id"] == first and again["updated"] and ws.entry(first)["parent"] == item  # run again: updated in place
+    table = client.post(f"{base}/files", files={"file": ("t.csv", b"a\n1\n", "text/csv")}).json()["id"]
+    assert client.post(f"{base}/items/{table}/run", json={}).status_code == 422  # only Python files run
+    assert client.put(f"{base}/items/{table}/text", json={"text": "x"}).status_code == 422

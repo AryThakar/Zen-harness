@@ -55,9 +55,12 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
         if warnings:
             result["data_warning"] = " ".join(warnings)
         if save:
-            full = con.execute(res.sql).df()
-            new_id = ws.add_table(full, name="query result", parent=used[0] if used else None,
-                                  meta={"sql": res.sql})
+            try:
+                full = sql_guard.frame(con, res.sql)
+            except sql_guard.SqlRejected as exc:
+                raise ToolError(str(exc), field="sql") from exc
+            new_id = ws.add_table(full, name=ws.derived_name(used[0], "query") if used else "query result",
+                                  parent=used[0] if used else None, meta={"sql": res.sql})
             result["saved_as"] = new_id
     finally:
         con.close()

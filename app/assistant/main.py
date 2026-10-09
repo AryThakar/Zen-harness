@@ -9,10 +9,11 @@ What the main model gets at each step:
              workspace, the pinned notes and the time travel on the user's messages (context.py) -
              a minute that changed in the system prompt made llama.cpp process the whole prompt
              again (measured: 5,673 of 5,878 tokens).
-    history  the chat through the rolling window (fit_turns; the cut is kept in chats.dropped so the
-             prompt stays the same turn after turn). Each user message starts with its local time,
+    history  the chat through the rolling window (cut_turns; the cut is kept in chats.dropped so the
+             prompt stays the same turn after turn; a turn that alone outgrows the slot has its older
+             tool results shortened). Each user message starts with its local time,
              "[Fri 03 Oct 2026, 14:05]", written once when it arrives.
-    tools    8 of its own (workers.MAIN_DIRECT) + 4 delegates to the helpers (analyze_data only when
+    tools    9 of its own (workers.MAIN_DIRECT) + 4 delegates to the helpers (analyze_data only when
              there is a table). Its instructions and nudges are in prompts.py.
 
 ask_user pauses the turn: the question goes to the UI and into chats.pending; the user's answer comes
@@ -64,7 +65,8 @@ from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
 from .checks import invented_numbers, nudge_for, repeated_failure, this_turn
-from .context import counter, fit_turns, message_context, prompt_limit, standing_instructions, without_notes
+from .context import (counter, cut_turns, message_context, prompt_limit, shorten_tool_results, standing_instructions,
+                      without_notes)
 from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN
 from .registry import ToolContext, execute
 from .store import NEW_CHAT, Store
@@ -141,6 +143,7 @@ class Turn:
     tools: dict = field(default_factory=dict)
     visible_since: str | None = None  # the first turn main still sees, when older ones were cut
     live: Live | None = None  # the turn's events, for a helper's question asked in place
+    shortened: int = 0  # this turn's older tool results shown shortened (context.shorten_tool_results)
 
     def setup(self, stream) -> None:
         """The tools for this turn, wired to the stream and the store. Every event written checks for a
@@ -193,13 +196,16 @@ def _agent(state: TurnState, config) -> dict:
     specs = [tool.spec() for tool in t.tools.values()]
     history = [m for m in state["messages"] if m["role"] in ("user", "assistant", "tool")]
     system = MAIN  # never changes: the workspace and notes travel on the user's messages (context.py)
-    visible, dropped = fit_turns(history, prompt_limit(t.main), counter(t.main, system, specs), t.dropped)
+    limit, count = prompt_limit(t.main), counter(t.main, system, specs)
+    visible, dropped, fits = cut_turns(history, limit, count, t.dropped)
     if dropped != t.dropped:
         if dropped > t.dropped:  # turns were cut: the prompt's start changed anyway, so a fresh snapshot
             visible = _snapshot_on_newest(t, history, visible, dropped)
         t.dropped = dropped
         t.store.update_chat(t.chat_id, dropped=dropped)
     t.visible_since = visible[0].get("at") if dropped and visible else None  # recall reaches what was cut
+    if t.shortened or not fits:  # this turn alone outgrew the slot: its older tool results are shortened
+        visible, t.shortened = shorten_tool_results(visible, limit, count, t.shortened)
     last = state["rounds"] >= MAX_ROUNDS
     started = time.perf_counter()
     stream = _Unstamped(t.write)
@@ -363,6 +369,10 @@ def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider
     if chat is None:
         yield {"type": "error", "message": "No such chat."}
         return
+    if (chat["pending"] or {}).get("retry"):  # "Try again, answer quickly" takes no text: words typed are a new message
+        store.update_chat(chat_id, pending=None)
+        store.append(chat_id, {"role": "artifact", "artifact": {"type": "answer", "answer": None, "skipped": True}})
+        chat = store.chat(chat_id)
     waiting = live(chat_id)
     if chat["pending"] or (waiting is not None and waiting.waiting()):  # a helper asking in place waits too
         yield from reply(store, chat_id, text, main, worker)

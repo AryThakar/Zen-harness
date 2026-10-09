@@ -143,8 +143,7 @@ def clean_data(ws: Workspace, data: str, steps: list[dict]) -> ToolResult:
         except ToolError as exc:
             raise ToolError(f"Step {i} ({step.op}): {exc.message} Nothing was saved.", field=f"steps.{i - 1}") from exc
         log.append(f"{i}. {line}")
-    name = ws.entry(args.data)["name"]
-    new_id = ws.add_table(df.reset_index(drop=True), name=f"{name} (cleaned)", parent=args.data,
+    new_id = ws.add_table(df.reset_index(drop=True), name=ws.derived_name(args.data, "cleaned"), parent=args.data,
                           meta={"columns": {c: notes.get(c, {}) for c in df.columns},
                                 "steps": [s.model_dump(exclude_none=True, exclude={"why"}) for s in args.steps]})
     result = {"data": new_id, "from": args.data, "rows_before": rows_before, "rows_after": len(df), "log": log}

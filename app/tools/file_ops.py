@@ -12,8 +12,10 @@ the one reader, read_file.read, which the helpers' read_file uses too.
 The user decides (approval.py): delete and download always ask with a button, and so does
 updating a file the user brought (an upload or a download) - there are no versions, so the
 original would be lost. Files the assistant wrote are updated freely; renaming loses nothing and
-never asks. A .docx is written from Markdown by code (headings, paragraphs, lists, tables, bold
-and italic).
+never asks. A .docx (headings, paragraphs, lists, tables, bold and italic) and a .pptx (a slide per
+# heading: its bullets, a picture, speaker notes) are written from Markdown by code; a line that is only
+![caption](image_7) puts that picture in - a generated image, or a chart (every chart is also kept as a
+picture, chart_image.py).
 """
 
 from __future__ import annotations
@@ -32,9 +34,10 @@ PAGE = 15  # items per list page
 KINDS = ("table", "image", "file")  # everything but notes
 MAX_WRITE = 1_000_000  # characters
 MODES = ("list", "find", "read", "write", "update", "rename", "delete", "download")
-# Formats that are not text: text written under such a name would be a broken file (a .docx is the
-# exception - it is built from Markdown). A script makes them (write_code).
-BINARY = {".pdf", ".xlsx", ".xlsm", ".xls", ".doc", ".pptx", ".ppt", ".odt", ".ods", ".png", ".jpg", ".jpeg", ".gif",
+# Formats that are not text: text written under such a name would be a broken file (a .docx and a .pptx are
+# the exceptions - they are built from Markdown). A script makes them (write_code).
+FROM_MARKDOWN = (".docx", ".pptx")
+BINARY = {".pdf", ".xlsx", ".xlsm", ".xls", ".doc", ".ppt", ".odt", ".ods", ".png", ".jpg", ".jpeg", ".gif",
           ".webp", ".bmp", ".ico", ".zip", ".gz", ".7z", ".rar", ".parquet", ".joblib", ".pkl", ".exe", ".dll", ".bin",
           ".mp3", ".mp4", ".wav"}
 
@@ -121,9 +124,9 @@ def _update(ws: Workspace, index: SearchIndex | None, item: str, content: str, s
     _writable(e["name"])  # before the user is asked to approve it: a PDF written as text would be broken
     _fits(content)
     if start is not None or end is not None:
-        if e["name"].lower().endswith(".docx"):
-            raise ToolError("A .docx is updated whole: give its full text in Markdown, without start and end.",
-                            field="start")
+        if e["name"].lower().endswith(FROM_MARKDOWN):
+            raise ToolError(f"A {PurePath(e['name']).suffix} is updated whole: give its full text in Markdown, without "
+                            "start and end.", field="start")
         lines = read_file.units(e["name"], ws.path(item).read_bytes(), numbered=False)
         start, end = start or 1, end or start or 1
         if not 1 <= start <= end <= len(lines):
@@ -164,7 +167,7 @@ def _fits(content: str) -> None:
 
 def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str) -> ToolResult:
     from .files import store_file
-    data = _bytes(name, content)
+    data = _bytes(name, content, ws)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / name
         path.write_bytes(data)
@@ -179,7 +182,7 @@ def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: s
     """Replace a stored file's content (and its search passages, for a document)."""
     from .files import reindex
     name = ws.entry(item)["name"]
-    data = _bytes(name, content)
+    data = _bytes(name, content, ws)
     ws.replace_bytes(item, data)
     if index is not None and "passages" in ws.entry(item).get("meta", {}):
         reindex(ws, index, item)
@@ -210,13 +213,31 @@ def _writable(name: str) -> None:
     suffix = PurePath(name).suffix.lower()
     if suffix in BINARY:
         raise ToolError(f"A {suffix} file isn't text, so it can't be written or changed here - the text would be a "
-                        f"broken {suffix} file. Write .md, .txt, .csv, code or .docx (from Markdown); a {suffix} file "
-                        "is made by a script (write_code).", field="name")
+                        f"broken {suffix} file. Write .md, .txt, .csv, code, or .docx and .pptx (from Markdown); a "
+                        f"{suffix} file is made by a script (write_code).", field="name")
 
 
-def _bytes(name: str, content: str) -> bytes:
+def _bytes(name: str, content: str, ws: Workspace | None = None) -> bytes:
     _writable(name)
-    return markdown_docx(content) if name.lower().endswith(".docx") else content.encode("utf-8")
+    picture = (lambda ref: _picture(ws, ref)) if ws is not None else (lambda ref: None)
+    if name.lower().endswith(".docx"):
+        return markdown_docx(content, picture)
+    if name.lower().endswith(".pptx"):
+        return markdown_pptx(content, picture)
+    return content.encode("utf-8")
+
+
+def _picture(ws: Workspace, ref: str) -> Path | None:
+    """The stored picture a Markdown image names - by id ('image_7') or name; None when there is none."""
+    item = ws.find(ref, ("image",))
+    return ws.path(item) if item else None
+
+
+PICTURE = re.compile(r"^\s*!\[([^\]]*)\]\(\s*<?([^)>]+?)>?\s*\)\s*$")
+
+
+def _missing_picture(ref: str) -> str:
+    return f"[picture {ref} not found]"
 
 
 # ---------------------------------------------------------------- download
@@ -251,10 +272,11 @@ def _resolve(ws: Workspace, name: str) -> str:
 INLINE = re.compile(r"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)")
 
 
-def markdown_docx(text: str) -> bytes:
+def markdown_docx(text: str, picture=lambda ref: None) -> bytes:
     """A Word document from Markdown: # headings, paragraphs, - and 1. lists, | tables |, **bold**,
-    *italic* and `code`."""
+    *italic*, `code`, and a picture on a line of its own: ![caption](image_7) (``picture`` finds its file)."""
     from docx import Document
+    from docx.shared import Inches
     doc = Document()
     lines = text.splitlines()
     i = 0
@@ -277,7 +299,16 @@ def markdown_docx(text: str) -> bytes:
         heading = re.match(r"(#{1,4})\s+(.*)", line)
         bullet = re.match(r"\s*[-*+]\s+(.*)", line)
         number = re.match(r"\s*\d+[.)]\s+(.*)", line)
-        if heading:
+        image = PICTURE.match(line)
+        if image:
+            path = picture(image[2].strip())
+            if path is None:
+                _runs(doc.add_paragraph(), _missing_picture(image[2].strip()))
+            else:
+                doc.add_picture(str(path), width=Inches(6))
+                if image[1].strip():
+                    doc.add_paragraph(image[1].strip()).runs[0].italic = True
+        elif heading:
             doc.add_heading(heading[2].strip(), level=len(heading[1]))
         elif bullet:
             _runs(doc.add_paragraph(style="List Bullet"), bullet[1])
@@ -288,6 +319,84 @@ def markdown_docx(text: str) -> bytes:
         i += 1
     out = io.BytesIO()
     doc.save(out)
+    return out.getvalue()
+
+
+def markdown_pptx(text: str, picture=lambda ref: None) -> bytes:
+    """A slide deck (16:9) from Markdown: each # (or ##) heading starts a slide with that title; its lines are
+    its bullets (- or 1. or plain; indented ones a level down; **bold** kept), a line that is only
+    ![caption](image_7) its picture (beside the bullets, or alone, large), a 'Notes:' line its speaker notes.
+    A first slide with no more than one line under its heading is a title slide (that line its subtitle)."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    deck = Presentation()
+    deck.slide_width, deck.slide_height = Inches(13.333), Inches(7.5)
+    slides, current = [], None
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        heading = re.match(r"#{1,2}\s+(.*)", line)
+        if heading:
+            current = {"title": heading[1].strip(), "lines": [], "pictures": [], "notes": []}
+            slides.append(current)
+            continue
+        if not line.strip() or re.fullmatch(r"\s*(?:-{3,}|\*{3,})\s*", line):
+            continue
+        if current is None:  # text before any heading: a slide without a title
+            current = {"title": "", "lines": [], "pictures": [], "notes": []}
+            slides.append(current)
+        image = PICTURE.match(line)
+        if image:
+            current["pictures"].append((image[1].strip(), image[2].strip()))
+        elif re.match(r"\s*notes?:", line, re.I):
+            current["notes"].append(line.split(":", 1)[1].strip())
+        else:
+            level = min(2, (len(line) - len(line.lstrip())) // 2)
+            current["lines"].append((level, re.sub(r"^\s*(?:[-*+]|\d+[.)]|#{3,})\s*", "", line)))
+    if not slides:
+        raise ToolError("The slides need content: start each slide with a # heading.", field="content")
+    width, height = deck.slide_width, deck.slide_height
+    for n, s in enumerate(slides):
+        if n == 0 and len(s["lines"]) <= 1 and not s["pictures"]:
+            slide = deck.slides.add_slide(deck.slide_layouts[0])  # the title slide
+            slide.shapes.title.text = s["title"]
+            if s["lines"]:
+                slide.placeholders[1].text = s["lines"][0][1].replace("**", "")
+            else:
+                slide.placeholders[1].element.getparent().remove(slide.placeholders[1].element)
+        else:
+            slide = deck.slides.add_slide(deck.slide_layouts[5])  # a title only: the rest placed here
+            slide.shapes.title.text = s["title"]
+            top, bottom, left = Inches(1.7), height - Inches(0.5), Inches(0.6)
+            text_width = width - 2 * left if not s["pictures"] else (width - 2 * left) * 0.45 if s["lines"] else 0
+            if s["lines"]:
+                frame = slide.shapes.add_textbox(left, top, text_width, bottom - top).text_frame
+                frame.word_wrap = True
+                for k, (level, words) in enumerate(s["lines"]):
+                    p = frame.paragraphs[0] if k == 0 else frame.add_paragraph()
+                    p.level = level
+                    _slide_runs(p, ("• " if level == 0 else "– ") + words)
+                    for run in p.runs:
+                        run.font.size = Pt(22 if level == 0 else 18)
+            for k, (caption, ref) in enumerate(s["pictures"][:1]):  # one picture a slide: it should be readable
+                path = picture(ref)
+                box_left = left + text_width + (Inches(0.3) if s["lines"] else 0)
+                box_width, box_height = width - box_left - left, bottom - top - (Inches(0.5) if caption else 0)
+                if path is None:
+                    slide.shapes.add_textbox(box_left, top, box_width, Inches(1)).text_frame.text = _missing_picture(ref)
+                    continue
+                shape = slide.shapes.add_picture(str(path), box_left, top)
+                scale = min(box_width / shape.width, box_height / shape.height)
+                shape.width, shape.height = int(shape.width * scale), int(shape.height * scale)
+                shape.left = int(box_left + (box_width - shape.width) / 2)
+                if caption:
+                    cap = slide.shapes.add_textbox(box_left, top + shape.height + Inches(0.1), box_width, Inches(0.4))
+                    cap.text_frame.text = caption
+                    cap.text_frame.paragraphs[0].runs[0].font.size = Pt(14)
+                    cap.text_frame.paragraphs[0].runs[0].font.italic = True
+        if s["notes"]:
+            slide.notes_slide.notes_text_frame.text = "\n".join(s["notes"])
+    out = io.BytesIO()
+    deck.save(out)
     return out.getvalue()
 
 
@@ -303,3 +412,19 @@ def _runs(paragraph, text: str, bold: bool = False) -> None:
             paragraph.add_run(piece[1:-1]).font.name = "Consolas"
         else:
             paragraph.add_run(piece).bold = bold or None
+
+
+def _slide_runs(paragraph, text: str) -> None:
+    """_runs for a slide's paragraph (python-pptx: a run gets its text after it is added; bold is on its font)."""
+    for piece in INLINE.split(text):
+        if not piece:
+            continue
+        run = paragraph.add_run()
+        if piece.startswith("**") and piece.endswith("**"):
+            run.text, run.font.bold = piece[2:-2], True
+        elif piece.startswith("*") and piece.endswith("*") and len(piece) > 2:
+            run.text, run.font.italic = piece[1:-1], True
+        elif piece.startswith("`") and piece.endswith("`"):
+            run.text, run.font.name = piece[1:-1], "Consolas"
+        else:
+            run.text = piece

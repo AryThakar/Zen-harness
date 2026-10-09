@@ -51,6 +51,23 @@ def test_a_plain_angle_is_said_to_be_radians():
     assert calculate("1001!").status == "invalid_arguments" and calculate("3 != 4").status == "invalid_arguments"
 
 
+def test_a_whole_number_too_big_for_a_float_is_still_an_answer():
+    """171! and 2**2000 made the finite check itself fail (OverflowError): 'an internal error'."""
+    r = calculate("200!")
+    assert r.status == "ok" and r.result["result"] == "7.886578673648e+374" and r.result["digits"] == 375
+    assert calculate("2**2000").result["digits"] == 603 and calculate("30!").result["result"] == 265252859812191058636308480000000
+    assert calculate("200! * 0.5").status == "invalid_arguments"  # a float that large can't exist: said so
+
+
+def test_a_derived_table_is_named_after_its_source_and_step(ws):
+    """'sales.csv (cleaned)' looked like a CSV file of its own, and cleaning twice gave '(cleaned) (cleaned)'."""
+    t = ws.add_table(pd.DataFrame({"a": [1]}), "sales.csv")
+    cleaned = ws.add_table(pd.DataFrame({"a": [1]}), ws.derived_name(t, "cleaned"), parent=t)
+    assert ws.entry(cleaned)["name"] == "sales - cleaned" and ws.derived_name(cleaned, "cleaned") == "sales - cleaned"
+    assert ws.derived_name(cleaned, "predicted churn") == "sales - cleaned - predicted churn"
+    assert ws.derived_name(ws.add_table(pd.DataFrame({"a": [1]}), "Q4 v1.2 report"), "query") == "Q4 v1.2 report - query"
+
+
 def test_read_code_with_line_numbers_from_a_line_on(ws):
     lines = [f"value_{i} = {i} * 2  # " + "x" * 60 for i in range(400)]
     fid = ws.add_bytes("file", "\n".join(lines).encode(), "py", name="big.py")

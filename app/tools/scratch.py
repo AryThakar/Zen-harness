@@ -2,8 +2,8 @@
 
 run_code writes the whole file and runs it; fix_code changes lines from_line-to_line and runs it
 again, so fixing one line of a long script doesn't mean sending the whole script again (the small
-model's copies drift). Every run goes through run_python (sandbox.py: the same limits, libraries and
-off-limits rules). When a run fails, the result shows the numbered lines around the line the error
+model's copies drift). Every run goes through the one engine (sandbox.ENGINE - today a local Python process
+with its limits, libraries and off-limits rules). When a run fails, the result shows the numbered lines around the line the error
 points at, so the fix lands on the right lines. The file is thrown away with the task: the helper
 stays stateless, and what it made is kept only when it saves it.
 
@@ -26,7 +26,8 @@ from pathlib import PurePath
 
 from .core import ToolResult, ok
 from .reports import CODE_SECTIONS, assemble, section_problems
-from .sandbox import DEFAULT_TIMEOUT, MAX_CODE, run_python
+from . import sandbox
+from .sandbox import DEFAULT_TIMEOUT, MAX_CODE
 from .search_index import SearchIndex
 from .workspace import Workspace
 
@@ -88,7 +89,7 @@ def _run(ws: Workspace, scratch: Scratch, timeout: int = DEFAULT_TIMEOUT) -> Too
     if not scratch.runs:
         return ok({"lines": len(scratch.code.splitlines()),
                    "note": f"{scratch.name} isn't Python: kept in your scratch file, not run (only Python runs here)."})
-    result = run_python(ws, scratch.code, timeout, reuse=scratch.outputs, stdin=scratch.input)
+    result = sandbox.ENGINE.run(ws, scratch.code, timeout, reuse=scratch.outputs, stdin=scratch.input)
     res = result.result
     scratch.last = {"code": scratch.code, "ok": result.status == "ok", "seconds": res.get("seconds"), "input": scratch.input,
                     "output": res.get("output", ""), "errors": res.get("errors", ""),

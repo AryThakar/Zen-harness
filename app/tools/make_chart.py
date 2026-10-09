@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .chart_image import keep_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import CODE, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq
 from .values import parse_dates
@@ -91,8 +92,9 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
                 **({"unit": unit} if unit else {}), **({"stacked": True} if stacked and by and type == "bar" else {}),
                 **chart}
     warning = ws.issues_warning(data)
-    return ok({"chart": type, "data": data, "title": title, **summary, **({"data_warning": warning} if warning else {})},
-              artifact)
+    picture = keep_chart(ws, artifact, parent=data)  # the same chart as an image item, for documents and slides
+    return ok({"chart": type, "data": data, "title": title, **summary, **({"data_warning": warning} if warning else {}),
+               **({"picture": picture} if picture else {})}, artifact)
 
 
 def _title(type, x, y, by, y_label) -> str:
@@ -149,6 +151,8 @@ def _dates_or_numbers(frame: pd.DataFrame, x: str) -> pd.DataFrame:
 
 def _line(df, x, y, agg, time_unit, by):
     frame = _dates_or_numbers(df.dropna(subset=[x]), x)
+    if frame.empty:  # (a date range over no dates can't be made: it ended in an internal error)
+        raise ToolError(f"'{x}' has no values to draw.", invalid=False)
     is_date = pd.api.types.is_datetime64_any_dtype(frame[x])
     if not is_date and not _numeric(frame[x]):
         raise ToolError(f"A line chart needs dates or numbers on x; '{x}' is text. For values over time, give the "
