@@ -46,6 +46,7 @@ import threading
 import urllib.error
 import urllib.request
 import uuid
+from contextlib import contextmanager
 
 from .base import Cancelled, EventCallback, ModelTurn, ProviderError, answered_ids, estimate_tokens
 from .gemma_calls import QUOTE, heal
@@ -72,6 +73,12 @@ NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
 # that answered with its own error (4xx, 500), a timeout and a stopped turn are not retried.
 RETRY_PAUSES = (2.0, 6.0)
 RETRY_STATUS = {502, 503, 504}
+# One request at a time per slot (server address, slot): two requests on one slot at once came back mixed - a
+# helper answering another conversation's task (2026-10-09, the 26B on Kaggle, llama-server b11474 with two
+# slots: while two clients shared slot 1, the coder asked for "invoices.csv" and wrote a churn script, both from
+# another chat). The app runs one turn per chat, but two chats - or a turn and a picture check - can overlap.
+_SLOT_LOCKS: dict[tuple[str, int], threading.Lock] = {}
+_SLOT_LOCKS_GUARD = threading.Lock()
 
 
 def template_switches(thinking: bool) -> dict:
@@ -222,6 +229,23 @@ class LlamaCppProvider:
     def _stopped(self) -> bool:
         return self.cancel is not None and self.cancel.is_set()
 
+    @contextmanager
+    def _slot(self):
+        """This provider's slot to itself for one request: waits while another request of this app has it
+        (Stop still stops the wait). No slot named: llama-server picks a free one, nothing to hold."""
+        if self.slot is None:
+            yield
+            return
+        with _SLOT_LOCKS_GUARD:
+            lock = _SLOT_LOCKS.setdefault((self.base_url, self.slot), threading.Lock())
+        while not lock.acquire(timeout=0.5):
+            if self._stopped():
+                raise Cancelled
+        try:
+            yield
+        finally:
+            lock.release()
+
     def _unreachable(self) -> str:
         return f"Could not reach the local model at {self.base_url}; is llama-server running?"
 
@@ -239,7 +263,8 @@ class LlamaCppProvider:
                                                           {"type": "text", "text": question}]}],
                 **({"id_slot": self.slot} if self.slot is not None else {}), **self.sampling}
         try:
-            out = self._post("/v1/chat/completions", body, timeout=LOOK_TIMEOUT)
+            with self._slot():
+                out = self._post("/v1/chat/completions", body, timeout=LOOK_TIMEOUT)
         except urllib.error.HTTPError as exc:
             raise ProviderError(_error_message(exc)) from exc
         except NET_ERRORS as exc:
@@ -251,7 +276,7 @@ class LlamaCppProvider:
                  budget: int | None = None) -> ModelTurn:
         body = {**self._body(system, messages, tools, allow_tools, think, budget), "stream": True}
         try:
-            with self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
+            with self._slot(), self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
                 text, calls, finish, timings, thinking = _read_stream(response, on_event, self.cancel)
         except urllib.error.HTTPError as exc:
             raise ProviderError(f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}") from exc
