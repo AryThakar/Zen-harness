@@ -147,8 +147,9 @@ class Delegate:
 
 DELEGATES = {
     "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches, reads pages and returns "
-                     "a cited answer, dated for 'latest' questions, and the links of files the task asks for (a "
-                     "dataset, a script) for you to download. Use it for what is current or what you don't know - news, releases, "
+                     "a cited answer, dated for 'latest' questions, how each cited page was read, the pages it could "
+                     "not read and why, and the links of files the task asks for (a dataset, a script) for you to "
+                     "download. Use it for what is current or what you don't know - news, releases, "
                      "prices, people, events - and to read a link the user gives.",
                              "Web researcher", ("Researching on the web", "Researched on the web")),
     "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own documents, saved notes and earlier "

@@ -567,8 +567,10 @@ main ── research_web(task) ──► web helper (slot 1)
 - [x] ask_user when the task is unclear (which shop, which country, which version) - asked in place
 - [x] Step budget 6 → 12; when the slot fills, the oldest tool results (page texts) are shortened - cut to
       their start, not to their key lines; whether 12 steps fit the slot is the gate below, on the 26B
-- [ ] The shared result shape: answer, sources (address, title, date, how read), a table when the task
-      compares things, download links, what failed and why, what to try next
+- [x] The shared result shape: answer, sources, how each cited page was read (title, date, directly / a
+      site's API / a browser - from the trace, by code), download links, the pages that failed and why (by
+      code), what to try next (suggestion). A table when the task compares things: Markdown in the answer
+      (the UI draws it) - asking for it is a prompt line, left to the prompt review on the 26B
 
 **H. Not handled, by design**
 Getting past bot checks, CAPTCHAs, paywalls or logins; searching through the browser; scraping rules for

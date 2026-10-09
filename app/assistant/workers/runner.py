@@ -376,9 +376,30 @@ def _finish(profile: Profile, result: dict, trace: Trace, problems: list[str], n
         out["download_with"] = "files(mode='download', link=...) for each one wanted: the user approves it first"
     elif "downloads" in out:
         out.pop("downloads")
+    # Pages, by the trace (facts, not the model's account): how each cited one was read, and which could not be
+    # read and why - so main can say "the shop's page refused us" instead of guessing.
+    read = [r for u in out.get("sources", []) if (r := _how_read(u, trace.cards.get(u)))]
+    if read:
+        out["read"] = read
+    failed = [{"url": u, "why": why} for u, why in trace.failed_urls.items() if u and u not in trace.read_urls]
+    if failed:
+        out["failed"] = failed[-5:]
     if problems:
         out["warnings"] = problems
     return out
+
+
+def _how_read(url: str, card: dict | None) -> dict | None:
+    """A cited page's title, date and how it was read (directly, through a site's API, by a browser) - None
+    when its card says nothing more than its address."""
+    if not card:
+        return None
+    date = card.get("updated") or card.get("published")
+    out = {"url": url, **({"title": card["title"]} if card.get("title") else {}),
+           **({"date": str(date)[:10]} if date else {})}
+    if len(out) == 1 and not card.get("via"):
+        return None
+    return {**out, "how": card.get("via") or "read directly"}
 
 
 def _keep_report(ctx: ToolContext, result: dict, trace: Trace) -> dict:

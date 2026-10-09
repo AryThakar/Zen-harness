@@ -12,7 +12,7 @@ from app.providers.base import estimate_tokens
 from app.assistant.context import cut_turns, fit_turns, shorten_tool_results
 from app.assistant.registry import Tool, ToolContext, execute
 from app.assistant.workers import PROFILES, evidence, main_tools, run_worker, ungrounded_numbers
-from app.tools.core import ToolResult, ok
+from app.tools.core import ToolError, ToolResult, ok
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -108,6 +108,27 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
     assert first["system"] == PROFILES["web"].instructions
     opening = first["messages"][0]["content"]
     assert opening.startswith("Now: ") and "Workspace:" in opening and "The user's message: any rate news?" in opening
+
+
+def test_the_result_says_how_pages_were_read_and_which_failed(ctx, monkeypatch):
+    card = {"type": "webpage", "url": "https://news.example.com/rates", "title": "Rates", "site": "news.example.com",
+            "published": "2026-10-01T09:00:00+00:00", "via": "a browser"}
+
+    def read(c, a):
+        if "shop" in a.url:
+            raise ToolError("The site refused the request (HTTP 403).", invalid=False, reason="blocked")
+        return ok({"url": a.url, "title": "Rates", "text": "The bank raised rates by 0.25 points."}, card)
+
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "read", registry.ReadPageIn, read))
+    model = ScriptedProvider([
+        tools_turn(call("read_webpage", url="https://shop.example.com/rates")),
+        tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+        submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"]),
+    ])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert out["read"] == [{"url": "https://news.example.com/rates", "title": "Rates", "date": "2026-10-01",
+                            "how": "a browser"}]
+    assert out["failed"] == [{"url": "https://shop.example.com/rates", "why": "The site refused the request (HTTP 403)."}]
 
 
 def test_citing_an_unread_page_gets_one_chance_to_fix(ctx, fake_web):
