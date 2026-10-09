@@ -8,7 +8,7 @@ points at, so the fix lands on the right lines. The file is thrown away with the
 stays stateless, and what it made is kept only when it saves it.
 
 save (the coder's finish) keeps the scratch file in the workspace under a name, with its report -
-the knowledge main answers from instead of the code (docs/ASSISTANT_PLAN.md, section 5). The report
+the knowledge main answers from instead of the code (docs/ARCHITECTURE.md, section 5). The report
 is the coder's sections plus facts the app writes itself (whether the last run passed, what it
 printed, what it made), so it can't claim a run that failed. Python is always run before it is
 saved; a file in another language is kept as written ("not run: only Python runs here"). Saving

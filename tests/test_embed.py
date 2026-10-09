@@ -217,6 +217,15 @@ def test_a_start_that_fails_means_keywords_only():
         e.embed_query("x")
 
 
+def test_settings_without_an_embedding_server_get_the_cpu_model():
+    """The legacy product passes its own settings, which know nothing of the embedding server."""
+    from types import SimpleNamespace
+
+    from app.rag.embed import FastEmbedder, make_embedder
+    e = make_embedder(SimpleNamespace(embed_model="BAAI/bge-small-en-v1.5", embed_cache_dir="data/models"))
+    assert isinstance(e, FastEmbedder) and e.name == "BAAI/bge-small-en-v1.5"
+
+
 # ---------------------------------------------------------------- the server the app runs
 
 def test_server_command_listens_on_this_computer_with_the_projector(tmp_path):

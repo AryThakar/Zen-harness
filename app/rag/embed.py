@@ -231,8 +231,9 @@ class HashEmbedder:
 
 def make_embedder(settings) -> Embedder:
     """The embedding server when one is set up (ASSISTANT_EMBED_GGUF: the model file; the app starts
-    llama-server itself when ASSISTANT_EMBED_SERVER names it), else fastembed's small CPU model."""
-    if settings.embed_gguf:
+    llama-server itself when ASSISTANT_EMBED_SERVER names it), else fastembed's small CPU model. Settings
+    without the embedding server's fields (the legacy product's) get fastembed's model too."""
+    if getattr(settings, "embed_gguf", ""):
         start = None
         if settings.embed_server:
             from .embed_server import EmbedServer

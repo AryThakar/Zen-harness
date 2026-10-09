@@ -1,4 +1,4 @@
-"""The shared contracts every tool and helper relies on (docs/TARGET_MAP.md, section 2): one resolver
+"""The shared contracts every tool and helper relies on (docs/ARCHITECTURE.md, section 6): one resolver
 for item names, errors that keep their message, and the other system-wide rules as they land."""
 
 from __future__ import annotations

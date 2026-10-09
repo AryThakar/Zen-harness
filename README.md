@@ -1,180 +1,93 @@
-# claude-cloud
+# Zen - a local assistant
 
-> **The project is now a local assistant** (`app/`): Zen, a chat assistant on a local model (Gemma 4 via
-> llama-server) with helpers for the web, your documents, your tables and code, each with its own tools,
-> inside a workspace that is its sandbox. Run it with `uvicorn app.main:app` and open http://localhost:8000.
-> Its design and progress: [docs/TARGET_MAP.md](docs/TARGET_MAP.md) and [docs/ASSISTANT_PLAN.md](docs/ASSISTANT_PLAN.md).
-> A full README for it comes with the docs step.
->
-> **The first product, below, is kept in [`legacy/`](legacy/README.md)**, working and tested: its API is
-> now `uvicorn legacy.main:app --port 8001` and its UI `cd legacy && streamlit run frontend/app.py`
-> (with `BIZ_API_URL=http://localhost:8001`).
+Zen is a chat assistant that runs on your own computer, on a local model (Gemma 4 through llama-server).
+It talks with you and hands focused work to four helpers - one for the web, one for your documents and
+notes, a data analyst and a coder - each with its own tools, inside a **workspace** that is your project
+and its sandbox. What must be right - facts, numbers, files - is checked by code, not left to the model.
 
-## AI Business Analyst (legacy)
+## What it does
 
-Upload your sales export, ask questions in plain English, and get answers,
-forecasts and charts - running on your own machine.
+- **Chat** with a persona, a memory of notes it keeps in view, and every earlier conversation searchable.
+- **Research the web** - search, read pages (JavaScript sites through a real browser when needed), PDFs,
+  Word and PowerPoint files, GitHub, YouTube and wikis; cite only pages it read; say what was blocked.
+- **Answer from your files** - documents, notes, chats, pictures (found by what they show) and tables,
+  searched by keywords and meaning (EmbeddingGemma 2).
+- **Analyse tables** - inspect and clean them, exact numbers by SQL, charts, whether a difference is real,
+  forecasts, what predicts a column, segments, unusual values, what a text column says.
+- **Write and run code** - Python in the workspace's sandbox, checked by running it; programs that ask for
+  input can be run with typed input; edit and run files yourself in the file panel.
+- **Make things** - Word documents and slides from Markdown with charts in them, images, diagrams.
+- **Ask before acting** - downloads, importing a table from a link, deleting and replacing your files wait
+  for your click.
 
-**Stack:** Python · FastAPI · DuckDB · pandas · scikit-learn · statsforecast · Streamlit · Plotly · LangGraph · Claude (Anthropic API; a local model via Ollama is planned) · RAG with fastembed
+How it works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Decisions, measurements and what is left:
+[docs/SYSTEM_PLAN.md](docs/SYSTEM_PLAN.md).
 
-> Status: **week 5 of 6 done** - data pipeline, REST API, dashboard, upload UI, ML insights
-> (forecast, segments, churn, bought together, anomalies), the AI assistant and document search.
-> The design for everything else is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Setup
 
-![Dashboard](docs/images/dashboard.png)
-
-![Dashboard in dark mode](docs/images/dashboard-dark.png)
-
-## What works today
-
-* **Ask AI** - ask about your sales in plain English ("how did revenue change over
-  the last 3 months?", "which customers are we about to lose?"). A LangGraph agent
-  answers with tools: read-only SQL over your data, headline KPIs, an exact
-  calculator and business formulas, charts, and the forecast / segment / anomaly
-  models. Every number comes from a tool, each step (with its SQL and result table)
-  is shown above the answer, answers stream in, and follow-up questions remember the
-  conversation. AI-written SQL passes a parser-based guard (one SELECT, allowed
-  tables only, row and time limits) and the database refuses file access anyway.
-* **Document search (RAG)** - add your policies, price lists, supplier terms and notes
-  (PDF, Word, text, Markdown). Ask AI searches them by keywords *and* meaning (BM25 +
-  a small local embedding model, merged by rank fusion) and cites the file and page, so
-  "why was 15 April so slow?" gets the answer from your incident log.
-* **Churn risk** - which regular customers will probably buy nothing in the next 30, 60
-  or 90 days, learned from who stopped buying in your own history, with each customer's
-  warning signs and spend at risk. It is tested against the simple rule "longest since
-  last purchase" and says plainly when it isn't much better (on the demo data: AUC 0.72
-  vs 0.61 at 90 days).
-* **Bought together** - product pairs bought in the same order more often than chance,
-  with how often and how many times the usual rate (it finds every pairing planted in
-  the demo data, and nothing else).
-* **Sales forecast** - exponential smoothing and Theta models are backtested against
-  "repeat the previous period" on your own history; the winner forecasts the next
-  days or weeks with an 80% range, and the screen shows how much better than the
-  baseline it was (on the demo data: 40% more accurate).
-* **Customer segments** - KMeans on recency, frequency and spend finds Champions,
-  Loyal, At risk, Occasional and Lost customers, with what each group means, what to
-  do about it, and the customer lists.
-* **Unusual days and sales** - flags days when orders or revenue were far from normal
-  for that weekday and season (it finds the demo data's planted flash sale and
-  outage), and sale lines whose price, quantity or discount is odd for the product.
-* **Dashboard** - revenue, orders, average order value, profit, margin, customers,
-  new customers and return rate for any period, each compared with the period
-  before (only when the data fully covers it, so a half-empty year never shows as
-  +100% growth). Trend by day / week / month with partial weeks marked, and
-  breakdowns by category, product, location, channel, weekday or any custom column.
-  Every chart has a table view; light and dark mode.
-* **Upload with a mapping screen** - drop in a CSV or Excel file, check how its
-  columns were matched, keep or rename extra columns, save the mapping for next time.
-  Rejected rows are listed with the reason and the file row number.
-* **Reads real, messy exports** - title lines above the header, unknown encodings,
-  `;` delimiters, `₹1,23,456.50` amounts, day- or month-first dates, `Total` rows;
-  built-in formats for Shopify, the Superstore dataset and UCI Online Retail.
-* **One standard format** - 4 required columns (`order_date`, `product`, `quantity`,
-  `unit_price`), 7 optional ones that unlock features (customer → churn, cost →
-  profit, ...), plus any custom columns.
-* **REST API** - every screen is built on documented endpoints (OpenAPI at `/docs`),
-  including a streaming chat endpoint (server-sent events).
-* **A designed interface** - light and dark themes built as one system: self-hosted
-  Plus Jakarta Sans (no font CDN), cool slate neutrals with one indigo accent, frosted
-  glass cards with a light-catching hairline edge, a written briefing on the dashboard
-  and sparkline KPI tiles. Chart colors are checked with a palette validator (contrast,
-  color-blind separation) against the actual card surfaces in both modes.
-* **Demo data** - one click loads 18 months of realistic synthetic sales with trends,
-  seasonality, customer churn, basket patterns and anomalies planted for the ML.
-
-![Churn risk](docs/images/insights-churn.png)
-
-![Document search](docs/images/documents.png)
-
-![Forecast](docs/images/insights-forecast.png)
-
-![Bought together](docs/images/insights-basket.png)
-
-![Unusual days](docs/images/insights-anomalies.png)
-
-![Upload mapping](docs/images/upload-mapping.png)
-
-## Quick start
+Python 3.11 or later (tested on 3.13), on Windows:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-export ANTHROPIC_API_KEY=...      # for Ask AI (everything else works without it)
-uvicorn legacy.main:app --port 8001   # terminal 1: API on http://localhost:8001 (docs at /docs)
-cd legacy && streamlit run frontend/app.py   # terminal 2: UI on http://localhost:8501 (BIZ_API_URL=http://localhost:8001)
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.lock -e .
 ```
 
-Open the UI and click **Load demo data**, or upload one of the files in
-[`data/samples/`](data/samples/). Run the tests with `pytest` (no API key needed:
-the assistant is tested with a scripted model).
+`requirements.lock` holds the exact versions the tests passed with.
 
-Settings (environment variables): `BIZ_DB_PATH` (default `data/business.duckdb`),
-`BIZ_API_URL` for the UI (default `http://localhost:8000`), `BIZ_CURRENCY` (default `₹`),
-`BIZ_DEFAULT_DATE_ORDER` (`dayfirst` or `monthfirst`), `BIZ_MAX_UPLOAD_MB` (default 100),
-`BIZ_LLM_MODEL` (default `claude-opus-5`), `BIZ_LLM_EFFORT` (optional: `low` … `max`),
-`BIZ_CHAT_DB_PATH` (chat history, default `data/chat.sqlite`), `BIZ_EMBED_MODEL` (default
-`BAAI/bge-small-en-v1.5`, downloaded once, ~65 MB) and `BIZ_EMBED_CACHE_DIR` (default `data/models`).
+**The chat model.** A llama-server (llama.cpp) with a Gemma 4 model, listening at `BIZ_LLAMACPP_URL`
+(default http://127.0.0.1:8080). The app needs two slots (`-np 2`: slot 0 is the conversation, slot 1
+the helpers) and the model's vision projector (`--mmproj`, so it can look at pictures); the context
+(`-c`) is shared by the two slots. The server can also run elsewhere - the 26B runs on Kaggle, reached
+through a bridge at the same address.
 
-Sample documents for the demo shop: the **Load sample documents** button on the Documents page,
-or `python -m legacy.rag.samples data/samples/docs` to write them to a folder.
+**Search by meaning (optional, recommended).** A llama.cpp build that knows EmbeddingGemma 2 (b11515 or
+later) and the model's two files (`embeddinggemma-2-Q8_0.gguf` and its `mmproj`, from
+ggml-org/embeddinggemma-2-GGUF). Set the three settings below; the app starts the server itself and stops
+it when it exits. Without them, search uses a small CPU model (bge-small, downloaded once).
 
-Command-line upload, without the UI:
+**A real browser (optional).** Node and Microsoft Edge; install Playwright MCP into a folder of its own
+(`npm install @playwright/mcp@0.0.83`) and set `ASSISTANT_PLAYWRIGHT_MCP` to that folder. Without it,
+a page drawn by JavaScript is read only partly (its description), and a page that refuses plain readers
+is reported as blocked.
 
-```bash
-python -m legacy.ingestion.cli data/samples/retail_pos_messy.csv
-```
+## Settings
 
-## API
+Environment variables, or lines in a `.env` file in the project folder (`NAME=value`; it is git-ignored):
 
-| Endpoint | Purpose |
+| Setting | What it is |
 |---|---|
-| `POST /uploads/preview` | Upload a file → detected layout + suggested column mapping |
-| `POST /uploads` | Confirm (optionally edited) mapping → clean and load → report |
-| `POST /uploads/demo` | Load synthetic demo data |
-| `GET /uploads` · `GET /uploads/{id}` · `GET /uploads/{id}/rejected` · `DELETE /uploads/{id}` | History, details, rejected rows, undo |
-| `GET /dashboard/summary` · `/trend` · `/breakdown` | KPIs with comparison, trend, top-N breakdowns |
-| `GET /sales` | Browse and filter sales rows |
-| `GET /schema` · `PATCH /schema/{column}` | Column meanings (read by the AI later) |
-| `GET /profiles` · `DELETE /profiles/{name}` | Saved column mappings |
-| `POST /ml/forecast` · `/ml/segments` · `/ml/churn` · `/ml/basket` · `/ml/anomalies` | Run a model in the background |
-| `GET /ml/runs/{id}` · `GET /ml/forecast` · `/ml/segments` · `/ml/churn` · `/ml/basket` · `/ml/anomalies` | Run status and results |
-| `GET /documents` · `POST /documents` · `GET /documents/search` · `DELETE /documents/{id}` | Document library: list, add, search, delete |
-| `GET /chat/status` · `POST /chat` · `GET /chat/threads/{id}` | Assistant setup, ask (streams events), conversation history |
-| `GET /health` | Status |
+| `BIZ_LLAMACPP_URL` | the chat model's llama-server (default `http://127.0.0.1:8080`) |
+| `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts |
+| `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector |
+| `ASSISTANT_EMBED_URL` | where the embedding server listens (default `http://127.0.0.1:8070`) |
+| `ASSISTANT_PLAYWRIGHT_MCP`, `ASSISTANT_BROWSER` | Playwright MCP's folder; the browser it drives (default `msedge`) |
+| `POLLINATIONS_KEY` | for generating images (a key from enter.pollinations.ai) |
+| `ASSISTANT_NAME`, `ASSISTANT_USER_NAME` | the assistant's name (default Zen) and yours |
+| `ASSISTANT_THINKING` | the model thinks before answering: `on` (default) or `off` |
+| `ASSISTANT_MAX_TOKENS` | a reply's limit, thinking included (default 4096) |
+| `ASSISTANT_DATA_DIR` | where workspaces, chats and files are kept (default `data/assistant`) |
+| `BIZ_MAX_UPLOAD_MB` | the largest upload (default 100) |
+| `BIZ_LLM_PROVIDER`, `GROQ_API_KEY` | `groq` runs the app on a cloud model instead, for testing |
 
-## Project layout
+## Run
 
-```
-app/
-  main.py              FastAPI app
-  agent/               AI assistant: LangGraph graph, tools, SQL guard, prompt, model providers
-  api/                 routers (uploads, data, dashboard, ml, chat), request/response models, staging
-  analytics/           KPI, trend and breakdown queries (shared by the API and the agent)
-  ml/                  forecast, segments, churn, bought together, anomalies, run bookkeeping
-  rag/                 document extraction, chunking, embeddings, hybrid search, sample documents
-  ingestion/           standard format, reader, parsers, mapper, cleaner, loader, CLI
-  db/                  DuckDB connection, numbered migrations, column registry
-  datagen.py           synthetic sales data generator
-frontend/
-  app.py               Streamlit entry point
-  client.py            HTTP client for the API
-  theme.py             design system: tokens, glass surfaces, navigation, shared components
-  charts.py            Plotly styling and number formatting (₹ lakh / crore)
-  static/fonts/        self-hosted fonts (SIL Open Font License)
-  views/               dashboard, insights, Ask AI, upload, documents, explore pages
-data/samples/          small example exports
-docs/                  architecture and screenshots
-tests/                 pytest suite (pipeline, analytics, ML, RAG, agent, API, UI smoke tests)
+```bash
+.venv/Scripts/uvicorn.exe app.main:app
 ```
 
-## Roadmap
+Then open http://localhost:8000: make a workspace, upload files or just ask.
 
-| Week | Scope | |
-|---|---|---|
-| 1 | Data format, cleaning pipeline, DuckDB, samples, synthetic data | ✅ |
-| 2 | FastAPI endpoints, dashboard, Streamlit upload and explore screens | ✅ |
-| 3 | ML: sales forecast, customer segments, anomaly detection | ✅ |
-| 4 | LangGraph agent with SQL, calculator, metrics, chart and ML tools; streaming chat | ✅ |
-| 5 | Document search (RAG), churn prediction, bought together, as agent tools too | ✅ |
-| 6 | Local LLM with Ollama in Docker, evaluation set, demo | |
+## Tests
+
+```bash
+.venv/Scripts/python.exe -m pytest
+```
+
+No model is needed: the tools are tested directly, the conversation and the helpers with scripted models,
+the API through its client. When the embedding server is set up, one test also runs the real one.
+Measurements behind decisions are scripts in `bench/` (each says what it measured and what it found).
+
+## The first product
+
+This repository started as an AI business analyst (FastAPI, DuckDB, Streamlit). It is kept, separate, in
+[`legacy/`](legacy/README.md).

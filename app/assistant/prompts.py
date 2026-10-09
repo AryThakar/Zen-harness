@@ -1,7 +1,7 @@
 """The role prompts and the runner's nudges: every instruction a model reads that no single tool owns.
 
 The assistant's instructions are three layers, and each rule lives in exactly one of them
-(docs/TARGET_MAP.md, section 2):
+(docs/ARCHITECTURE.md, sections 4-5):
 
     role prompt       here - who the model is (main: its persona - name, manner, how it takes a failure;
                       the names come from the settings), how an expert in the role works, how to read

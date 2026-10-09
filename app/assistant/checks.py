@@ -1,7 +1,7 @@
 """main's honesty checks: what the system guarantees about main's own replies and calls, by code.
 
 The helpers' results are checked in workers/checks.py (sources, numbers, reports); these are the checks on
-main itself, each from a measured failure in the user's own test chat (docs/SYSTEM_MAP.md, section 10):
+main itself, each from a measured failure in the user's own test chat (found in the system pass, 2026-10-04):
 
     repeated failure    the same call that already failed in this turn is not run again: the model
                         is told what failed and to try something else (it repeated a failed download)

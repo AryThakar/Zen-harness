@@ -1,9 +1,10 @@
 # Zen system plan - what we have, what we build
 
 Written 2026-10-08, after moving the app to Gemma 4 26B-A4B (with the 12B as the smallest model that must
-still work). It replaces docs/SYSTEM_MAP.md and docs/TARGET_MAP.md (written 2026-10-04 for a 4B model);
-those two are merged into this one at clean-up. Nothing here is built yet: this is the map we agree on
-first, then we build from it, stage by stage.
+still work); the progress section below is kept current. How the app works today is in ARCHITECTURE.md.
+This plan replaced SYSTEM_MAP.md, TARGET_MAP.md (2026-10-04, for a 4B model) and ASSISTANT_PLAN.md (the
+2026-10-03 design and its measurement log); they were removed on 2026-10-09 - in git history before that
+day's docs commit - and their findings still open are in section 14.
 
 ## 0. Why a new plan
 
@@ -103,8 +104,11 @@ Tier 2
   by words alone too, 3-11 s more a read).
 - Not built, by the decision above: the five click/type tools - only if the fallback proves too little.
 
-Next: the docs merge (SYSTEM_MAP, TARGET_MAP and ASSISTANT_PLAN into this plan and ARCHITECTURE), the
-downloads above once approved, then the evaluation on the 26B, then the README.
+- Done: the docs merge - ARCHITECTURE.md describes the app as it is; the three older plans removed, their
+  open findings in section 14.
+
+Next: the README; then, on the 26B (Kaggle), the prompt review (sections 8 and 14), the guessing checks
+measured with the trace (section 9), the thinking policy and the evaluation.
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
@@ -615,3 +619,27 @@ screenshots to dig into a site; compare pages in a table; find data files and of
 approval; ask when a task is unclear; remember pages it read; and say plainly what was blocked and what to
 try instead. It can't: get past bot walls or logins, search Google through a browser, do long shopping
 sessions on Amazon, or find data that isn't public.
+
+## 14. Parked for the prompt review (from ASSISTANT_PLAN.md, measured, not fixed)
+
+Model-behaviour findings kept for the prompt review on the 26B; each was measured on the earlier, smaller models,
+and is measured again before anything is changed.
+
+- "Make a Word document": the file was named .md 3 of 6 times (with a note to convert it).
+- The knowledge helper sometimes cites a pinned note as an extra source next to the real one (h_bulk).
+- main retyped a file's code from memory when asked what it does (1 of 2), and repeats the coder's
+  report in its answer (with "image_1.png" as text) instead of a short summary.
+- The coder sometimes ends in prose ("here is the save") instead of calling save, even after the nudge.
+- The analyst's report title (question) is often a long sentence; it is also the table's list line.
+- Refusing a direct, harmless order to call a tool ("use the coder to list the files"), and writing
+  the opposite into the helper's task (8 turns in the user's test chat).
+
+- "remember X" often answered "I saved a note" without calling `save_note` (4/6 runs). After step
+  3.8: fiscal 2/2, metric 2/2, names 1/2 - the miss says "I will remember that", a promise the
+  claim check does not catch (it reads past tense only). Fixed in 3.8 (remember rule + its check): 10/10.
+- "explain how ..." questions go to `research_web` (3/3) instead of answering directly. After 3.8: 1/3.
+- "Draw an image of a JK flip flop circuit" -> generate_image (0/2 before and after 3.8), although its
+  description says not for circuits: an explicit "image" outweighs it.
+- "who am I talking to" ignores the pinned name (2/3). After 3.8: 2/2, and "what is my/your name" 2/2.
+- "what's the weather" sometimes asks now-or-forecast instead of checking (1/3).
+- Maths: long numeric chains done in the head or in one long expression (gain ratio 0/2).

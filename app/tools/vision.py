@@ -1,7 +1,7 @@
 """view_image: main looks at an image item and gets an answer to a question about it.
 
 The model can't read pixels from a file; this asks Gemma's own vision encoder (the projector loaded in
-llama-server, docs/TARGET_MAP.md section 8) one question about one image, with thinking off, and
+llama-server) one question about one image, with thinking off, and
 returns its answer as text. It runs on the helpers' slot, idle while main works. Measured on a real
 chart (air passengers, 3 lines): 3-4 s a question, about 140 image tokens; it named the lines and the
 legend and read a peak as 'roughly 600' (622) - right for what a picture shows, not for exact values,
