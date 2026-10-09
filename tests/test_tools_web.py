@@ -104,7 +104,7 @@ def test_site_restricts_results():
 
 # ---------------------------------------------------------------- read_webpage
 
-PUBLIC = {"news.example.com": "93.184.216.34", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
+PUBLIC = {"news.example.com": "93.184.216.34", "anime.example.com": "93.184.216.40", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
           "sneaky.example.com": "10.0.0.5", "rebind.example.com": "127.0.0.1", "app.example.com": "93.184.216.37",
           "shop.example.com": "93.184.216.38"}
 
@@ -137,6 +137,25 @@ def site(routes):
             return httpx.Response(404)
         return answer() if callable(answer) else answer
     return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+
+
+STREAMED_PAGE = b"""<!doctype html><html><head><title>Anime returns</title></head><body>
+<main><h1>Anime returns</h1><!--$?--><template id="B:0"></template><p>Loading the story ...</p><!--/$-->
+<p>Before the parts.</p><template id="P:1"></template><p>After the parts.</p></main>
+<div hidden id="S:0"><p>Episode 1180 aired on September 27 as the last of the year; the series returns in 2027.</p></div>
+<div hidden id="S:1"><p>Crunchyroll streams it in 84 territories.</p></div>
+<div hidden>secret tracking text</div>
+<script>$RC("B:0","S:0")</script><script>$RS("S:1","P:1")</script></body></html>"""
+
+
+def test_a_streamed_page_reads_its_parts_where_they_belong():
+    """React streams a page's parts late, hidden until its script moves them: they are read, in their place."""
+    http = site({"https://anime.example.com/news": httpx.Response(200, content=STREAMED_PAGE,
+                                                                   headers={"content-type": "text/html"})})
+    text = read_webpage("https://anime.example.com/news", http=http, resolve=resolve).result["text"]
+    assert "returns in 2027" in text and "84 territories" in text
+    assert "Loading the story" not in text and "secret" not in text  # a boundary's fallback goes; other hidden text too
+    assert text.index("Before the parts") < text.index("84 territories") < text.index("After the parts")
 
 
 def test_article_text_without_page_furniture():

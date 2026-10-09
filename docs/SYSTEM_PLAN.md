@@ -75,7 +75,9 @@ Tier 1
 - Versions: requirements.lock holds every library's tested version; the UI's libraries are pinned.
 - Decided not to build: a separate capability list - main reads every tool's and helper's own description,
   and a second list would be a second copy to fall out of step.
-- Downloaded, its gate next: trafilatura (kept only if it beats today's extractor on saved pages).
+- Gate run, not added: trafilatura (bench/web_extract.py, 35 pages the helper read). It dropped what the
+  tasks needed (MRF's live share price, a site's list of datasets); its one win came from a fault in ours -
+  React's streamed parts, hidden until a script moves them, were dropped - now fixed for every such site.
 - Waiting for the model (Kaggle): the prompt review (section 8), measuring the guessing checks with the trace
   (section 9), the thinking policy, and the evaluation.
 
@@ -475,9 +477,16 @@ main ── research_web(task) ──► web helper (slot 1)
 - [ ] Route by what the link is: a web page → the steps above; PDF / Word / PowerPoint → one document
       converter (the same one the knowledge role uses); CSV / Excel → "a data file: download it as a table";
       an image → "an image: download or look at it"
-- [ ] Fast path: a plain fetch, then main-text extraction (trafilatura) to Markdown - tables kept as rows,
-      menus, footers and pop-ups out, garbled characters repaired (measured on Fandom), link addresses out
-      of the text but kept as a list
+- [x] Fast path: a plain fetch, then main-text extraction to Markdown - tables kept as rows, menus,
+      footers and pop-ups out, link addresses out of the text but files kept as a list. **Today's
+      extractor, not trafilatura** (gate run 2026-10-09, bench/web_extract.py, 35 pages the web helper
+      read in the user's chats): by the counts first set, trafilatura was ahead (failures 1 / 0, facts the
+      answers used 6 / 6, furniture lines 12 / 7) - but the facts were too few to judge, and read side by
+      side it dropped what the tasks needed: MRF's live share price (moneycontrol, 2,199 words -> 99, a
+      JSON blob) and the list of sample datasets (csvtools, 1,740 -> 81). Its wins came from a fault in
+      ours, now fixed for every such site: React's streamed parts (<div hidden id="S:n">, moved by a
+      script on load) were dropped as hidden - anime.com's article read 23 words, now 290; allen.in's
+      formulas 0, now 704; failures 0 / 0.
 - [x] Browser fallback (C) **only when** the fast path is blocked, gets a bot page or too little text - one
       general test, not a list of sites; the page's HTML goes through the same extraction, never the
       snapshot
@@ -544,8 +553,8 @@ main ── research_web(task) ──► web helper (slot 1)
       reading cache stays in memory for an hour (after a restart a page is read again)
 - [x] Per-site pacing: a pause between pages of one site and a cap per task (Amazon checked us after 2-3
       quick visits)
-- [ ] Versions pinned (ddgs, trafilatura, Playwright MCP, the MCP SDK); an update every 1-3 months, kept
-      only if the acceptance test passes
+- [x] Versions pinned (ddgs and the MCP SDK in requirements.lock, Playwright MCP 0.0.83 in its install
+      folder; trafilatura not added); an update every 1-3 months, kept only if the acceptance test passes
 
 **G. The web helper's way of working (prompt + runner) - after the tools are frozen**
 - [x] Official and primary sources before third-party articles; dated answers for "latest"

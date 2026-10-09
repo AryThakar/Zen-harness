@@ -950,6 +950,47 @@ def _looks_html(body: bytes) -> bool:
     return head.startswith((b"<!doctype html", b"<html")) or b"<body" in head
 
 
+STREAMED = re.compile(r"^S:\w+$")
+INTO_BOUNDARY = re.compile(r"""\$RC\(\s*["'](B:\w+)["']\s*,\s*["'](S:\w+)["']""")  # $RC("B:1","S:1")
+INTO_PLACEHOLDER = re.compile(r"""\$RS\(\s*["'](S:\w+)["']\s*,\s*["'](P:\w+)["']""")  # $RS("S:1","P:1")
+
+
+def _place_streamed(doc) -> None:
+    """The parts of a streamed page put where they belong. A site that streams its pages (React 18, so most
+    Next.js sites) sends each part late, inside <div hidden id="S:n">, and a script moves it to its place as
+    the page loads - into a placeholder (<template id="P:n">, $RS) or in place of a loading boundary's
+    fallback (<template id="B:n">, $RC). Until then the content sits in a hidden element, which reading drops.
+    Seen 2026-10-09: anime.com's article and allen.in's formulas read as nothing. Each part is shown and moved
+    where the page's own script would put it (a boundary's fallback - a loading placeholder - removed, up to
+    its end marker <!--/$-->); a part whose place isn't found stays where it is, its text still read."""
+    from lxml import etree
+
+    places = {}
+    for script in doc.xpath("//script[not(@src)]"):
+        text = script.text or ""
+        places.update({s: b for b, s in INTO_BOUNDARY.findall(text)})
+        places.update(dict(INTO_PLACEHOLDER.findall(text)))
+    for part in doc.xpath("//div[@hidden][starts-with(@id, 'S:')]"):
+        sid = part.get("id", "")
+        if not STREAMED.match(sid):
+            continue
+        del part.attrib["hidden"]
+        place_id = places.get(sid, "P:" + sid[2:])
+        found = doc.xpath("//template[@id=$id]", id=place_id)
+        if not found or found[0].getparent() is None:
+            continue
+        place = found[0]
+        if place_id.startswith("B:"):  # the fallback goes: the siblings after the marker, up to <!--/$-->
+            node = place.getnext()
+            while node is not None and not (node.tag is etree.Comment and (node.text or "").strip() == "/$"):
+                after = node.getnext()
+                node.getparent().remove(node)
+                node = after
+            place.tail = None
+        part.tail = place.tail
+        place.getparent().replace(place, part)
+
+
 def _html_text(body: bytes, charset: str | None, base: str = "") -> tuple[str | None, str, dict]:
     from lxml import html as lxml_html
 
@@ -961,6 +1002,7 @@ def _html_text(body: bytes, charset: str | None, base: str = "") -> tuple[str | 
     meta = _page_meta(doc, base)
     title = " ".join((doc.findtext(".//title") or "").split()) or meta.pop("og_title", None)
     meta.pop("og_title", None)
+    _place_streamed(doc)
     for el in doc.xpath("|".join(f"//{t}" for t in DROP) + "|//*[@hidden]|//*[@aria-hidden='true']"
                         "|//*[@role='navigation' or @role='banner' or @role='contentinfo' or @role='complementary'"
                         " or @role='search']|//a[contains(@class, 'headerlink')]"):
