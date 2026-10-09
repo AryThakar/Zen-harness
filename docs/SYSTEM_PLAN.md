@@ -80,7 +80,7 @@ Tier 1
   tasks needed (MRF's live share price, a site's list of datasets); its one win came from a fault in ours -
   React's streamed parts, hidden until a script moves them, were dropped - now fixed for every such site.
 - Waiting for the model (Kaggle): the prompt review (section 8), measuring the guessing checks with the trace
-  (section 9), the thinking policy, and the evaluation.
+  (section 9) and the evaluation - all done on the 26B (below).
 
 Tier 2
 - Done: the coder's sandbox panel (a text file edited and saved in the file panel, a Python file run with
@@ -141,8 +141,10 @@ Tier 2
     than to files(write) from Markdown - the files are right either way; main sometimes repeats a written
     file's text or names a chart by its file name in the reply (the UI drops a picture it can't show).
 
-Next, on the 26B: the thinking policy (measured: thinking on vs off, pass rate and time), then the parked
-findings (section 14).
+Thinking stays on for every step, main's and the helpers' (the user's decision, 2026-10-10): no on/off
+policy to measure. ("Try again, answer quickly" after a reply that thought until the limit stays.)
+
+Next, on the 26B: the parked findings (section 14).
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
@@ -371,8 +373,8 @@ them. What changes:
 4. **A turn trace**, stored with each turn: steps, durations, tokens, thinking length, guards and repairs
    that fired, errors - shown in a developer panel in the UI, and used by the evaluation. A turn that
    fails (model unreachable) is kept with its error.
-5. **Limits from the server.** Slot size read from llama-server, not a constant. A thinking policy per
-   step (for example: think on the first step, less when only wording the answer) - measured first.
+5. **Limits from the server.** Slot size read from llama-server, not a constant. Thinking stays on for
+   every step (the user's decision, 2026-10-10): no per-step policy.
 6. **workers.py split** (1,018 lines today) into the runner, the contracts, the checks and the repairs.
 
 ---
