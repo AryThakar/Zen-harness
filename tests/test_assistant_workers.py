@@ -99,7 +99,7 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
         tools_turn(call("read_webpage", url="https://news.example.com/rates")),
         submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"]),
     ])
-    out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx, user_message="any rate news?")
+    out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
     assert out == {"status": "ok", "worker": "web", "answer": "Rates rose by 0.25 points.",
                    "sources": ["https://news.example.com/rates"]}
     first = model.requests[0]
@@ -107,7 +107,8 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
     # the system prompt is the role's fixed instructions (cached across tasks); what changes is in the task
     assert first["system"] == PROFILES["web"].instructions
     opening = first["messages"][0]["content"]
-    assert opening.startswith("Now: ") and "Workspace:" in opening and "do only your task): any rate news?" in opening
+    assert opening.startswith("Now: ") and "Workspace:" in opening
+    assert opening.endswith("Your task: What did the central bank do?")
 
 
 def test_the_result_says_how_pages_were_read_and_which_failed(ctx, monkeypatch):
@@ -256,7 +257,7 @@ def test_delegate_tool_returns_the_checked_result(ctx, fake_web):
     worker = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
                                submit(answer="Up 0.25.", sources=["https://news.example.com/rates"])])
     events = []
-    tools = main_tools(worker, ctx, user_message=lambda: "rates?", progress=events.append)
+    tools = main_tools(worker, ctx, progress=events.append)
     r = tools["research_web"].handler(ctx, registry.TaskIn(task="Find the latest rate change."))
     assert r.status == "ok" and r.result["answer"] == "Up 0.25."
     # the flow, in order: start, model turn, tool call, its result, model turn, the check of the submission

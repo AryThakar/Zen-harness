@@ -61,8 +61,7 @@ from .evidence import Trace, _call_key  # noqa: F401 - Trace for tests, _call_ke
 from .runner import _pictures, _submit_spec, _table_report, run_worker  # noqa: F401 - tests use them
 
 
-def delegate_tools(worker: Provider, user_message: Callable[[], str] = lambda: "",
-                   progress: Callable[[dict], None] | None = None) -> dict[str, Tool]:
+def delegate_tools(worker: Provider, progress: Callable[[dict], None] | None = None) -> dict[str, Tool]:
     """The delegate tools for the main slot, bound to the worker-slot provider."""
     def make(name: str, d: Delegate) -> Tool:
         profile_name = d.profile
@@ -71,8 +70,8 @@ def delegate_tools(worker: Provider, user_message: Callable[[], str] = lambda: "
             task = getattr(args, "task", None) or args.question
             if getattr(args, "data", None):
                 task += f"\n(The table to use: {args.data}.)"
-            out = run_worker(worker, PROFILES[profile_name], task, ctx, user_message=user_message(),
-                             progress=progress, file=getattr(args, "file", None), table=getattr(args, "data", None))
+            out = run_worker(worker, PROFILES[profile_name], task, ctx, progress=progress,
+                             file=getattr(args, "file", None), table=getattr(args, "data", None))
             status = out.pop("status")
             if status != "ok":
                 return ToolResult("failed", {"error": {"message": f"The {profile_name} helper failed: {out.get('error')}"}})

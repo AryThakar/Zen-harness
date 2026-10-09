@@ -21,7 +21,7 @@ from app.tools.vision import prepare
 from app.tools.workspace import ITEM_REF
 
 from ..context import IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_tool_results
-from ..prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT, USER_MESSAGE
+from ..prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT
 from ..registry import ToolContext, execute, typed_optionals
 from .checks import _numbers_problem
 from .contracts import BRIEF, MAX_ASKS, SUBMIT, DataReport, Profile, SaveResult
@@ -69,12 +69,17 @@ def _chosen(options: list, said: str | None) -> dict | None:
         said == o["label"].lower() or said.startswith(o["label"].split("(")[0].strip().lower()))), None)
 
 
-def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext, *, user_message: str = "",
+def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext, *,
                progress: Callable[[dict], None] | None = None, file: str | None = None,
                table: str | None = None) -> dict:
     """Run one task on the worker slot; returns the checked result for the main slot. file: a stored
     file to work on - loaded into the scratch script, its report shown first; table: the table the task
-    is about - its report shown first, the new one kept on it."""
+    is about - its report shown first, the new one kept on it.
+
+    The opening carries main's task, not the user's message: a helper doesn't see the chat (the contract), and
+    given the user's words it did the parts main had given to others - measured on the 26B, the web helper asked
+    for an invoice total that was the analyst's part, and the analyst built the slide deck (one slide, in a
+    script) that main meant to write from Markdown with the chart."""
     progress = progress or (lambda event: None)
     system = profile.instructions  # the same for every task of this role, so llama.cpp keeps it cached
     # A new scratch script for every task: the helper keeps nothing between tasks.
@@ -82,8 +87,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     sees = profile.sees_images and bool(getattr(provider, "sees_images", lambda: False)())
     table = table if table and table in ctx.ws.ids("table") else None
     given = _load(ctx, file) if file else _table_report(ctx, table) if table else ""
-    opening = (f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given
-               + (USER_MESSAGE.format(said=user_message) + "\n\n" if user_message else "") + f"Your task: {task}")
+    opening = f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given + f"Your task: {task}"
     messages: list[dict] = [{"role": "user", "content": opening}]
     named = _task_images(ctx, task) if sees else []
     if named:  # on the opening itself: one user turn, not two in a row

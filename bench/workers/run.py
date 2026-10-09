@@ -86,7 +86,7 @@ def main() -> None:
         profile = PROFILES[task.role]
         started = time.perf_counter()
         try:
-            out = run_worker(model, profile, task.task, ctx, user_message=task.task, file=task.file,
+            out = run_worker(model, profile, task.task, ctx, file=task.file,
                              progress=lambda e: e["type"] == "worker_tool" and tools.append(
                                  {"name": e["name"], "input": e["input"]}))
         except Exception as exc:  # noqa: BLE001 - a crash is a failed task, reported

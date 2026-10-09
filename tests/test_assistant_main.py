@@ -134,7 +134,8 @@ def test_a_delegate_runs_the_worker_and_its_progress_is_streamed(store, chat, mo
     events = run(send(store, chat["id"], "Any rate news?", main, worker))
     steps = [e["event"] for e in events if e["type"] == "worker"]
     assert steps[:4] == ["start", "turn", "tool", "result"] and "check" in steps
-    assert "do only your task): Any rate news?" in worker.requests[0]["messages"][0]["content"]
+    opening = worker.requests[0]["messages"][0]["content"]  # main's task, not the user's words (the contract)
+    assert opening.endswith("Your task: What did the central bank do?") and "Any rate news?" not in opening
     result = json.loads([m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"])
     assert result["answer"] == "Rates rose by 0.25 points." and result["worker"] == "web"
     shown = [m for m in store.messages(chat["id"]) if m["role"] == "artifact"]

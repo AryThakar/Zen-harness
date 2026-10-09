@@ -92,7 +92,9 @@ is the history).
 | coder | write_code | run_code, fix_code, read_file, ask_user | 10 | save: the file kept with its report, answer, files |
 
 main knows each helper by its contract (contracts.py) - what it is for and what it hands back - never by
-its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools. The runner
+its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools; it starts from
+the time, the workspace, the pinned notes and main's task - not the user's message, so it does its own part
+and not one main gave another helper. The runner
 (runner.py) stops a repeated call, a computation on a table nobody inspected and a seventh page of one site
 before they run; the result is checked by code before main sees it - web sources must be pages it read,
 knowledge sources ones a tool returned, every number in a data answer must be in a tool result, the coder's

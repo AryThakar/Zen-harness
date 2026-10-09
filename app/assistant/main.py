@@ -167,7 +167,7 @@ class Turn:
                 self.live.note_helper(event)
             write(_worker_event(event))
 
-        self.tools = main_tools(self.worker, self.ctx, user_message=lambda: self.user_text, progress=progress)
+        self.tools = main_tools(self.worker, self.ctx, progress=progress)
 
 
     def ask(self, card: dict) -> dict:

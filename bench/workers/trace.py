@@ -38,7 +38,7 @@ def trace(task, embedder) -> str:
     ctx = ToolContext(ws=ws, index=index, conversation="trace", emit=shown.append)
     model = LlamaCppProvider("local", thinking=True, slot=1, max_tokens=4096)
     started = time.perf_counter()
-    out = run_worker(model, PROFILES[task.role], task.task, ctx, user_message=task.task,
+    out = run_worker(model, PROFILES[task.role], task.task, ctx,
                      progress=lambda e: events.append((time.perf_counter() - started, e)))
     seconds = time.perf_counter() - started
     tools = [{"name": e["name"], "input": e["input"]} for _, e in events if e["type"] == "worker_tool"]
