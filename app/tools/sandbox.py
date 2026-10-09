@@ -14,7 +14,7 @@ INSTALLED are there: the project's "sandbox" extra) inside the workspace's sandb
 Files the script writes are registered: .csv / .parquet become workspace tables, PNG / JPEG / WebP /
 GIF become image items (with their size; one that isn't a readable image is kept as a file), anything
 else a file. A script never changes a stored file (writing to a stored item's id is refused): stored
-files change through files(update) or the coder's save.
+files change through files(update) or a helper's save_code.
 
 The workspace is the boundary (the user's rule): an audit hook in the script refuses reading outside
 the workspace and Python's own installation, listing other folders, writing, deleting or renaming
@@ -107,7 +107,7 @@ def _refuse(what, path=None):
     if path is not None and _inside(path, [_STORE]):  # the workspace's own store, not the computer's files
         _sys.stderr.write(f"[not allowed] {{what}}\\n")
         raise PermissionError(f"{{what}}: a script never changes stored items - write a new file instead. Stored "
-                              "files change through files(update) or the coder's save; deleting needs the "
+                              "files change through files(update) or save_code; deleting needs the "
                               "user's approval.")
     _sys.stderr.write(f"[refused] {{what}}\\n")
     raise PermissionError(f"{{what}}: files on the user's computer are off limits. Use the workspace "
@@ -295,7 +295,9 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: 
         result["errors"] = errors
     if files:
         result["files"] = files
-    if "[refused] " in errors:
+    if "[refused] the internet" in errors:  # also when the script caught the error and "ran"
+        result["note"] = NO_INTERNET
+    elif "[refused] " in errors:
         result["note"] = ("The script was refused access to files on the user's computer: any count or list it "
                           "printed about them is not real. Tell the user this can't be done here.")
     if timed_out:
@@ -356,6 +358,11 @@ LIBRARIES = ("numpy", "pandas", "scipy", "sklearn", "statsmodels", "matplotlib",
              "polars", "xgboost", "lightgbm", "imblearn", "cv2", "skimage", "PIL", "nltk",
              "openpyxl", "xlrd", "xlsxwriter", "docx", "pptx", "pypdf", "duckdb", "pyarrow", "tabulate")
 INSTALLED = tuple(name for name in LIBRARIES if importlib.util.find_spec(name))
+# The internet refused (measured: told "refused access to files on the user's computer", the coder tried to
+# download the same CSV again another way, until the user stopped the turn).
+NO_INTERNET = ("Scripts here have no internet: nothing can be downloaded or fetched, in any way. A file from the "
+               "web comes into the workspace through main's files(mode='download'), with the user's approval, and "
+               "a script then reads it by its id. Don't try again: say so in your answer.")
 ID_AS_VARIABLE = re.compile(r"NameError: name '((?:data|file|image|note)_\d+\w*)' is not defined")
 ID_AS_SQL_TABLE = re.compile(r"Table with name ((?:data)_\d+\w*) does not exist")
 ID_AS_PATH = re.compile(r"(?:FileNotFoundError|No such file).*?'((?:data|file|image|note)_\d+\w*)'")
@@ -368,6 +375,8 @@ def _hint(errors: str) -> str:
     if "EOFError" in errors and "input(" in errors:  # the program asked for typed input and had none
         return (" The program waits for typed input (input()): run it again with input = what a person would type, "
                 "one line per input() call, e.g. input='w\\nw\\nq'.")
+    if "[refused] the internet" in errors:
+        return " " + NO_INTERNET
     if "files on the user's computer are off limits" in errors:
         return (" Scripts can't read or change files on the user's computer, start programs or list drives - "
                 "only workspace items and files written here. Tell the user that instead of trying again.")

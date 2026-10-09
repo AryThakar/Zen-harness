@@ -1,6 +1,6 @@
 """Does main solve a maths problem itself, or hand it away? The user's own maths questions, asked
 of the real model with main's real instructions and tools, a few runs each: the first tool it picks
-(write_code / research_web / calculate / none), its calculate calls, whether the answer shows steps
+(analyze_or_code / research_web / calculate / none), its calculate calls, whether the answer shows steps
 and whether its number is right.
 
     python -m bench.main.math_probe [label]      (llama-server running) -> bench/main/math_probe_<label>.md

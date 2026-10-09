@@ -68,6 +68,7 @@ def seeing(*turns) -> ScriptedProvider:
     return model
 
 
+DONE = call("finish", answer="Done.", method="Ran a script.", caveats="None.")
 SAVE = {"name": "plot.py", "purpose": "Draws a line.", "how_it_works": "matplotlib.", "inputs_outputs": "line.png",
         "how_to_run": "Run it.", "limits": "One line."}
 
@@ -86,10 +87,10 @@ def test_a_script_edits_an_image_by_its_id_into_a_new_image(ctx):
     assert scratch.images == [new] and "next" not in r.result  # the runner shows it; no tool to call
 
 
-def test_the_coder_is_shown_what_its_script_drew(ctx):
+def test_the_helper_is_shown_what_its_script_drew(ctx):
     plot = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\nplt.title('Sales')\nplt.savefig('line.png')\n"
-    model = seeing(turn(call("run_code", code=plot)), turn({**call("save"), "input": SAVE}))
-    out = run_worker(model, PROFILES["coder"], "Draw a line titled Sales.", ctx)
+    model = seeing(turn(call("run_code", code=plot)), turn({**call("save_code"), "input": SAVE}), turn(DONE))
+    out = run_worker(model, PROFILES["engineer"], "Draw a line titled Sales.", ctx)
     assert "view_image" not in {t["name"] for t in model.requests[0]["tools"]}
     shown = model.requests[1]["messages"][-1]  # after the run's result, before the next step
     assert shown["role"] == "user" and shown["content"].startswith("[The picture your script made: image_1 (line.png, ")
@@ -97,10 +98,10 @@ def test_the_coder_is_shown_what_its_script_drew(ctx):
     assert out["files"] and not out.get("warnings") and not ctx.look.seen  # no separate vision call
 
 
-def test_an_image_the_task_names_or_the_coder_reads_is_shown(ctx):
+def test_an_image_the_task_names_or_the_helper_reads_is_shown(ctx):
     ctx.ws.add_image(png(), "passengers.png")
-    model = seeing(turn(call("read_file", file="image_1")), turn({**call("save"), "input": SAVE}))
-    run_worker(model, PROFILES["coder"], "Add the caption 'Q3' to the passengers chart.", ctx)
+    model = seeing(turn(call("read_file", file="image_1")), turn({**call("save_code"), "input": SAVE}), turn(DONE))
+    run_worker(model, PROFILES["engineer"], "Add the caption 'Q3' to the passengers chart.", ctx)
     opening = model.requests[0]["messages"][0]
     assert "[The picture the task names: image_1 (passengers.png, 40x20).]" in opening["content"]
     assert len(opening["images"]) == 1  # on the opening itself: one user turn
@@ -109,8 +110,8 @@ def test_an_image_the_task_names_or_the_coder_reads_is_shown(ctx):
 
 def test_without_vision_on_the_server_nothing_is_shown(ctx):
     plot = "import matplotlib.pyplot as plt\nplt.plot([1, 2])\nplt.savefig('line.png')\n"
-    model = ScriptedProvider([turn(call("run_code", code=plot)), turn({**call("save"), "input": SAVE})])
-    run_worker(model, PROFILES["coder"], "Draw the passengers line.", ctx)
+    model = ScriptedProvider([turn(call("run_code", code=plot)), turn({**call("save_code"), "input": SAVE}), turn(DONE)])
+    run_worker(model, PROFILES["engineer"], "Draw the passengers line.", ctx)
     assert not any(m.get("images") for r in model.requests for m in r["messages"])
 
 
@@ -126,12 +127,12 @@ def test_only_the_newest_pictures_stay_in_view():
 
 def test_a_save_named_after_the_picture_keeps_the_script(ctx):
     """Seen on the real model: the coder called save with the edited image's name ('passengers_modified.png')
-    and the save was refused - the script is what save keeps; the picture is kept already."""
+    and the save was refused - the script is what save_code keeps; the picture is kept already."""
     ctx.ws.add_image(png(), "passengers.png")
     edit = ("from PIL import Image\nimg = Image.open('image_1')\nimg.resize((80, 20)).save('passengers_modified.png')\n"
             "print(img.size)")
     report = {**SAVE, "name": "passengers_modified.png", "inputs_outputs": "image_1 in, passengers_modified.png out"}
-    model = seeing(turn(call("run_code", code=edit)), turn({**call("save"), "input": report}))
-    out = run_worker(model, PROFILES["coder"], "Make the passengers chart twice as wide.", ctx)
+    model = seeing(turn(call("run_code", code=edit)), turn({**call("save_code"), "input": report}), turn(DONE))
+    out = run_worker(model, PROFILES["engineer"], "Make the passengers chart twice as wide.", ctx)
     assert out["files"][0]["name"] == "passengers_modified.py" and not out.get("warnings")
     assert ctx.ws.kind(out["files"][0]["id"]) == "file" and ctx.ws.entry("image_2")["meta"]["width"] == 80

@@ -169,17 +169,44 @@ def test_the_same_failed_call_is_not_run_twice_in_a_turn(store, chat):
 def test_a_helper_task_with_made_up_data_is_refused(store, chat):
     """Measured: invented iPhone sales figures were sent to the coder to chart, then explained."""
     task = "Plot iPhone sales: 2012: 125M, 2014: 192.7M, 2016: 211.9M, 2020: 180M, 2023: 234.6M."
-    main = ScriptedProvider([turn(call("write_code", task=task)), answer("I need the real figures first.")])
+    main = ScriptedProvider([turn(call("analyze_or_code", task=task)), answer("I need the real figures first.")])
     coder = ScriptedProvider([])  # never called
     list(send(store, chat["id"], "make a line chart of iphone sales over time", main, coder))
     result = [m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"]
     assert "Not run: the task gives numbers that no tool returned" in result and "125M" in result
+    assert "confirm: true" in result  # made-up on purpose (a demo) is main's call, not a dead end
     assert coder.requests == []
+
+
+def test_made_up_data_the_user_asked_for_runs_once_confirmed_and_is_labelled(store, chat):
+    """Measured on the 26B: a demo table for 'show me the plan tool' was refused twice as invented data, main
+    rewrote the whole task each time, and the user stopped the turn."""
+    task = "Make demo_movies.csv: Inception 8.8 2500000, Coco 8.4 1300000, Up 8.3 1100000."
+    main = ScriptedProvider([turn(call("analyze_or_code", task=task)),
+                             turn(call("analyze_or_code", task=task, confirm=True)), answer("Made it.")])
+    helper = ScriptedProvider([])  # starts and fails at once: it was not refused
+    list(send(store, chat["id"], "show me a demo of the plan tool", main, helper))
+    results = [m["content"] for m in store.messages(chat["id"]) if m["role"] == "tool"]
+    assert "Not run" in results[0] and "Not run" not in results[1] and len(helper.requests) == 1
+    opening = helper.requests[0]["messages"][0]["content"]
+    assert task in opening and "Treat them as sample data, and say so" in opening
+
+
+def test_a_failed_call_runs_again_once_confirmed(store, chat):
+    """A failure that may pass (a site that was busy) is main's call to retry."""
+    def read(n):
+        return {"id": f"read_{n}", "name": "files", "input": {"mode": "read", "name": "nothing.txt",
+                                                               **({"confirm": True} if n == 2 else {})}}
+
+    main = ScriptedProvider([turn(read(1)), turn(read(2)), answer("There is no such file.")])
+    list(send(store, chat["id"], "read nothing.txt", main, ScriptedProvider([])))
+    results = [m for m in store.messages(chat["id"]) if m["role"] == "tool"]
+    assert "already failed in this turn" not in results[1]["content"] and "nothing.txt" in results[1]["content"]
 
 
 def test_a_helper_task_with_the_users_own_numbers_runs(store, chat):
     task = "Compound 5,000 at 7% a year for 15 years and print the final amount."
-    main = ScriptedProvider([turn(call("write_code", task=task)), answer("Done.")])
+    main = ScriptedProvider([turn(call("analyze_or_code", task=task)), answer("Done.")])
     coder = ScriptedProvider([])  # no turns: the coder starts and fails, which shows it was not refused
     list(send(store, chat["id"], "what is 5,000 at 7% compounded for 15 years? use code", main, coder))
     result = [m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"]

@@ -535,7 +535,7 @@ COMBOS = [
     Combo("dice_fairness", "dev",
           [Step("Write a Python script that rolls a fair six-sided die 6,000 times with random seed 42 and saves the "
                 "rolls as rolls.csv. Then have the data analyst check whether the die looks fair.")],
-          all_of(no_errors, ran("write_code", "main"), a_table_with_rows(6000, r"rolls"), ran("analyze_data", "main"),
+          all_of(no_errors, ran("analyze_or_code", "main"), a_table_with_rows(6000, r"rolls"),
                  answer_has(r"\bfair\b|no (?:evidence|sign)|consistent with|not significant|uniform")),
           None, "coder makes data -> it becomes a table -> the analyst tests it"),
     Combo("meeting_actions", "dev",
@@ -560,7 +560,7 @@ COMBOS = [
     Combo("verified_picture", "dev",
           [Step("Use a script to draw a pie chart of my budget - rent 50, food 30, fun 20 - titled 'My budget', saved as "
                 "budget.png. Check the picture really shows that title and the right biggest slice before you tell me.")],
-          all_of(no_errors, ran("write_code", "main"), file_made(r"budget", kind="image"), answer_has(r"My budget", r"rent")),
+          all_of(no_errors, ran("analyze_or_code", "main"), file_made(r"budget", kind="image"), answer_has(r"My budget", r"rent")),
           None, "coder draws -> the picture is looked at -> confirmed"),
     Combo("ambiguous_top", "dev",
           [Step("Who is our top product in product_sales.csv?", ("by revenue",))],
@@ -588,7 +588,7 @@ COMBOS = [
           "a note -> a new chat -> reasoning from it"),
     Combo("fibonacci_chart", "holdout",
           [Step("Have the coder write the first 20 Fibonacci numbers to fib.csv, then chart them and tell me the 20th.")],
-          all_of(no_errors, ran("write_code", "main"), a_table_with_rows(20, r"fib"), chart_drawn(), fib_answer), None,
+          all_of(no_errors, ran("analyze_or_code", "main"), a_table_with_rows(20, r"fib"), chart_drawn(), fib_answer), None,
           "coder -> a table -> the analyst's chart"),
     Combo("mumbai_trip_note", "holdout",
           [Step("Will it rain in Mumbai in the next 3 days? Save the answer as a note called mumbai trip.")],
@@ -618,7 +618,7 @@ COMBOS = [
           "a delete refused -> a rename instead"),
     Combo("fix_script", "holdout",
           [Step("stats.py crashes. Fix it and tell me what it prints.")],
-          all_of(no_errors, ran("write_code", "main"), script_fixed, answer_has(r"15\.1")), broken_script,
+          all_of(no_errors, ran("analyze_or_code", "main"), script_fixed, answer_has(r"15\.1")), broken_script,
           "a broken file -> fixed in place -> its output"),
 ]
 

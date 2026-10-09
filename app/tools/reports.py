@@ -1,7 +1,7 @@
 """The report.md a helper keeps on an item (docs/ARCHITECTURE.md, section 5): its own sections, in a
 fixed order, then facts the app writes itself - so a report can't claim what didn't happen. The
-first line is the item's line in lists. Used by the coder's save (scratch.py) and the data
-analyst's save_report (app/assistant/workers/runner.py).
+first line is the item's line in lists. Used by save_code (scratch.py) and by the report kept on a table at
+the analyst-programmer's finish (app/assistant/workers/runner.py).
 """
 
 from __future__ import annotations

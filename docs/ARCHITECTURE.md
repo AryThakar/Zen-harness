@@ -9,19 +9,20 @@ and what is still to do are in [SYSTEM_PLAN.md](SYSTEM_PLAN.md); the findings of
 Zen is a chat assistant on a local model (Gemma 4 through llama-server). A **workspace** is a project and a
 sandbox: its files, tables, pictures, notes, chats and one search index live in its own folder, and nothing
 crosses its edge except through a card the user clicks (a download, a delete, replacing the user's file).
-**main** talks with the user and does quick things itself; four **helpers** do focused work, each with only
-its own tools, and hand main a short checked result. What the system guarantees - facts, file safety,
+**main** talks with the user and does quick things itself; three **helpers** do focused work - the web, the
+user's own documents and notes, and computing in the workspace - each with only its own tools, and hand main a
+short checked result. What the system guarantees - facts, file safety,
 honesty - is done by code; the model is helped, never trusted with it.
 
 ```
 browser (web/)  ──HTTP + stream──►  FastAPI (app/main.py, app/api/assistant.py)
                                         │
                                    main turn loop (app/assistant/main.py) ── model slot 0
-                                        │  9 tools of its own + 4 delegates
-                     ┌──────────────┬───┴──────────┬──────────────┐
-                 research_web   ask_knowledge   analyze_data    write_code      ── model slot 1
-                 web helper     knowledge       data analyst    coder           (app/assistant/workers/)
-                     │              │               │               │
+                                        │  9 tools of its own + 3 delegates
+                     ┌──────────────────┬───┴──────────────┐
+                 research_web       ask_knowledge      analyze_or_code      ── model slot 1
+                 web helper         knowledge          analyst-programmer   (app/assistant/workers/)
+                     │                  │                  │
                  app/tools/ - plain functions with direct tests, no model inside
                      │
    workspace folder (files, tables, pictures, notes, reports, sandbox) + search index + chat store
@@ -53,7 +54,7 @@ without Playwright MCP, there is no browser and such pages are reported as unrea
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
 | `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls repaired in `gemma_calls.py`), Groq for testing, a scripted model for tests |
 | `web/` | the chat page: `index.html`, `app.css`, and `js/` - `app.js` (the chat), `api.js`, `cards.js` (answer cards), `charts.js`, `steps.js` (helper steps, trace), `files.js` (file panel), `viewer.js`, `ask.js`, `util.js` |
-| `tests/` | the tests (pytest, ~510) - tools directly, the loop with scripted models, the API, the real embedding server when it is set up |
+| `tests/` | the tests (pytest, ~530) - tools directly, the loop with scripted models, the API, the real embedding server when it is set up |
 | `bench/` | measurements behind decisions (search models, web ranking, page focus, the extractor gate, helper runs) |
 
 ## 4. A turn
@@ -73,11 +74,15 @@ is the history).
   back as the call's result. A helper's question pauses in place - the helper keeps its work and waits.
 - **Approvals.** Downloading, importing a table from a link, deleting and replacing the user's file are
   asked through a card (approval.py); on the button, code does the action - the model never does.
-- **Honesty checks** (checks.py), each from a measured failure: a call that already failed is not
-  repeated; a helper task carrying numbers no tool returned and the user never wrote is refused; a reply
-  that announces an action without doing it, claims an action no tool did, says it will remember without
-  saving, or writes a tool call as text gets one hidden nudge.
-- **The plan card.** main can show its plan as a checklist; a step ticks when its tool's call ends well.
+- **Guards and checks** - two kinds, one rule. A guard before a call judges it, so it says why it stopped
+  it and runs it when the model confirms (the same call with `confirm: true`): a call that already failed in
+  this turn; a helper task carrying numbers no tool returned and the user never wrote (confirmed - sample
+  data the user asked for - it runs, and the helper is told to say the numbers are made up). Guards for the
+  user's safety and permission - the sandbox, approvals - never take a confirm. The checks after a reply
+  only advise, once per turn, with a hidden [App check]: a reply that announces an action without doing it,
+  claims an action no tool did, says it will remember without saving, or writes a tool call as text.
+- **The plan card.** main can show its plan as a checklist; a step ticks when its tool's call ends well,
+  and a step main does itself (no tool) when the answer is finished.
 - **After the turn.** The turn is indexed for recall, the workspace's new pictures and tables are indexed,
   a new chat is named, and a trace is stored - main's steps and tokens, every tool call, each helper's
   steps and checks - opened from a button under the answer.
@@ -88,20 +93,28 @@ is the history).
 |---|---|---|---|---|
 | web | research_web | web_search, read_webpage, ask_user | 12 | answer, sources, how each page was read, pages that failed, download links |
 | knowledge | ask_knowledge | search_files, recall, read_file | 6 | answer, sources |
-| data analyst | analyze_data (when a table exists) | inspect_data, clean_data, query_data, make_chart, compare, forecast, predict, find_patterns, analyze_text, run_code, fix_code, ask_user | 10 | save_report: answer, report kept on the table, files |
-| coder | write_code | run_code, fix_code, read_file, ask_user | 10 | save: the file kept with its report, answer, files |
+| analyst-programmer (engineer) | analyze_or_code (task, data: the table, file: a program to keep or change) | inspect_data, clean_data, query_data, make_chart, compare, forecast, predict, find_patterns, analyze_text, run_code, fix_code, read_file, ask_user, save_code | 12 | finish: answer, method, caveats - a report kept on the table it worked on; a program kept by save_code, with its report |
+
+One helper computes in the workspace: until 2026-10-10 a data analyst and a coder both ran Python on the same
+workspace, and main - which had to predict whether a job's result was an answer or a file - sent data work to
+the coder (a download it couldn't do, a demo dataset) while the analyst built slide decks. One helper with both
+crafts has no such seam; documents stay main's (files, written from Markdown with the helper's chart ids).
 
 main knows each helper by its contract (contracts.py) - what it is for and what it hands back - never by
 its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools; it starts from
 the time, the workspace, the pinned notes and main's task - not the user's message, so it does its own part
 and not one main gave another helper. The runner
-(runner.py) stops a repeated call, a computation on a table nobody inspected and a seventh page of one site
-before they run; the result is checked by code before main sees it - web sources must be pages it read,
-knowledge sources ones a tool returned, every number in a data answer must be in a tool result, the coder's
-report must be complete and its code must have run. A failed check gets one chance to fix; after that the
-result goes back with a warning. Evidence fields small models get wrong are set right from the trace first
-(repairs.py). Charts, tables and pictures go straight to the page, not through the summary. The coder sees
-pictures - what its script drew, an image it reads - in its own conversation.
+(runner.py) guards each call the same way main's are guarded: a repeat of a call that worked gets its earlier
+result back (nothing runs); one that failed is stopped with why and runs when confirmed; a table nobody
+inspected is inspected first - the call runs right after when there is nothing to clean; a seventh page of one
+site is not read. The result is checked by code before main sees it - a web answer must come from pages it
+read, knowledge sources must be ones a tool returned, every number in the analyst-programmer's answer must be in
+a tool result or a run, and a program it keeps must have a complete report and code that ran (save_code's checks
+answer that call, so the helper fixes the report and calls again). What code can set right is repaired first
+(repairs.py) - a page only seen in search drops off the sources when one it read is left; a failed check asks
+for real work and gets one chance; after that the result goes back with a warning. Charts, tables and pictures
+go straight to the page, not through the summary. The analyst-programmer sees pictures - what its script drew,
+an image it reads - in its own conversation.
 
 A **report** is kept on the item a helper worked on (`<item>.report.md`, reports.py): its own sections, then
 facts the app writes itself (whether the run passed, what it made), so it can't claim what didn't happen.

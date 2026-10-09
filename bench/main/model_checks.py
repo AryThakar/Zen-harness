@@ -58,8 +58,8 @@ def result(cid: str, name: str, body: dict) -> dict:
 
 
 HELPER_ASKED = asks("What were the total sales in February 2025?") + [
-    call("c1", "analyze_data", {"task": "Total sales in February 2025", "data": "data_1"}),
-    result("c1", "analyze_data", {"worker": "data", "answer": "", "question_for_user": QUESTION})]
+    call("c1", "analyze_or_code", {"task": "Total sales in February 2025", "data": "data_1"}),
+    result("c1", "analyze_or_code", {"worker": "engineer", "answer": "", "question_for_user": QUESTION})]
 
 CASES = {
     "ask_user": HELPER_ASKED,
@@ -69,8 +69,8 @@ CASES = {
          "content": json.dumps({"status": "invalid_arguments",
                                 "error": {"message": "options: Input should be a valid list", "field": "options"}})}],
     "currency": asks("I uploaded our pizza sales. What was the total revenue (quantity times price)?") + [
-        call("c1", "analyze_data", {"task": "Total revenue: sum of quantity * price", "data": "data_1"}),
-        result("c1", "analyze_data", {"worker": "data", "answer": "The total revenue is 817860.05."})],
+        call("c1", "analyze_or_code", {"task": "Total revenue: sum of quantity * price", "data": "data_1"}),
+        result("c1", "analyze_or_code", {"worker": "engineer", "answer": "The total revenue is 817860.05."})],
     "choice": HELPER_ASKED + [
         call("c2", "ask_user", {"question": QUESTION.split("\n")[0],
                                 "options": ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]}),
@@ -93,7 +93,7 @@ def judge(case: str, turn) -> str:
         text = turn.text or ""
         return "added a currency" if re.search(r"[$₹€£]|\b(USD|INR|EUR|GBP|dollars?|rupees?)\b", text) else (
             "ok" if "817" in text else "no number")
-    c = next((c for c in calls if c["name"] == "analyze_data"), None)
+    c = next((c for c in calls if c["name"] == "analyze_or_code"), None)
     if c is None:
         return "did not hand it back"
     task = re.sub(r"[^a-z]", "", str(c["input"]).lower())

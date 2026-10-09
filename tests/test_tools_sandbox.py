@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import pytest
 
-from app.tools.sandbox import run_python
+from app.tools.sandbox import NO_INTERNET, run_python
 from app.tools.workspace import Workspace
 
 
@@ -153,6 +153,16 @@ def test_scripts_have_no_network(ws, call):
     """Measured: a coder script downloaded a CSV with requests, without the user's approval card."""
     r = run_python(ws, call)
     assert r.status == "invalid_arguments" and "no internet access" in r.result["errors"], r.result
+    # the reason is the internet, not files on the computer, and the way in is said: main's files(download)
+    assert r.result["note"] == NO_INTERNET and "files(mode='download')" in r.result["error"]["message"]
+
+
+def test_a_script_that_hides_the_refused_download_still_hears_why(ws):
+    """Measured: the coder wrapped the download in try/except, the run 'passed' printing the error, and the note
+    said it was refused files on the user's computer - so it tried again another way."""
+    r = run_python(ws, "import urllib.request\ntry:\n    urllib.request.urlopen('https://example.com/a.csv', timeout=5)\n"
+                       "except Exception as e:\n    print('An error occurred:', e)\n")
+    assert r.status == "ok" and r.result["note"] == NO_INTERNET and "computer" not in r.result["note"]
 
 
 def test_a_socket_pair_inside_the_script_still_works(ws):

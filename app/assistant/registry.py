@@ -50,6 +50,11 @@ class _In(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+TABLE_ID = "the table's id or name, e.g. 'data_1'"
+TIME_UNIT = "the period each point covers, for dates: auto picks one from the span"
+TIMEOUT = "seconds the run may take (at most 120)"
+
+
 @dataclass(frozen=True)
 class Tool:
     """One tool, defined once: what the model reads (name, description, input schema), what runs (handler)
@@ -79,12 +84,12 @@ class WeatherIn(_In):
 
 class ImageIn(_In):
     prompt: str = Field(description="a detailed visual description of the image")
-    size: Literal["square", "wide", "tall"] = "square"
+    size: Literal["square", "wide", "tall"] = Field("square", description="the picture's shape: wide is 16:9, tall 9:16")
 
 
 class DiagramIn(_In):
     mermaid: str = Field(description="Mermaid code, first line the diagram type, e.g. 'flowchart TD'")
-    title: str | None = None
+    title: str | None = Field(None, description="a short title shown above it")
 
 
 class CalcIn(_In):
@@ -94,7 +99,7 @@ class CalcIn(_In):
 
 
 class NotesIn(_In):
-    mode: Literal["save", "list", "delete"]
+    mode: Literal["save", "list", "delete"] = Field(description="what to do with the notes")
     title: str | None = Field(None, description="save: a short title (saving again with the same title updates "
                                                 "the note); delete: the note's title or id")
     content: str | None = Field(None, description="save: a few lines; it is read later on its own, so say 'the user' "
@@ -104,7 +109,7 @@ class NotesIn(_In):
 class AskIn(_In):
     question: str = Field(description="one short question")
     options: list[str] | None = Field(None, description="choices to show as buttons (the user can also type or skip)")
-    allow_text: bool = True
+    allow_text: bool = Field(True, description="whether the user may type an answer of their own besides the options")
 
     @field_validator("options", mode="before")
     @classmethod
@@ -118,11 +123,12 @@ class AskIn(_In):
 
 class PlanStep(_In):
     do: str = Field(description="the step, in a few words, e.g. 'find this year's prices'")
-    tool: str = Field(description="the tool or helper that does it, e.g. 'research_web'")
+    tool: str | None = Field(None, description="the tool or helper that does it, e.g. 'research_web'; omit for a "
+                                               "step you do yourself in your answer (summing up, explaining)")
 
 
 class PlanIn(_In):
-    steps: list[PlanStep] = Field(min_length=2, max_length=8)
+    steps: list[PlanStep] = Field(min_length=2, max_length=8, description="2 to 8 steps, in the order they run")
 
 
 
@@ -138,25 +144,23 @@ def show_plan(steps: list[PlanStep]) -> ToolResult:
     """The plan as a card; the page ticks a step off when its tool's call ends."""
     from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
     names = [*MAIN_DIRECT, *DELEGATES]
-    unknown = sorted({s.tool for s in steps} - set(names))
+    unknown = sorted({s.tool for s in steps if s.tool} - set(names))
     if unknown:
         return ToolResult("invalid_arguments", {"error": {"message": f"No tool {', '.join(unknown)}: each step's tool is "
                                                                      f"one of {', '.join(n for n in names if n != 'plan')}.",
                                                           "field": "steps"}})
     return ok({"plan": f"{len(steps)} steps, shown to the user"},
-              {"type": "plan", "steps": [{"do": " ".join(s.do.split())[:120], "tool": s.tool} for s in steps]})
+              {"type": "plan", "steps": [{"do": " ".join(s.do.split())[:120], "tool": s.tool or None} for s in steps]})
 
 
 class TaskIn(_In):
     task: str = Field(description="what to do, complete on its own")
 
 
-class CodeTaskIn(TaskIn):
-    file: str | None = Field(None, description="a file to change, e.g. 'parabola.py' (omit for a new file)")
-
-
-class DataTaskIn(TaskIn):
-    data: str | None = Field(None, description="the table id to work on, e.g. 'data_1', if the task is about one table")
+class WorkTaskIn(TaskIn):
+    data: str | None = Field(None, description="the table the task is about, e.g. 'data_1'")
+    file: str | None = Field(None, description="the file to keep or change, e.g. 'primes.py': a new name makes it, "
+                                               "an existing file is changed (omit when no file is wanted)")
 
 
 class QuestionIn(_In):
@@ -171,7 +175,8 @@ class SearchIn(_In):
 
 
 class FilesIn(_In):
-    mode: Literal["list", "find", "read", "write", "update", "rename", "delete", "download"]
+    mode: Literal["list", "find", "read", "write", "update", "rename", "delete", "download"] = Field(
+        description="what to do: each mode is described with the tool")
     name: str | None = Field(None, description="the file's name or id, e.g. 'report.md' (all modes but list and "
                                                "download)")
     page: int = Field(1, ge=1, description="list: which page")
@@ -198,11 +203,11 @@ class ReadFileIn(_In):
 
 
 class DataIn(_In):
-    data: str = Field(description="table id, e.g. 'data_1'")
+    data: str = Field(description=TABLE_ID)
 
 
 class CleanIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     steps: list[dict] = Field(description="steps in order, each {'op': ..., ...}: parse_numbers{columns}, "
                               "parse_dates{columns, order: auto|dayfirst|monthfirst}, drop_duplicates{columns?}, "
                               "drop_rows{column, values}, "
@@ -219,23 +224,25 @@ class SqlIn(_In):
 
 
 class ChartIn(_In):
-    data: str
-    type: Literal["line", "bar", "scatter", "histogram", "box", "heatmap", "pie"]
+    data: str = Field(description=TABLE_ID)
+    type: Literal["line", "bar", "scatter", "histogram", "box", "heatmap", "pie"] = Field(
+        description="the kind of chart: which fits what is in the tool's description")
     x: str = Field(description="line: the date or number column; bar, pie: the categories; scatter: a number; "
                                "histogram: the number; box: the groups (or the number, for one box); heatmap: "
                                "the columns' categories")
     y: str | None = Field(None, description="the number column, combined by agg; omit to count rows")
     by: str | None = Field(None, description="split into groups: one line each (line), grouped bars (bar), one "
                                              "colour each (scatter), or the heatmap's rows")
-    agg: Literal["sum", "mean", "median", "count", "min", "max"] = "sum"
-    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto"
+    agg: Literal["sum", "mean", "median", "count", "min", "max"] = Field(
+        "sum", description="how y is combined in each category or period: sum for amounts, mean for rates or prices")
+    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
     top: int = Field(20, ge=1, le=50, description="bar and box: how many categories")
     stacked: bool = Field(False, description="bar with by: stack the groups instead of side by side")
-    title: str | None = None
+    title: str | None = Field(None, description="the chart's title (omit for one made from the columns)")
 
 
 class CompareIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     question: Literal["difference", "correlation", "association", "ab"] = Field(
         description="difference: a number across groups; correlation: two numbers; association: two categories; "
                     "ab: an A/B test - 2 variants and their outcome (yes/no or a number)")
@@ -243,27 +250,30 @@ class CompareIn(_In):
 
 
 class PredictIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     target: str = Field(description="the column to predict (a number, yes/no, or a few classes)")
     features: list[str] | None = Field(None, description="columns to learn from; omit for all usable ones")
-    time_column: str | None = None
+    time_column: str | None = Field(None, description="a date column: the model is tested on the latest rows, "
+                                                      "learned from the earlier ones (omit: the table's one date "
+                                                      "column, if it has one)")
     new_data: str | None = Field(None, description="another table with the same columns to predict for, e.g. "
                                                    "next month's rows")
 
 
 class ForecastIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     value: str | None = Field(None, description="number column; omit to forecast the row count")
     date: str | None = Field(None, description="the date column's name (not a date); omit for the table's date "
                                                "column. Year + quarter (or month) columns are combined for you")
     by: str | None = Field(None, description="a category column: one forecast per group (the 5 largest)")
     horizon: int | None = Field(None, ge=1, le=60, description="periods ahead")
-    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto"
-    agg: Literal["sum", "mean", "last", "count"] = "sum"
+    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
+    agg: Literal["sum", "mean", "last", "count"] = Field(
+        "sum", description="how a period's values combine: sum (sales), mean (a rate), last (a balance), count")
 
 
 class PatternsIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     kind: Literal["segments", "unusual", "together"] = Field(
         description="segments: groups of similar customers (or rows); unusual: unusual days/periods (or rows); "
                     "together: items in the same order more often than chance")
@@ -276,7 +286,7 @@ class PatternsIn(_In):
     by: str | None = Field(None, description="unusual: one series per group (the 5 largest)")
     basket: str | None = Field(None, description="together: the order/visit column (omit for the table's own)")
     item: str | None = Field(None, description="together: the item column (omit for the table's own)")
-    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto"
+    time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
 
 
 class ViewImageIn(_In):
@@ -286,7 +296,7 @@ class ViewImageIn(_In):
 
 
 class TextIn(_In):
-    data: str
+    data: str = Field(description=TABLE_ID)
     kind: Literal["themes", "classify", "similar"] = Field(
         description="themes: what the texts are about; classify: sort them into your labels; similar: the rows "
                     "most like a phrase")
@@ -302,7 +312,7 @@ TYPED = "what a person would type when the program asks (input()), one line per 
 
 class RunCodeIn(_In):
     code: str = Field(description="the whole Python script; print what you need")
-    timeout: int = Field(30, ge=1, le=120)
+    timeout: int = Field(30, ge=1, le=120, description=TIMEOUT)
     input: str | None = Field(None, description=TYPED)
 
 
@@ -310,7 +320,7 @@ class FixCodeIn(_In):
     from_line: int = Field(ge=1, description="the first line to change")
     to_line: int = Field(ge=0, description="the last line to change (from_line - 1 inserts before from_line)")
     new_code: str = Field(description="the lines that replace them (may be more or fewer lines)")
-    timeout: int = Field(30, ge=1, le=120)
+    timeout: int = Field(30, ge=1, le=120, description=TIMEOUT)
     input: str | None = Field(None, description="typed input as for run_code; omit to type what the last run typed")
 
 
@@ -325,20 +335,20 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        labels=("Checking the weather", "Checked the weather")),
     Tool("generate_image", "Generate one picture - a scene, art or a photo-like image - from a detailed description; the user sees "
        "it. Not for anything that must be exact or labelled (an image model draws labels and numbers wrong): how "
-       "something works or is built goes to draw_diagram, a chart of a table's numbers to analyze_data, a plot "
-       "of a formula or a simulation to write_code.",
+       "something works or is built goes to draw_diagram; a chart of a table's numbers, a plot of a formula or a "
+       "simulation to analyze_or_code.",
        ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size, look=c.look),
        labels=("Creating an image", "Created an image")),
     Tool("draw_diagram", "Draw a diagram from Mermaid code, in the kind that fits: flowchart (steps and decisions), sequence "
        "(messages between parties, in order), class, state (the states something moves through), ER (data and "
        "its relations), gantt (tasks on dates), pie (a few shares), mindmap or timeline. Use it to show how "
        "something works or is built, or when the user asks for a visual explanation. Not for a table's numbers "
-       "(analyze_data charts them) or a plot of a formula (write_code).",
+       "or a plot of a formula (analyze_or_code charts and plots them).",
        DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title),
        labels=("Drawing a diagram", "Drew a diagram")),
     Tool("calculate", "Exact arithmetic: use it for every number you work out - even a sum or an average - "
        "instead of doing it in your head; one call can hold a whole expression. Maths problems: solve them yourself, "
-       "step by step, and check the numbers here.",
+       "step by step, and check the numbers here. Not for a table's numbers (analyze_or_code).",
        CalcIn, lambda c, a: calc.calculate(a.expression),
        labels=("Calculating", "Calculated")),
     Tool("notes", "Your notes - your memory across chats. save: a decision, preference, constraint, conclusion or "
@@ -361,7 +371,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        AskIn, lambda c, a: ask.ask_user(a.question, a.options, a.allow_text),
        labels=("Asking you", "Asked you")),
     # worker tools
-    Tool("web_search", "Search the web: titles, links and snippets.",
+    Tool("web_search", "Search the web: titles, links and short snippets - enough to choose pages, not to answer "
+       "from: read the best ones with read_webpage.",
        SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent,
                                              embedder=getattr(c.index, "embedder", None)),
        labels=("Searching the web", "Searched the web")),
@@ -378,7 +389,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "slide; a line that is only ![caption](image_7) puts in that picture or chart); update: change an "
        "existing file - its whole text, or lines start-end; rename; delete: one file; download: one file from "
        "GitHub, or a data table (CSV, Excel) from any public link - a repository's or folder's page lists the "
-       "files it has, to pick one. Not for running code (write_code) or finding where something is on the web "
+       "files it has, to pick one. Not for running code (analyze_or_code) or finding where something is on the web "
        "(research_web). Delete, download and updating the user's own file ask the user with a button - call it "
        "straight away, don't ask first in words.",
        FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
@@ -458,7 +469,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "table('data_1') gives a table as a DataFrame, open('file_3') opens a stored item by its id "
        "(Image.open('image_3') an image), and path('file_3') gives its location for libraries that open files "
        "themselves (pandas, openpyxl). Files the script writes are kept as new items (.csv / .parquet become tables, "
-       "images are shown); a stored item is never changed - write under a new name. No internet. "
+       "images are shown); a stored item is never changed - write under a new name. No internet: a file from the web "
+       "must be in the workspace first. "
        "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunCodeIn,
        lambda c, a: scratch.run_code(c.ws, c.scratch, a.code, a.timeout, a.input),
        labels=("Running code", "Ran code")),
@@ -469,9 +481,26 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 ]}
 
 
+# A guard that judges a call (numbers that came from nowhere, a call that already failed, the same call again)
+# says why it stopped it and ends with CONFIRMABLE: the model sends the same call with confirm: true, instead of
+# rewriting it to get past the guard (measured on the 26B: a demo table refused as invented data was rewritten,
+# refused again, and the user stopped the turn). Guards for the user's safety and permission never take it.
+CONFIRM = "confirm"
+CONFIRMABLE = " If you are sure it is right, make the same call again with confirm: true."
+
+
+def split_confirm(raw) -> tuple[object, bool]:
+    """(the call's input without its confirm, whether it was confirmed)."""
+    if not isinstance(raw, dict) or CONFIRM not in raw:
+        return raw, False
+    said = raw[CONFIRM]
+    return {k: v for k, v in raw.items() if k != CONFIRM}, said is True or str(said).strip().lower() == "true"
+
+
 def execute(ctx: ToolContext, name: str, raw_input, tools: dict[str, Tool] | None = None) -> ToolResult:
     """Validate and run one call (from ``tools``, default every registered tool); artifacts go to the
-    UI through ctx.emit."""
+    UI through ctx.emit. A confirm in the input is the guards' business, not the tool's: it is taken off."""
+    raw_input, _ = split_confirm(raw_input)
     tool = (tools if tools is not None else TOOLS).get(name)
     if tool is None:
         return ToolResult("invalid_arguments", {"error": {"message": f"There is no tool '{name}'."}})

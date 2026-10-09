@@ -80,7 +80,7 @@ def test_read_in_lines_with_the_next_step(ws, index):
     assert end["lines"] == "391-400 of 400" and end["next"] == "end of file"
     table = ws.add_table(pd.DataFrame({"a": range(30)}), "t.csv")
     read = run(ws, index, "read", name=table).result
-    assert read["rows"] == 30 and len(read["first_rows"]) == 10 and "analyze_data" in read["note"]
+    assert read["rows"] == 30 and len(read["first_rows"]) == 10 and "analyze_or_code" in read["note"]
     assert run(ws, index, "read").result["error"]["message"] == "read needs name: a file's name or id."
 
 

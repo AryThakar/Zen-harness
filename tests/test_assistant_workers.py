@@ -35,14 +35,14 @@ def tools_turn(*calls) -> ModelTurn:
     return ModelTurn(text="", tool_calls=list(calls), stop="tool_use")
 
 
-REPORT = {"question": "Which region sells most?", "data_used": "data_1 as it is; no cleaning needed.",
-          "method": "Summed the amount per region with query_data.", "results": "South sells most.",
-          "caveats": "Only the regions in this table."}
+REPORT = {"answer": "South sells most.", "data_used": "data_1 as it is; no cleaning needed.",
+          "method": "Summed the amount per region with query_data.", "caveats": "Only the regions in this table."}
+ENGINEER = PROFILES["engineer"]
 
 
 def report(**fields) -> ModelTurn:
-    """The data analyst's finish (save_report), with its sections."""
-    return ModelTurn(text="", tool_calls=[call("save_report", **{**REPORT, **fields})], stop="tool_use")
+    """The analyst-programmer's finish, with its sections."""
+    return ModelTurn(text="", tool_calls=[call("finish", **{**REPORT, **fields})], stop="tool_use")
 
 
 # ---------------------------------------------------------------- registry
@@ -71,13 +71,13 @@ def test_a_tool_result_with_plain_notes_is_traced(ctx):
     assert trace.sources == {"note 'A' (note_1)"}  # only search_files' notes are sources
 
 
-def test_main_slot_sees_data_delegate_only_with_a_table(ctx):
+def test_main_slot_sees_its_tools_and_all_three_helpers_always(ctx):
+    """Always all three: with the analyst hidden until a table existed, main couldn't plan 'find data, bring it in,
+    analyse it', and the coder looked like the only way."""
     names = set(main_tools(ScriptedProvider([]), ctx))
     assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "plan",
-                     "ask_user", "files", "research_web", "ask_knowledge", "write_code"}
-    ctx.ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    assert "analyze_data" in main_tools(ScriptedProvider([]), ctx)
-    assert "run_code" not in names  # only inside the data and coder workers
+                     "ask_user", "files", "research_web", "ask_knowledge", "analyze_or_code"}
+    assert "run_code" not in names  # only inside the analyst-programmer
 
 
 # ---------------------------------------------------------------- web worker (fake web tools)
@@ -200,26 +200,28 @@ def test_data_worker_numbers_must_come_from_tool_results(ctx):
     model = ScriptedProvider([
         tools_turn(call("inspect_data", data=data)),
         tools_turn(call("query_data", sql=sql)),
-        report(results="South leads with 200.25; North has 150.5, so South is 33% ahead."),  # 33% is invented
+        report(answer="South leads with 200.25; North has 150.5, so South is 33% ahead."),  # 33% is invented
         tools_turn(call("query_data", sql="SELECT (200.25 - 150.5) / 150.5 * 100 AS ahead_pct")),  # arithmetic
-        report(results="South leads with 200.25; North has 150.5, so South is 33.06% ahead."),
+        report(answer="South leads with 200.25; North has 150.5, so South is 33.06% ahead."),
     ])
-    out = run_worker(model, PROFILES["data"], "Which region sells most?", ctx)
+    out = run_worker(model, ENGINEER, "Which region sells most?", ctx)
     assert "warnings" not in out and "33.06%" in out["answer"]
     assert "33%" in model.requests[3]["messages"][-1]["content"]
 
 
-def test_a_report_without_its_title_takes_the_task_instead_of_a_resend(ctx):
-    model = ScriptedProvider([report(question="")])
-    out = run_worker(model, PROFILES["data"], "Is the die fair?\nUse rolls.csv.", ctx)
-    assert "warnings" not in out and out["report"].startswith("# Is the die fair?")
-    assert len(model.requests) == 1  # no step spent resending it
+def test_the_report_on_a_table_is_titled_by_the_task(ctx):
+    """The title is the task's first line, written by the app: a report without one cost the 26B a step."""
+    ctx.ws.add_table(pd.DataFrame({"roll": [1, 2, 3, 4, 5, 6]}), "rolls.csv")
+    model = ScriptedProvider([report(answer="The die looks fair.")])
+    out = run_worker(model, ENGINEER, "Is the die fair?\nUse rolls.csv.", ctx, table="data_1")
+    assert "warnings" not in out and out["report"].startswith("# Is the die fair?\n")
+    assert len(model.requests) == 1
 
 
 def test_data_worker_passes_a_question_up_instead_of_guessing(ctx):
-    model = ScriptedProvider([tools_turn(call("save_report", question_for_user="Are the dates day first or month first?",
+    model = ScriptedProvider([tools_turn(call("finish", question_for_user="Are the dates day first or month first?",
                                               options=["day first", "month first"]))])
-    out = run_worker(model, PROFILES["data"], "monthly sales", ctx)
+    out = run_worker(model, ENGINEER, "monthly sales", ctx)
     assert out["question_for_user"].startswith("Are the dates") and out["options"] == ["day first", "month first"]
 
 
@@ -335,10 +337,10 @@ def test_plain_text_answers_get_the_same_checks(ctx):
         ModelTurn(text="South sells 210.75."),            # not in any result: one chance to fix
         ModelTurn(text="South sells the most: 200.25."),
     ])
-    out = run_worker(model, PROFILES["data"], "who sells most?", ctx)
+    out = run_worker(model, ENGINEER, "who sells most?", ctx)
     assert out["answer"] == "South sells the most: 200.25." and "warnings" not in out  # still checked, still used
     told = model.requests[2]["messages"][-1]["content"]
-    assert "210.75" in told and "save_report" in told and "no report was kept" in out["note"]
+    assert "210.75" in told and "finish by calling finish" in told and "no report was kept" in out["note"]
 
 
 def test_plain_text_web_answer_is_checked_by_its_urls(ctx, fake_web):
@@ -426,10 +428,37 @@ def test_a_repeated_call_is_not_run_again_and_says_what_to_do(ctx, monkeypatch):
     ])
     run_worker(model, PROFILES["web"], "default port?", ctx)
     assert runs == ["server default port", "https://docs.example.com/a"]  # neither repeat ran
+    again = model.requests[3]["messages"][-1]["content"]  # the earlier results back, not an error
+    assert "The same search as before" in again and '"results"' in again and "https://blog.example.com/b" in again
+    assert "Read one you haven't tried: https://blog.example.com/b." in again  # docs/a was already tried
+    failed = model.requests[4]["messages"][-1]["content"]
+    assert "already failed" in failed and "confirm: true" in failed
+
+
+def test_a_confirmed_repeat_runs_again(ctx, monkeypatch):
+    """A failure that may pass (a site that was busy) is the helper's call to retry: it confirms."""
+    runs = []
+    answers = iter([ToolResult("failed", {"error": {"message": "The page answered HTTP 503."}}),
+                    ok({"url": "https://docs.example.com/a", "title": "Docs", "text": "Port 8080."})])
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "read", registry.ReadPageIn,
+                                                             lambda c, a: runs.append(a.url) or next(answers)))
+    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://docs.example.com/a")),
+                              tools_turn(call("read_webpage", url="https://docs.example.com/a", confirm=True)),
+                              submit(answer="Port 8080.", sources=["https://docs.example.com/a"])])
+    out = run_worker(model, PROFILES["web"], "default port?", ctx)
+    assert runs == ["https://docs.example.com/a"] * 2 and out["answer"] == "Port 8080." and "warnings" not in out
+
+
+def test_a_repeated_call_that_worked_gives_its_result_again(ctx):
+    """Its earlier result may have been shortened out of view since: 'its result is above' left the helper without it."""
+    ctx.ws.add_table(pd.DataFrame({"a": [1, 2, 3]}), name="t.csv")
+    model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+                              tools_turn(call("query_data", sql="SELECT sum(a) AS s FROM data_1")),
+                              tools_turn(call("query_data", sql="SELECT sum(a) AS s FROM data_1")),
+                              report(answer="The sum is 6.")])
+    run_worker(model, ENGINEER, "sum a", ctx)
     again = model.requests[3]["messages"][-1]["content"]
-    assert "already ran this exact search" in again and "https://blog.example.com/b" in again
-    assert "docs.example.com/a" not in again  # already tried
-    assert "already failed" in model.requests[4]["messages"][-1]["content"]
+    assert '"rows": [[6]]' in again and "its result again (nothing ran)" in again
 
 
 def test_an_incomplete_answer_comes_with_a_briefing(ctx, monkeypatch):
@@ -446,9 +475,12 @@ def test_an_incomplete_answer_comes_with_a_briefing(ctx, monkeypatch):
     assert out["suggestion"] == "The project's README on GitHub may list it."
     assert out["trail"].startswith("Ran web_search, read_webpage. Failed: read_webpage https://docs.example.com/a: "
                                    "The page answered HTTP 503")
-    clean = run_worker(ScriptedProvider([tools_turn(call("web_search", query="q")),
-                                         submit(answer="Rates rose.", sources=[])]), PROFILES["web"], "x", ctx)
-    assert "trail" not in clean  # a complete answer needs no briefing
+    page = {"url": "https://docs.example.com/b", "title": "B", "text": "Rates rose."}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: ok(dict(page))))
+    clean = run_worker(ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
+                                         submit(answer="Rates rose.", sources=[page["url"]])]), PROFILES["web"], "x", ctx)
+    assert clean["answer"] == "Rates rose." and "trail" not in clean  # a complete answer needs no briefing
 
 
 def test_any_worker_can_hand_a_question_to_the_user(ctx):
@@ -504,15 +536,15 @@ def test_made_lists_only_what_the_task_created(ctx):
     ctx.ws.add_table(pd.DataFrame({"a": [1, 2, 3]}), name="t.csv")
     model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
                               tools_turn(call("query_data", sql="SELECT a * 2 AS b FROM data_1", save=True)),
-                              report(results="Saved the doubled values as a new table.")])
-    out = run_worker(model, PROFILES["data"], "double a", ctx)
+                              report(answer="Saved the doubled values as a new table.")])
+    out = run_worker(model, ENGINEER, "double a", ctx)
     assert [f["id"] for f in out["files"]] == ["data_2"]  # data_1 was the input
 
 
 def test_a_question_without_an_answer_is_accepted_first_time(ctx):
-    model = ScriptedProvider([tools_turn(call("save_report", question_for_user="Day first or month first?",
+    model = ScriptedProvider([tools_turn(call("finish", question_for_user="Day first or month first?",
                                               options=["day", "month"]))])
-    out = run_worker(model, PROFILES["data"], "February total?", ctx)
+    out = run_worker(model, ENGINEER, "February total?", ctx)
     assert out["question_for_user"] == "Day first or month first?" and len(model.requests) == 1
 
 
@@ -534,16 +566,26 @@ def test_a_table_is_inspected_before_anything_is_computed_on_it(ctx):
     ctx.ws.add_table(pd.DataFrame({"pizza": ["a", "b", "Total"], "quantity": [2, 3, 5]}), name="sales.csv")
     model = ScriptedProvider([tools_turn(call("query_data", sql="SELECT count(*) FROM data_1")),
                               tools_turn(call("query_data", sql="SELECT sum(quantity) FROM data_1")),
-                              submit(answer="10")])
-    run_worker(model, PROFILES["data"], "How many pizzas?", ctx)
-    first = model.requests[1]["messages"][-1]["content"]
+                              report(answer="10")])
+    run_worker(model, ENGINEER, "How many pizzas?", ctx)
+    first = model.requests[1]["messages"][-1]["content"]  # a Total row to clean: the call waits for the cleaning
     assert "had not been inspected, so inspect_data ran first" in first and "Total" in first
     second = model.requests[2]["messages"][-1]["content"]
     assert '"rows": [[10]]' in second  # once inspected, calls run normally
     later = ScriptedProvider([tools_turn(call("query_data", sql="SELECT 1 AS x FROM data_1 LIMIT 1")),
-                              submit(answer="ok")])
-    run_worker(later, PROFILES["data"], "again", ctx)
+                              report(answer="ok")])
+    run_worker(later, ENGINEER, "again", ctx)
     assert "not been inspected" not in later.requests[1]["messages"][-1]["content"]  # remembered on the table
+
+
+def test_a_clean_table_is_inspected_and_the_call_still_runs(ctx):
+    """Nothing to clean: the call runs right after the inspection, as made - not thrown away to be written again."""
+    ctx.ws.add_table(pd.DataFrame({"region": ["N", "S"], "amount": [150.5, 200.25]}), name="sales.csv")
+    model = ScriptedProvider([tools_turn(call("query_data", sql="SELECT sum(amount) AS total FROM data_1")),
+                              report(answer="The total is 350.75.")])
+    out = run_worker(model, ENGINEER, "total?", ctx)
+    told = model.requests[1]["messages"][-1]["content"]
+    assert "inspect_data ran first on data_1: nothing to clean" in told and "350.75" in told and "warnings" not in out
 
 
 def test_a_tool_question_asked_in_prose_is_handed_on_as_a_question(ctx):
@@ -553,7 +595,7 @@ def test_a_tool_question_asked_in_prose_is_handed_on_as_a_question(ctx):
     ctx.ws.add_file(upload)
     model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
                               ModelTurn(text="The dates are ambiguous. Which order do they use, day or month first?")])
-    out = run_worker(model, PROFILES["data"], "February total?", ctx)
+    out = run_worker(model, ENGINEER, "February total?", ctx)
     assert out["question_for_user"].startswith("The dates in date could be read two ways")
     assert out["options"] == ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]
     assert "trail" in out and "warnings" not in out
@@ -568,11 +610,11 @@ def test_a_choice_only_the_user_can_make_is_not_guessed(ctx):
     model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
                               tools_turn(call("clean_data", data="data_1", steps=[guess])),
                               ModelTurn(text="Which order do the dates use?")])
-    run_worker(model, PROFILES["data"], "February total?", ctx)
+    run_worker(model, ENGINEER, "February total?", ctx)
     assert "only the user can answer" in model.requests[2]["messages"][-1]["content"]
     told = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
-                             tools_turn(call("clean_data", data="data_1", steps=[guess])), submit(answer="done")])
-    run_worker(told, PROFILES["data"], "February total? The user says the dates are day first.", ctx)
+                             tools_turn(call("clean_data", data="data_1", steps=[guess])), report(answer="done")])
+    run_worker(told, ENGINEER, "February total? The user says the dates are day first.", ctx)
     assert '"rows_after": 18' in told.requests[2]["messages"][-1]["content"]  # the user's answer lets it run
 
 
@@ -659,7 +701,7 @@ def test_the_web_helper_hands_file_links_to_main_and_never_invents_one(ctx, monk
     out = run_worker(model, PROFILES["web"], "Find the city bike trip data.", ctx)
     assert "trips-2026.csv is not a link any page you read gave" in model.requests[2]["messages"][-1]["content"]
     assert out["downloads"] == right["downloads"] and "files(mode='download'" in out["download_with"]
-    assert "downloads" not in run_worker(ScriptedProvider([tools_turn(call("submit_result", answer="No file."))]),
+    assert "downloads" not in run_worker(ScriptedProvider([tools_turn(call("submit_result", answer="No file found."))]),
                                          PROFILES["web"], "x", ctx)
 
 
@@ -687,3 +729,35 @@ def test_a_file_link_written_into_the_answer_is_handed_on_as_a_download(ctx, mon
                               tools_turn(call("submit_result", answer=answer, sources=[page["url"]]))])
     out = run_worker(model, PROFILES["web"], "Find the Iris CSV.", ctx)
     assert out["downloads"] == [link] and "download_with" in out
+
+
+def test_an_answer_that_read_no_page_gets_one_chance_to_read_one(ctx, fake_web):
+    """Measured on the 26B: asked for a public data file and an overview, the helper found a CSV's link, read
+    nothing and wrote "typically such datasets include columns such as ..." - a guess main passed on."""
+    guess = "Here is a dataset. Typically such datasets include a title, a year and a rating."
+    model = ScriptedProvider([tools_turn(call("web_search", query="rates")), submit(answer=guess),
+                              tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                              submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"])])
+    out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
+    assert "without reading any page" in model.requests[2]["messages"][-1]["content"]
+    assert out["answer"] == "Rates rose by 0.25 points." and "warnings" not in out
+    nothing = ScriptedProvider([tools_turn(call("web_search", query="x")),
+                                submit(answer="I could not find any information about it.")])
+    assert "warnings" not in run_worker(nothing, PROFILES["web"], "x", ctx)  # saying nothing was found is fine
+
+
+def test_a_github_files_raw_link_counts_as_the_page_found(ctx, monkeypatch):
+    """Measured: search found the file's page (github.com/.../blob/...), the helper rightly gave its raw link,
+    and main got no download - the raw link was 'not a link any page gave'."""
+    blob = "https://github.com/someone/datasets/blob/master/Movie+Ratings.csv"
+    raw = "https://raw.githubusercontent.com/someone/datasets/master/Movie+Ratings.csv"
+    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(
+        {"results": [{"title": "Movie Ratings.csv", "url": blob, "snippet": "a collection of datasets"}]})))
+    page = {"url": raw, "title": "Movie+Ratings.csv", "text": "Film,Genre,Rating\nUp,Animation,98"}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: ok(dict(page))))
+    model = ScriptedProvider([tools_turn(call("web_search", query="movie ratings csv")),
+                              tools_turn(call("read_webpage", url=blob)),
+                              submit(answer=f"Columns: Film, Genre, Rating. Download: {raw}", sources=[raw])])
+    out = run_worker(model, PROFILES["web"], "Find a public movie ratings CSV and describe it.", ctx)
+    assert out["downloads"] == [raw] and "warnings" not in out and "download_with" in out

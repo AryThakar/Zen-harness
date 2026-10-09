@@ -133,21 +133,25 @@ export function finishAnswer(root) {
 
 /* ═══ A plan ════════════════════════════════════════════════════════════ */
 // main's plan for a job of several steps, as a checklist: a step is ticked when a call of its tool ends well
-// (tick(name)), so what is ticked is what ran - not what the model says it did
+// (tick(name)), so what is ticked is what ran - not what the model says it did; a step main does itself in its
+// answer (no tool) is ticked when the answer is finished (answered())
 function planCard(a) {
   const steps = (a.steps || []).map(s => ({ ...s, done: false,
     el: h("li", { class: "plan-step" }, h("span", { class: "plan-mark", html: svg("check") }), h("span", {}, s.do),
-      h("span", { class: "plan-tool" }, stepLabel(s.tool, false).replace(/…$/, ""))) }));
+      h("span", { class: "plan-tool" }, s.tool ? stepLabel(s.tool, false).replace(/…$/, "") : "in the answer")) }));
   const { el } = card("Plan", plural(steps.length, "step"));
   el.classList.add("plan-card");
   el.append(h("ol", { class: "plan" }, steps.map(s => s.el)));
-  el.tick = name => {
-    const next = steps.find(s => !s.done && s.tool === name);
-    if (!next) return;
-    next.done = true;
-    next.el.classList.add("done");
+  const mark = s => {
+    s.done = true;
+    s.el.classList.add("done");
     el.querySelector(".sub-t").textContent = `${steps.filter(s => s.done).length} of ${steps.length} done`;
   };
+  el.tick = name => {
+    const next = steps.find(s => !s.done && s.tool === name);
+    if (next) mark(next);
+  };
+  el.answered = () => steps.filter(s => !s.done && !s.tool).forEach(mark);
   return el;
 }
 

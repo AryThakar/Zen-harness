@@ -1,13 +1,19 @@
 """main's honesty checks: what the system guarantees about main's own replies and calls, by code.
 
+Two kinds, as everywhere in the app: the guards before a call judge it, so they say why they stopped it and run
+it when main confirms (the same call with confirm: true - registry.CONFIRMABLE); the checks after a reply only
+advise, once per turn, with a hidden [App check] message.
+
 The helpers' results are checked in workers/checks.py (sources, numbers, reports); these are the checks on
 main itself, each from a measured failure in the user's own test chat (found in the system pass, 2026-10-04):
 
-    repeated failure    the same call that already failed in this turn is not run again: the model
-                        is told what failed and to try something else (it repeated a failed download)
-    invented data       a helper task (write_code, analyze_data) carrying several numbers that no tool
-                        returned and the user never wrote is refused before the helper runs: invented
-                        sales figures went to the coder, were charted, then explained
+    repeated failure    the same call that already failed in this turn is stopped: the model is told what
+                        failed and to try something else (it repeated a failed download) - or to confirm
+                        it, for a failure that may pass
+    invented data       a helper task carrying several numbers that no tool returned and the user never
+                        wrote is stopped before the helper runs (invented sales figures went to the coder,
+                        were charted, then explained as real); confirmed - sample data the user asked for,
+                        a demo - it runs, and the helper is told the numbers are sample data to say so
     announced, not done a reply that ends by announcing an action ("One moment.", "I am writing a script
                         now.", "**Action:** ...") with no tool call gets one hidden nudge: act now, or say
                         plainly what can't be done (9 times in one chat)
@@ -31,6 +37,7 @@ import json
 import re
 
 from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE, WRITTEN_NUDGE
+from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
@@ -96,32 +103,46 @@ def this_turn(messages: list[dict]) -> list[dict]:
 
 
 def repeated_failure(turn: list[dict], call: dict) -> str | None:
-    """The error message when this exact call already failed in this turn, else None."""
-    key = _call_key(call["name"], call["input"]) if isinstance(call["input"], dict) else None
+    """Why this exact call is stopped - it already failed in this turn - else None."""
+    key = _key(call)
     if key is None:
         return None
     failed = {m["tool_call_id"] for m in turn if m["role"] == "tool" and m.get("is_error")}
     earlier = [c for m in turn if m["role"] == "assistant" for c in m.get("tool_calls") or []]
-    if any(c["id"] in failed and isinstance(c["input"], dict) and _call_key(c["name"], c["input"]) == key
-           for c in earlier):
-        return ("This exact call already failed in this turn (see its result above). Don't repeat it: try another "
-                "way, or tell the user what didn't work.")
+    if any(c["id"] in failed and _key(c) == key for c in earlier):
+        return ("This exact call already failed in this turn (see its result above): try another way, or tell the "
+                "user what didn't work." + CONFIRMABLE)
     return None
 
 
+def _key(call: dict) -> str | None:
+    """A call's identity, its confirm aside (the confirmed call is the same call)."""
+    given, _ = split_confirm(call["input"])
+    return _call_key(call["name"], given) if isinstance(given, dict) else None
+
+
 def invented_numbers(call: dict, messages: list[dict]) -> str | None:
-    """For a helper task: the refusal when it carries numbers that came from nowhere - no tool result and
+    """For a helper task: why it is stopped when it carries numbers that came from nowhere - no tool result and
     no user message in the chat holds them (years and small counts don't count)."""
-    if call["name"] not in DELEGATES or not isinstance(call["input"], dict):
+    given, _ = split_confirm(call["input"])
+    if call["name"] not in DELEGATES or not isinstance(given, dict):
         return None
-    task = str(call["input"].get("task") or call["input"].get("question") or "")
-    evidence = [str(m.get("content") or "") for m in messages if m["role"] == "tool"]
+    task = str(given.get("task") or given.get("question") or "")
+    # Results that are data - not errors: a refusal quotes the very numbers it refused.
+    evidence = [str(m.get("content") or "") for m in messages if m["role"] == "tool" and not m.get("is_error")]
     evidence += [str(m.get("text") or m.get("content") or "") for m in messages if m["role"] == "user"]
     missing = [n for n in ungrounded_numbers(task, evidence) if not _year(n)]
     if len(missing) < INVENTED_MIN:
         return None
     return (f"Not run: the task gives numbers that no tool returned and the user never gave ({', '.join(missing[:6])}). "
-            "Never make up data: find it first (research_web, or the user's files), or ask the user for it.")
+            "Real data is found first (research_web, the user's files) or asked of the user. If they are meant to be "
+            "made up - sample data the user asked for, a demo - make the same call again with confirm: true: the "
+            "helper is told they are sample data, and says so.")
+
+
+# What a confirmed task with invented numbers carries to its helper.
+SAMPLE_DATA = ("\n(From the app: the numbers in this task were written by main - no tool found them and the user "
+               "didn't give them. Treat them as sample data, and say so in your answer.)")
 
 
 def _year(raw: str) -> bool:

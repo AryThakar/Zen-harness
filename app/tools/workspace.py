@@ -53,7 +53,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 TABLE_FILES = {".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".parquet", ".json"}  # left off a derived table's name
 ITEM_REF = re.compile(r"\b((?:data|image|file|note)_\d+(?:_\w+)?)\b")
 # The tool that does handle an item of the wrong kind, said in the error so the model's next call fits.
-WRONG_KIND = {("table", "file"): " A table: a script reads it with table('{id}'), and analyze_data works with it.",
+WRONG_KIND = {("table", "file"): " A table: a script reads it with table('{id}'), and analyze_or_code works with it.",
               ("image", "file"): " An image: it has no text - view_image looks at it and says what it shows.",
               ("image", "table"): " An image, not a table: view_image looks at it and says what it shows.",
               ("file", "table"): " A file, not a table: its text is read with files(read) or read_file."}

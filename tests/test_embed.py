@@ -396,7 +396,7 @@ def test_tables_are_found_by_their_columns_and_values(tmp_path):
     first = r.result["passages"][0]
     assert first["source"] == f"table 'shop_sales.csv' ({item})"
     assert "Columns: region, sales" in first["text"] and "North, South" in first["text"]
-    assert "analyze_data" in first["text"]
+    assert "analyze_or_code" in first["text"]
     ws.rename(item, "q1_sales.csv")
     assert index_items(ws, index) == 1 and index.stamps("table")[item][2] == "q1_sales.csv"
     approval.delete(ws, index, [item])

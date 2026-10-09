@@ -13,8 +13,8 @@ What the main model gets at each step:
              prompt stays the same turn after turn; a turn that alone outgrows the slot has its older
              tool results shortened). Each user message starts with its local time,
              "[Fri 03 Oct 2026, 14:05]", written once when it arrives.
-    tools    9 of its own (workers.MAIN_DIRECT) + 4 delegates to the helpers (analyze_data only when
-             there is a table). Its instructions and nudges are in prompts.py.
+    tools    9 of its own (workers.MAIN_DIRECT) + 3 delegates to the helpers (research_web, ask_knowledge,
+             analyze_or_code). Its instructions and nudges are in prompts.py.
 
 ask_user pauses the turn: the question goes to the UI and into chats.pending; the user's answer comes
 back as that call's result and the turn goes on. A helper's own ask_user (data, coder) pauses in place
@@ -64,11 +64,11 @@ from app.tools.memory import remember_turn
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
-from .checks import invented_numbers, nudge_for, repeated_failure, this_turn
+from .checks import SAMPLE_DATA, invented_numbers, nudge_for, repeated_failure, this_turn
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_tool_results, standing_instructions,
                       without_notes)
 from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN
-from .registry import ToolContext, execute
+from .registry import ToolContext, execute, split_confirm
 from .store import NEW_CHAT, Store
 from .workers import DELEGATES, main_tools
 
@@ -258,11 +258,14 @@ def _tools(state: TurnState, config) -> dict:
     for call in state["messages"][-1]["tool_calls"]:
         t.write({"type": "tool_start", "id": call["id"], "name": call["name"], "input": call["input"]})
         t.ctx.call_id = call["id"]  # a helper's question in place shows on this call's step
-        refused = (repeated_failure(this_turn(state["messages"] + results), call)
-                   or invented_numbers(call, state["messages"]))
+        given, confirmed = split_confirm(call["input"])
+        refused = None if confirmed else (repeated_failure(this_turn(state["messages"] + results), call)
+                                          or invented_numbers(call, state["messages"]))
+        if confirmed and isinstance(given, dict) and invented_numbers(call, state["messages"]):
+            given = {**given, "task": str(given.get("task", "")) + SAMPLE_DATA}  # it runs, labelled
         began = time.perf_counter()
         result = (ToolResult("invalid_arguments", {"error": {"message": refused}}) if refused
-                  else execute(t.ctx, call["name"], call["input"], t.tools))
+                  else execute(t.ctx, call["name"], given, t.tools))
         if t.live is not None:
             t.live.note("tools", {"name": call["name"], "status": result.status,
                                   "seconds": round(time.perf_counter() - began, 2), **({"refused": refused} if refused else {})})
@@ -272,11 +275,6 @@ def _tools(state: TurnState, config) -> dict:
             # it. Calls after it in the same step never run.
             pending = {"call_id": call["id"], "name": call["name"],
                        **{k: v for k, v in result.artifact.items() if k != "type"}}
-        elif call["name"] in DELEGATES and result.result.get("approval_card"):
-            # The coder saved over a file the user brought: the user decides; their click saves it (approval.py).
-            card = result.result["approval_card"]
-            t.ctx.emit({"tool": call["name"], **card})
-            pending = {"call_id": call["id"], "name": call["name"], **{k: v for k, v in card.items() if k != "type"}}
         elif call["name"] in DELEGATES and result.result.get("question_for_user"):
             # A helper needs the user: ask them now, with the helper's own question and options.
             asked = {"question": result.result["question_for_user"], "options": result.result.get("options") or [],

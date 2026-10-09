@@ -7,9 +7,9 @@ with its limits, libraries and off-limits rules). When a run fails, the result s
 points at, so the fix lands on the right lines. The file is thrown away with the task: the helper
 stays stateless, and what it made is kept only when it saves it.
 
-save (the coder's finish) keeps the scratch file in the workspace under a name, with its report -
+save (save_code, the helper's) keeps the scratch file in the workspace under a name, with its report -
 the knowledge main answers from instead of the code (docs/ARCHITECTURE.md, section 5). The report
-is the coder's sections plus facts the app writes itself (whether the last run passed, what it
+is the helper's sections plus facts the app writes itself (whether the last run passed, what it
 printed, what it made), so it can't claim a run that failed. Python is always run before it is
 saved; a file in another language is kept as written ("not run: only Python runs here"). Saving
 over a file the user brought asks them first; over the assistant's own file, it just replaces it.

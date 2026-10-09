@@ -61,7 +61,7 @@ def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
     assert first["system"].startswith(MAIN) and "Now:" not in first["system"]  # no clock in the system prompt
     assert {t["name"] for t in first["tools"]} == {"get_weather", "generate_image", "view_image", "draw_diagram",
                                                     "calculate", "notes", "plan", "ask_user", "files", "research_web",
-                                                    "ask_knowledge", "write_code"}  # analyze_data once there is a table
+                                                    "ask_knowledge", "analyze_or_code"}
     assert store.chat(chat["id"])["title"] == "What is 15% of 2400?"
     _, index = store.open(chat["workspace_id"])
     other = store.create_chat(chat["workspace_id"])
@@ -143,12 +143,11 @@ def test_a_delegate_runs_the_worker_and_its_progress_is_streamed(store, chat, mo
     assert all(m["role"] != "artifact" for m in main.requests[1]["messages"])
 
 
-def test_analyze_data_appears_once_there_is_a_table(store, chat):
+def test_the_workspace_travels_on_the_message(store, chat):
     ws, _ = store.open(chat["workspace_id"])
     ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
     main = ScriptedProvider([answer("ok")])
     run(send(store, chat["id"], "hi", main, ScriptedProvider([])))
-    assert "analyze_data" in {t["name"] for t in main.requests[0]["tools"]}
     assert "data_1  t.csv" in main.requests[0]["messages"][-1]["content"]  # the workspace, on the message
 
 
@@ -308,15 +307,15 @@ def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_go
     ws = _ambiguous_dates(store, chat)
     worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
                                tools_turn(call("query_data", sql=FEB)),
-                               tools_turn(call("save_report", question="February 2025 total sales",
+                               tools_turn(call("finish", answer="636",
                                                data_used="data_2: data_1 with day-first dates",
-                                               method="Summed amount for February 2025.", results="636",
+                                               method="Summed amount for February 2025.",
                                                caveats="One quarter of data."))])
-    main = ScriptedProvider([tools_turn(call("analyze_data", task="February 2025 total sales", data="data_1")),
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="February 2025 total sales", data="data_1")),
                              answer("February 2025: 636.")])
     asked = run(send(store, chat["id"], "February total?", main, worker))
     question = asked[-1]  # this request's stream ends at the question; the turn waits in place
-    assert question["type"] == "question" and question["inplace"] and question["tool"] == "analyze_data"
+    assert question["type"] == "question" and question["inplace"] and question["tool"] == "analyze_or_code"
     assert question["options"] == ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]
     assert main_slot.live(chat["id"]) is not None and len(worker.requests) == 1  # waiting, not ended
     done = run(reply(store, chat["id"], "Day first (03/04/2025 = 3 April)", main, worker))
@@ -333,9 +332,8 @@ def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_go
 def test_a_typed_answer_also_picks_the_option(store, chat):
     ws = _ambiguous_dates(store, chat)
     worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
-                               tools_turn(call("save_report", question="Feb", data_used="data_2", method="m",
-                                               results="r", caveats="c"))])
-    main = ScriptedProvider([tools_turn(call("analyze_data", task="Feb total", data="data_1")), answer("ok")])
+                               tools_turn(call("finish", answer="r", data_used="data_2", method="m", caveats="c"))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="Feb total", data="data_1")), answer("ok")])
     run(send(store, chat["id"], "Feb total?", main, worker))
     run(reply(store, chat["id"], "month first", main, worker))  # typed instead of clicked
     assert ws.table("data_2")["date"].dt.month.tolist()[0] == 1
@@ -344,12 +342,14 @@ def test_a_typed_answer_also_picks_the_option(store, chat):
 def test_a_helper_asks_its_own_question_in_place(store, chat):
     worker = ScriptedProvider([tools_turn(call("ask_user", question="Which language?", options=["Python", "Rust"])),
                                tools_turn(call("run_code", code="print('hi')")),
-                               tools_turn({"id": "s", "name": "save", "input": {
+                               tools_turn({"id": "s", "name": "save_code", "input": {
                                    "name": "hi.py", "purpose": "Says hi.", "how_it_works": "One print.",
-                                   "inputs_outputs": "Prints hi.", "how_to_run": "Run it.", "limits": "None."}})])
-    main = ScriptedProvider([tools_turn(call("write_code", task="a hello script")), answer("Saved hi.py.")])
+                                   "inputs_outputs": "Prints hi.", "how_to_run": "Run it.", "limits": "None."}}),
+                               tools_turn(call("finish", answer="hi.py prints hi.", method="One print.", caveats="None."))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="a hello script", file="hi.py")),
+                             answer("Saved hi.py.")])
     asked = run(send(store, chat["id"], "write a hello script", main, worker))
-    assert asked[-1]["question"] == "Which language?" and asked[-1]["tool"] == "write_code"
+    assert asked[-1]["question"] == "Which language?" and asked[-1]["tool"] == "analyze_or_code"
     done = run(reply(store, chat["id"], "Python", main, worker))
     assert done[-1]["answer"] == "Saved hi.py."
     assert '"answer": "Python"' in worker.requests[1]["messages"][-1]["content"]
@@ -361,7 +361,7 @@ def test_a_skipped_helper_question_goes_on_with_the_recommended_option(store, ch
                                ModelTurn(text="I can't do that.", stop="end")])
     ws, _ = store.open(chat["workspace_id"])
     ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    main = ScriptedProvider([tools_turn(call("analyze_data", task="chart it", data="data_1")), answer("ok")])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="chart it", data="data_1")), answer("ok")])
     run(send(store, chat["id"], "chart it", main, worker))
     run(reply(store, chat["id"], None, main, worker))
     told = worker.requests[1]["messages"][-1]["content"]

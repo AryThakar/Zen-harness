@@ -1,9 +1,9 @@
 # Zen - a local assistant
 
 Zen is a chat assistant that runs on your own computer, on a local model (Gemma 4 through llama-server).
-It talks with you and hands focused work to four helpers - one for the web, one for your documents and
-notes, a data analyst and a coder - each with its own tools, inside a **workspace** that is your project
-and its sandbox. What must be right - facts, numbers, files - is checked by code, not left to the model.
+It talks with you and hands focused work to three helpers - one for the web, one for your documents and
+notes, and an analyst-programmer for your tables and programs - each with its own tools, inside a
+**workspace** that is your project and its sandbox. What must be right - facts, numbers, files - is checked by code, not left to the model.
 
 ## What it does
 

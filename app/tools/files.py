@@ -151,9 +151,9 @@ def _picture_bytes(path: Path) -> bytes:
 
 
 def store_file(ws: Workspace, index: SearchIndex, path: str | Path) -> dict:
-    """An uploaded or downloaded file, kept by what it is: a table (CSV, Excel) for the data analyst,
+    """An uploaded or downloaded file, kept by what it is: a table (CSV, Excel) for the data tools,
     a document (PDF, Word, PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything
-    else as a file for the coder.
+    else as a file a script can open.
     Raises ToolError if a table or document can't be read."""
     path = Path(path)
     suffix = path.suffix.lower()
@@ -281,7 +281,7 @@ def _passage(h) -> str:
     if h.source == PICTURE:
         return f"A picture ({h.text}). It has no text: view_image looks at it and says what it shows."
     if h.source == TABLE:
-        return f"{_cut(h.text)}\nA table: the data helper (analyze_data) reads and computes on it."
+        return f"{_cut(h.text)}\nA table: analyze_or_code reads and computes on it."
     return _cut(h.text)
 
 

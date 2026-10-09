@@ -35,7 +35,7 @@ KINDS = ("table", "image", "file")  # everything but notes
 MAX_WRITE = 1_000_000  # characters
 MODES = ("list", "find", "read", "write", "update", "rename", "delete", "download")
 # Formats that are not text: text written under such a name would be a broken file (a .docx and a .pptx are
-# the exceptions - they are built from Markdown). A script makes them (write_code).
+# the exceptions - they are built from Markdown). A script makes them (analyze_or_code).
 FROM_MARKDOWN = (".docx", ".pptx")
 BINARY = {".pdf", ".xlsx", ".xlsm", ".xls", ".doc", ".ppt", ".odt", ".ods", ".png", ".jpg", ".jpeg", ".gif",
           ".webp", ".bmp", ".ico", ".zip", ".gz", ".7z", ".rar", ".parquet", ".joblib", ".pkl", ".exe", ".dll", ".bin",
@@ -216,7 +216,7 @@ def _writable(name: str) -> None:
     if suffix in BINARY:
         raise ToolError(f"A {suffix} file isn't text, so it can't be written or changed here - the text would be a "
                         f"broken {suffix} file. Write .md, .txt, .csv, code, or .docx and .pptx (from Markdown); a "
-                        f"{suffix} file is made by a script (write_code).", field="name")
+                        f"{suffix} file is made by a script (analyze_or_code).", field="name")
 
 
 def _bytes(name: str, content: str, ws: Workspace | None = None) -> bytes:
@@ -256,7 +256,7 @@ def _pictures_there(ws: Workspace, name: str, content: str) -> None:
         return
     images = ws.ids("image")[-10:]
     have = (", ".join(f"{i} ({ws.entry(i)['name']})" for i in images) if images
-            else "none - a chart from analyze_data or a picture from generate_image is kept as one")
+            else "none - a chart from analyze_or_code or a picture from generate_image is kept as one")
     raise ToolError(f"No picture {', '.join(missing)} in the workspace, so nothing was written. Pictures: {have}. "
                     "Name one of them in ![caption](id), or leave the picture out.", field="content")
 

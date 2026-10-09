@@ -8,7 +8,7 @@ says whether the turn did what it should.
 
 Main and its helpers both run on the worker slot, so the app's main slot stays free for the user.
 generate_image is a stand-in that records the prompt (each real image costs Pollen). The helpers
-(research_web, ask_knowledge, analyze_data, write_code) are stand-ins too, unless --helpers: then the
+(research_web, ask_knowledge, analyze_or_code) are stand-ins too, unless --helpers: then the
 real workers run, for end-to-end cases. --old runs the suite with the wording it had before a change
 (suites.OLD), to measure the change against it.
 """

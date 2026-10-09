@@ -50,7 +50,7 @@ def delete_request(ws: Workspace, items: list[str]) -> ToolResult:
 def replace_request(ws: Workspace, item: str, content: str, report: str | None = None,
                     outputs: list[str] | None = None) -> ToolResult:
     """Updating a file the user brought (an upload or a download): with no versions, the current text
-    would be gone - so the user decides. From the coder's save: with its report and run outputs."""
+    would be gone - so the user decides. From save_code: with its report and run outputs."""
     e = ws.entry(item)
     details = {"item": item, "name": e["name"], "content": content,
                **({"report": report, "outputs": outputs or []} if report else {})}
@@ -80,7 +80,7 @@ def carry_out(ws: Workspace, index: SearchIndex | None, approval: dict, options:
         elif approval["action"] == "replace_file":
             from .file_ops import replace_file  # file_ops asks through this module
             done = replace_file(ws, index, approval["item"], approval["content"])
-            if approval.get("report"):  # the coder's save: its report and outputs go with the file
+            if approval.get("report"):  # save_code's: its report and outputs go with the file
                 from .scratch import keep
                 done = keep(ws, index, approval["item"], approval["report"], approval.get("outputs", []))
         else:

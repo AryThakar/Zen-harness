@@ -1,5 +1,8 @@
 """What a helper's tools returned (Trace) - the evidence its result is checked against - and the guards
-that stop a call before it runs: a repeat, a table nobody inspected, a choice only the user can make."""
+before a call runs. A guard either serves the model or protects the user: a repeat of a call that worked gets its
+earlier result back (nothing runs, nothing is refused); a call that already failed, or a page that couldn't be
+read, is stopped with why - and runs anyway when the helper confirms it (registry.CONFIRMABLE); a choice only the
+user can make, and a seventh page of one site, are not the helper's to confirm."""
 
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ from urllib.parse import urlsplit
 from app.tools.core import ToolResult
 from app.tools.scratch import Scratch
 
-from ..registry import ToolContext
+from ..registry import CONFIRMABLE, ToolContext
 
 
 SCRIPT_TOOLS = ("run_code", "fix_code")
@@ -39,8 +42,10 @@ class Trace:
     last_query: str | None = None  # the latest web search, to focus long pages on
     inspected: set[str] = field(default_factory=set)  # tables inspect_data looked at in this task
     questions: list[dict] = field(default_factory=list)  # questions tools raised for the user, with options
-    scratch: Scratch | None = None  # the helper's scratch script (the coder's save checks its last run)
-    table: str | None = None  # the table the task is about (the analyst's report is kept on it)
+    scratch: Scratch | None = None  # the helper's scratch script (save_code checks its last run)
+    table: str | None = None  # the table the task is about (the report is kept on it)
+    wanted_file: str | None = None  # the file the task asks to keep or change (main's file=...)
+    saved: dict | None = None  # the program save_code kept: file, name, report
     site_reads: dict[str, int] = field(default_factory=dict)  # site -> pages asked of it in this task
 
     def add(self, name: str, args: dict, result: ToolResult) -> None:
@@ -137,29 +142,36 @@ def _call_key(name: str, args: dict) -> str:
     return name + json.dumps(tidy, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def _repeat(trace: Trace, name: str, args: dict) -> ToolResult | None:
-    """A call the worker already made with the same input is not run again - a small model re-runs
-    a search after a failed read instead of reading another result - and it is told what to do
-    instead. Running the script is exempt: the same code can give a new result once files have changed."""
+def _repeat(trace: Trace, name: str, args: dict, confirmed: bool = False) -> ToolResult | None:
+    """The answer to a call the helper already made with the same input, instead of running it again - or None
+    to run it. One that worked gives its earlier result back with a note (it may have been shortened out of view
+    since: an error saying 'its result is above' left the helper without it). One that failed is stopped with why,
+    since the same input fails the same way - a small model re-runs a failed read instead of reading another page
+    - unless the helper confirms it (a passing failure). Running the script is exempt: the same code can give a new
+    result once files have changed."""
     site = _site_of(args.get("url", "")) if name == "read_webpage" else ""
     if site and trace.site_reads.get(site, 0) >= SITE_CAP and str(args.get("url", "")).strip() not in trace.tried_urls:
         return ToolResult("invalid_arguments", {"error": {"message": (
             f"You have read {SITE_CAP} pages of {site} in this task: answer from them, or read another site.")}})
+    if confirmed or name in SCRIPT_TOOLS:
+        return None
     if name == "read_webpage" and str(args.get("url", "")).strip() in trace.failed_urls:
         # The same page with other find words is the same failure (find only picks lines to show).
         why = trace.failed_urls[str(args["url"]).strip()]
         return ToolResult("invalid_arguments", {"error": {"message": (
-            f"This page already failed ({why.rstrip('.')}). Read another source instead.")}})
+            f"This page already failed ({why.rstrip('.')}): read another source." + CONFIRMABLE)}})
     earlier = trace.calls.get(_call_key(name, args))
-    if earlier is None or name in SCRIPT_TOOLS:
+    if earlier is None:
         return None
     if earlier.status not in ("ok", "partial"):
         why = (earlier.result.get("error") or {}).get("message", "")
-        message = f"This exact call already failed ({why.rstrip('.')}). Don't repeat it; try something else."
-    elif name == "web_search":
+        return ToolResult("invalid_arguments", {"error": {"message": (
+            f"This exact call already failed ({why.rstrip('.')}): try something else." + CONFIRMABLE)}})
+    if name == "web_search":
         unread = [r["url"] for r in earlier.result.get("results", []) if r["url"] not in trace.tried_urls][:3]
-        message = "You already ran this exact search; its results are above. " + (
-            f"Read one you haven't tried: {', '.join(unread)}." if unread else "Search with different words.")
+        note = "The same search as before - its results again. " + (
+            f"Read one you haven't tried: {', '.join(unread)}." if unread else "Search with other words for more.")
     else:
-        message = "You already made this exact call; its result is above. Use it, or change the input."
-    return ToolResult("invalid_arguments", {"error": {"message": message}})
+        note = ("You made this exact call before - its result again (nothing ran). To run it again after a change, "
+                "add confirm: true.")
+    return ToolResult(earlier.status, {**earlier.result, "note": note})

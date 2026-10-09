@@ -533,6 +533,7 @@ function assistantView() {
       paint();
       finishAnswer(answer);  // only once finished: a half-written diagram would fail to draw
       if (current) { promote(current); current = null; }
+      if (plan && final != null && text.trim()) plan.answered?.();  // the steps main does in its answer
       activity.finish(timing?.seconds);
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));

@@ -69,16 +69,16 @@ def test_every_image_is_an_image_item_with_its_size(ctx, tmp_path):
         store_file(ctx.ws, ctx.index, fake)
 
 
-def test_analyze_data_resolves_its_table_too(ctx):
+def test_analyze_or_code_resolves_its_table_too(ctx):
     seen = {}
 
     def handler(c, a):
         seen["data"] = a.data
         return ToolResult("ok", {})
 
-    from app.assistant.registry import DataTaskIn
-    execute(ctx, "analyze_data", {"task": "x", "data": "shop_sales.csv"},
-            {"analyze_data": Tool("analyze_data", "", DataTaskIn, handler)})
+    from app.assistant.registry import WorkTaskIn
+    execute(ctx, "analyze_or_code", {"task": "x", "data": "shop_sales.csv"},
+            {"analyze_or_code": Tool("analyze_or_code", "", WorkTaskIn, handler)})
     assert seen["data"] == "data_1"
 
 

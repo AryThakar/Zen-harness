@@ -8,7 +8,7 @@ legend and read a peak as 'roughly 600' (622) - right for what a picture shows, 
 which is said with every answer. main keeps a text answer rather than the image: a chat runs for many
 turns, and an image would sit in its window (and every request) for all of them.
 
-A helper doesn't use it: a helper that sees images (the coder) is shown them in its own conversation
+A helper doesn't use it: a helper that sees images (the analyst-programmer) is shown them in its own conversation
 (workers/runner.py, _pictures) - 9 of 10 known-answer questions right there vs 8 of 10 here, with the task in
 mind, and without replacing the slot's cached prompt.
 

@@ -18,6 +18,8 @@ from pathlib import Path
 from app.providers.llamacpp import THINKING_BUDGET, LlamaCppProvider
 from app.assistant.registry import ToolContext
 from app.assistant.workers import PROFILES, run_worker
+
+PROFILE_OF = {"data": "engineer", "coder": "engineer"}  # the task's kind -> the helper that does it (since 2026-10-10)
 from app.config import settings
 from app.rag.embed import make_embedder
 from app.tools.search_index import SearchIndex
@@ -83,7 +85,7 @@ def main() -> None:
         budget = THINKING_BUDGET if args.thinking_budget is None else (args.thinking_budget or None)
         model = Counting(LlamaCppProvider("local", thinking=True, slot=1, max_tokens=args.max_tokens,
                                           thinking_budget=budget))
-        profile = PROFILES[task.role]
+        profile = PROFILES[PROFILE_OF.get(task.role, task.role)]  # data and coder tasks: the one engineer
         started = time.perf_counter()
         try:
             out = run_worker(model, profile, task.task, ctx, file=task.file,
@@ -99,9 +101,7 @@ def main() -> None:
                      "thinking": model.thinking,
                      "answer": (out.get("answer") or "")[:3000], "sources": out.get("sources"),
                      "question_for_user": out.get("question_for_user"),
-                     **{k: out[k] for k in ("suggestion", "trail", "note", "file", "report") if out.get(k)},
-                     **({"approval": {k: v for k, v in out["approval_card"]["approval"].items() if k != "content"}}
-                        if out.get("approval_card") else {})})
+                     **{k: out[k] for k in ("suggestion", "trail", "note", "files", "report") if out.get(k)}})
         mark = "PASS" if passed else "FAIL"
         print(f"{mark} {task.id:18s} {seconds:6.1f}s calls={model.calls:2d} tools={[t['name'] for t in tools]} | {detail}",
               flush=True)

@@ -33,7 +33,7 @@ class Task:
     task: str
     setup: Callable  # (ws, index, truth: dict) -> None
     check: Callable  # (run) -> (passed, detail)
-    file: str | None = None  # a stored file to work on (the coder's write_code file=...)
+    file: str | None = None  # the file to keep or change, as main gives it (analyze_or_code file=...)
 
 
 @dataclass
@@ -344,41 +344,43 @@ def _coder_files(ws, index, truth):
 
 
 def _ran(r: Run, *expected: str):
-    """The coder ran its code and saved the file - or, over the user's own file, asked them first - and
-    the report's facts (written by the app) show the output."""
-    card = (r.out.get("approval_card") or {}).get("approval") or {}
-    report = r.out.get("report") or card.get("report") or ""
+    """The helper ran its code and kept the file, and the report's facts (written by the app) show the output."""
+    report = r.out.get("report") or ""
     ok = (all(e.lower() in report.lower() for e in expected) and (called(r, "run_code") or called(r, "fix_code"))
-          and bool(r.out.get("file") or r.out.get("files") or card) and "- Last run: passed" in report and clean(r))
-    return verdict(ok, f"saved (or asking to) with a report showing {expected}")
+          and bool(r.out.get("files")) and "- Last run: passed" in report and clean(r))
+    return verdict(ok, f"kept with a report showing {expected}")
 
 
 def _edited(r: Run):
-    """A change to the user's own file: saving it waits for their approval, with the new report."""
-    card = (r.out.get("approval_card") or {}).get("approval") or {}
-    report = card.get("report") or ""
-    ok = (card.get("action") == "replace_file" and card.get("name") == "stats.py" and "5.0" in report
-          and "9" in report.split("It printed:")[-1] and called(r, "fix_code") and clean(r))
-    return verdict(ok, "stats.py changed in place, asking the user, report prints 5.0 and 9")
+    """A change to the user's own file, with nobody to ask (a benchmark): theirs stays as it was, and the changed
+    program is kept under another name, its report printing the mean and the largest number."""
+    report = r.out.get("report") or ""
+    stats = next(i for i, e in r.ws._reg["items"].items() if e.get("name") == "stats.py")
+    untouched = r.ws.path(stats).read_bytes() == b"nums = [3, 8, 1, 9, 4]\nprint(sum(nums) / len(nums))\n"
+    ok = (untouched and "5.0" in report and "9" in report.split("It printed:")[-1] and called(r, "fix_code")
+          and bool(r.out.get("files")) and clean(r))
+    return verdict(ok, "stats.py untouched, the change kept under another name, report prints 5.0 and 9")
 
 
 CODER_TASKS = [
     Task("c_fib", "coder", "dev", "Write a script that prints the 30th Fibonacci number (F1 = F2 = 1).", _coder_files,
-         lambda r: _ran(r, "832040")),
+         lambda r: _ran(r, "832040"), file="fibonacci.py"),
     Task("c_words", "coder", "dev", "Count the words in file_1 and print the three most common words with their counts.",
-         _coder_files, lambda r: _ran(r, r.truth["top_word"], str(r.truth["top_count"]))),
+         _coder_files, lambda r: _ran(r, r.truth["top_word"], str(r.truth["top_count"])), file="word_counts.py"),
     Task("c_fix", "coder", "dev", "Fix the script in file_2 so it runs, and show what it prints.", _coder_files,
-         lambda r: _ran(r, "5.5")),
+         lambda r: _ran(r, "5.5"), file="average_fixed.py"),
     Task("c_json", "coder", "dev", "Convert file_3 (a CSV) to a JSON file with a list of objects, and say how many "
          "records it has.", _coder_files,
          lambda r: verdict(_ran(r, "4")[0] and any(e["kind"] == "file" and e["name"].endswith(".json")
-                                                 for e in r.ws._reg["items"].values()), "4 records + a .json file")),
+                                                 for e in r.ws._reg["items"].values()), "4 records + a .json file"),
+         file="csv_to_json.py"),
     Task("h_primes", "coder", "holdout", "How many prime numbers are there below 10,000? Compute it.", _coder_files,
-         lambda r: _ran(r, "1229")),
+         lambda r: _ran(r, "1229"), file="primes.py"),
     Task("h_days", "coder", "holdout", "How many days are there from 2024-02-15 to 2025-03-01? Compute it with code.",
-         _coder_files, lambda r: _ran(r, "380")),
+         _coder_files, lambda r: _ran(r, "380"), file="days_between.py"),
     Task("h_emails", "coder", "holdout", "Extract the distinct email addresses from file_4 (ignore case) and print them sorted.",
-         _coder_files, lambda r: _ran(r, "anna@example.com", "bob.smith@mail.example.org", "x@test.io")),
+         _coder_files, lambda r: _ran(r, "anna@example.com", "bob.smith@mail.example.org", "x@test.io"),
+         file="emails.py"),
     Task("c_edit", "coder", "dev", "Change the script so it also prints the largest number, after the mean.",
          _coder_files, _edited, file="stats.py"),
 ]

@@ -7,8 +7,8 @@ import json
 import re
 from pathlib import PurePath
 
-from .checks import NOTHING_FOUND, numbers_in, ungrounded_numbers
-from .contracts import Profile, SaveResult, SourcedResult
+from .checks import NOTHING_FOUND, given_link, numbers_in, ungrounded_numbers
+from .contracts import Profile, SourcedResult
 from .evidence import Trace
 
 
@@ -27,6 +27,15 @@ def _json_in_text(text: str) -> dict | None:
     return value if isinstance(value, dict) and "answer" in value else None
 
 
+def code_name(name: str, given_code: bool) -> str:
+    """The name a kept script goes under: save_code keeps the script, and a picture (or file) its run wrote is kept
+    already - so a script named after its picture is the .py of that name (seen: 'passengers_modified.png' named
+    for the image the run made, and the save refused)."""
+    from app.tools.file_ops import BINARY
+    path = PurePath(str(name).strip())
+    return f"{path.stem}.py" if not given_code and path.suffix.lower() in BINARY else str(name).strip()
+
+
 def _repair(profile: Profile, result: dict, trace: Trace) -> dict:
     """Evidence fields small models get wrong, set right from the trace before the checks run."""
     if trace.questions and not result.get("options") and (
@@ -38,13 +47,13 @@ def _repair(profile: Profile, result: dict, trace: Trace) -> dict:
                   "options": [o["label"] if isinstance(o, dict) else str(o) for o in q.get("options", [])] or None}
     if profile.name == "knowledge":
         return _attribute(result, trace)
-    if profile.result_model is SaveResult and result.get("name") and not result.get("code"):
-        from app.tools.file_ops import BINARY
-        name = PurePath(str(result["name"]).strip())
-        if name.suffix.lower() in BINARY:
-            # save keeps the script; the picture (or file) its run wrote is kept already. Seen: the coder named
-            # its save after the image it made ('passengers_modified.png') and the save was refused.
-            result = {**result, "name": f"{name.stem}.py"}
+    if profile.name == "web" and result.get("sources") and trace.read_urls:
+        # Pages only seen as a search snippet (or never seen) come off the sources when a page it read is left:
+        # the answer stands on what was read, without a whole resubmission to drop them (measured: 2 snippet-only
+        # citations beside the Wikipedia page it read cost the helper a step).
+        read = [s for s in result["sources"] if s in trace.read_urls]
+        if read:
+            result = {**result, "sources": read}
     if (profile.name == "web" and not result.get("sources") and trace.read_urls
             and not NOTHING_FOUND.search(result.get("answer", ""))):
         # The pages it read, credited when it listed none (3 of 5 web warnings in the user's chats: an answer
@@ -55,7 +64,7 @@ def _repair(profile: Profile, result: dict, trace: Trace) -> dict:
         # only one a tool returned, so main can fetch it with the user's approval.
         from app.tools.web import is_file_link
         links = [u.rstrip(".,;:`'\")") for u in URL.findall(result.get("answer", ""))]
-        found = [u for u in dict.fromkeys(links) if is_file_link(u) and any(u in o for o in trace.outputs)]
+        found = [u for u in dict.fromkeys(links) if is_file_link(u) and given_link(u, trace)]
         if found:
             result = {**result, "downloads": found}
     return result
@@ -95,14 +104,14 @@ def _source_keys(source: str) -> list[str]:
     return [k for k in keys if len(k) >= 4]
 
 
-FINISH_TAG = re.compile(r"<(?:submit_result|save_report|save)\b(.*)", re.S)
+FINISH_TAG = re.compile(r"<(?:submit_result|finish|save_code)\b(.*)", re.S)
 
 
 TAG_VALUE = re.compile(r'\b(?:answer|results)\s*=\s*"(.*?)"\s*(?:/?>|$|\w+\s*=)', re.S)
 
 
 # The finish tool's bare name as the answer's last line (measured: a web answer ended "...\n\nsubmit_result")
-BARE_FINISH = re.compile(r"\n\s*`?(?:submit_result|save_report)(?:\(\))?`?\s*$")
+BARE_FINISH = re.compile(r"\n\s*`?(?:submit_result|finish)(?:\(\))?`?\s*$")
 
 
 def _without_finish_markup(text: str) -> str:

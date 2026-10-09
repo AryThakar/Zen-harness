@@ -589,7 +589,7 @@ def fetch_table(ws, looked: dict, *, http: httpx.Client | None = None, resolve=N
     df = ws.table(data)
     preview = df.head(8).astype(object).where(df.head(8).notna(), None)
     return ok({"data": data, "name": name, "rows": len(df), "columns": list(map(str, df.columns)),
-               "source": final, "note": f"Saved as {data}: give analyze_data a task on {data}."},
+               "source": final, "note": f"Saved as {data}: give analyze_or_code a task on {data}."},
               {"type": "table", "title": f"{data}: {name}", "columns": list(map(str, df.columns)),
                "rows": preview.values.tolist(), "note": f"{len(df):,} rows from {urlsplit(final).hostname}"})
 
@@ -604,8 +604,8 @@ def fetch_file(ws, index, looked: dict, *, http: httpx.Client | None = None, res
         path.write_bytes(body)
         kept = store_file(ws, index, path)
     item = kept.get("id") or kept.get("file")
-    use = {"table": f"give analyze_data a task on {item}", "document": "ask_knowledge can search it",
-           "file": f"write_code can open it as '{item}'"}[kept["kind"]]
+    use = {"table": f"give analyze_or_code a task on {item}", "document": "ask_knowledge can search it",
+           "file": f"analyze_or_code's scripts can open it as '{item}'"}[kept["kind"]]
     return ok({**kept, "bytes": len(body), "source": final, "note": f"Saved as {item}: {use}."})
 
 

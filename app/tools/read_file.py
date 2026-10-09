@@ -91,7 +91,7 @@ def _not_text(ws: Workspace, item: str, e: dict, tool: str = "files") -> dict:
         head = ws.table(item).head(10)
         return {"kind": "table", "rows": e["rows"], "columns": list(map(str, head.columns)),
                 "first_rows": head.astype(object).where(head.notna(), None).values.tolist(),
-                "note": f"A table: numbers, charts and models come from the data tools (main: analyze_data); a "
+                "note": f"A table: numbers, charts and models come from the data tools (main: analyze_or_code); a "
                         f"script reads it with table('{item}')."}
     return {"kind": e["kind"], **{k: v for k, v in meta.items() if isinstance(v, (str, int, float))}}
 

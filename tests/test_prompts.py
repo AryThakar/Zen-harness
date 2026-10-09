@@ -26,7 +26,8 @@ def _readers() -> dict[str, list[str]]:
     readers = {"main": (MAIN, main_specs)}
     for name, profile in workers.PROFILES.items():
         readers[name] = (profile.instructions,
-                         [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)])
+                         [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)]
+                         + ([workers._save_code_spec()] if profile.saves_code else []))
     return {name: [system] + [s["description"] for s in specs]
             + sorted({d for s in specs for d in _descriptions(s["input_schema"])})
             for name, (system, specs) in readers.items()}
@@ -48,8 +49,7 @@ def test_no_model_reads_a_rule_twice():
 
 def test_the_runners_use_the_prompts_module():
     assert MAIN is prompts.MAIN
-    assert workers.PROFILES["data"].instructions is prompts.DATA
-    assert workers.PROFILES["coder"].instructions is prompts.CODER
+    assert workers.PROFILES["engineer"].instructions is prompts.ENGINEER
     assert workers.PROFILES["web"].instructions is prompts.WEB
     assert workers.PROFILES["knowledge"].instructions is prompts.KNOWLEDGE
 
@@ -68,13 +68,10 @@ def test_each_helper_reads_its_craft_in_its_prompt(tmp_path):
     ws = Workspace(tmp_path / "ws")
     ws.add_table(pd.DataFrame({"category": ["Pizza", "Sides"], "revenue": [150.5, 200.25]}), "sales.csv")
     ctx = ToolContext(ws=ws, index=SearchIndex(tmp_path / "ws" / "search.sqlite", None))
-    report = call("save_report", question="Pizza share", data_used="data_1 as it is.", method="Summed revenue.",
-                  results="Pizza is smaller.", caveats="Two categories only.")
-    save = {"id": "c_save", "name": "save", "input": {"name": "x.py", "purpose": "p", "how_it_works": "w",
-                                                      "inputs_outputs": "i", "how_to_run": "r", "limits": "l"}}
-    for role, finish, craft in (("data", report, "count(DISTINCT order id)"),
-                                ("coder", save, "'It ran' is not 'it is right'")):
-        model = ScriptedProvider([ModelTurn(text="", tool_calls=[finish], stop="tool_use")])
-        workers.run_worker(model, workers.PROFILES[role], "What share of revenue comes from pizza?", ctx)
-        request = model.requests[0]
-        assert craft in request["system"] and "guide" not in {t["name"] for t in request["tools"]}
+    finish = call("finish", answer="Pizza is smaller.", method="Summed revenue.", caveats="Two categories only.")
+    model = ScriptedProvider([ModelTurn(text="", tool_calls=[finish], stop="tool_use")])
+    workers.run_worker(model, workers.PROFILES["engineer"], "What share of revenue comes from pizza?", ctx)
+    request = model.requests[0]
+    for craft in ("count(DISTINCT order id)", "'It ran' is not 'it is right'"):  # both crafts, one helper
+        assert craft in request["system"]
+    assert "guide" not in {t["name"] for t in request["tools"]}
