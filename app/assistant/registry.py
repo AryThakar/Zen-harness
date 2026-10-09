@@ -125,6 +125,15 @@ class PlanIn(_In):
     steps: list[PlanStep] = Field(min_length=2, max_length=8)
 
 
+
+def _read_page(c: ToolContext, a) -> ToolResult:
+    """read_webpage, and what was read kept in the workspace's index (files.index_webpage): the knowledge
+    helper can find a page read in earlier research - dated, after the user's own files, for 30 days."""
+    r = web.read_webpage(a.url, a.find)
+    if r.status in ("ok", "partial") and c.index is not None:
+        files.index_webpage(c.index, r.result)
+    return r
+
 def show_plan(steps: list[PlanStep]) -> ToolResult:
     """The plan as a card; the page ticks a step off when its tool's call ends."""
     from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
@@ -351,11 +360,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        labels=("Asking you", "Asked you")),
     # worker tools
     Tool("web_search", "Search the web: titles, links and snippets.",
-       SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent),
+       SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent,
+                                             embedder=getattr(c.index, "embedder", None)),
        labels=("Searching the web", "Searched the web")),
     Tool("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
        "channel, length, date and description (not what is said in it).", ReadPageIn,
-       lambda c, a: web.read_webpage(a.url, a.find),
+       lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
     Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or "
        "to open, show, save, change, rename, delete or download one. list: everything, a page at a time; find: whether "

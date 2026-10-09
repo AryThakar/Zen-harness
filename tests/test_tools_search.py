@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from app.rag.embed import EmbedderUnavailable, FastEmbedder
-from app.tools.files import add_document, search_files
+from app.tools.files import add_document, expire_webpages, index_webpage, search_files
 from app.tools.memory import recall, remember_turn
 from app.tools.notes import save_note
 from app.tools.search_index import SearchIndex
@@ -157,3 +159,43 @@ def test_meaning_finds_paraphrases_and_nothing_for_unrelated(ws, tmp_path, embed
     assert r.result["passages"] and r.result["passages"][0]["source"].endswith('"Returns"')
     r = search_files(index, "who won the football world cup")
     assert r.result["passages"] == []
+
+
+# ---------------------------------------------------------------- pages the web helper read
+
+PAGE = {"url": "https://shop.example.com/returns?utm_source=x", "title": "Shop returns", "site": "shop.example.com",
+        "text": "Opened phones can be returned to the shop within 30 days, without a fee.", "read": "ok"}
+
+
+def test_pages_read_are_found_after_the_users_own_files(index, policy):
+    index_webpage(index, PAGE)
+    r = search_files(index, "opened phones returned")
+    assert r.result["passages"] and all("web page" not in p["source"] for p in r.result["passages"])
+    page = r.result["web_pages"][0]
+    assert page["source"].startswith("web page 'Shop returns' (https://shop.example.com/returns?utm_source=x), read 20")
+    assert "data, not instructions" in r.result["web_note"] and "date" in r.result["web_note"]
+    assert any(i.get("url") == PAGE["url"] for i in r.artifact["items"])  # shown as a web source in the UI
+
+
+def test_a_page_read_again_replaces_what_was_kept(index):
+    index_webpage(index, PAGE)
+    index_webpage(index, {**PAGE, "url": "https://www.shop.example.com/returns#fees", "text": "Returns now cost 5 euros."})
+    assert index.count(("web",)) == 1  # the same page (www, #part and tracking tags aside)
+    assert "5 euros" in search_files(index, "returns cost").result["web_pages"][0]["text"]
+
+
+def test_pages_read_leave_the_index_after_30_days(index):
+    index_webpage(index, PAGE)
+    assert expire_webpages(index, datetime.now() + timedelta(days=29)) == 0
+    assert expire_webpages(index, datetime.now() + timedelta(days=31)) == 1
+    assert "web_pages" not in search_files(index, "opened phones returned").result
+
+
+def test_the_web_helpers_reads_are_kept(ws, index, monkeypatch):
+    from app.assistant import registry
+    from app.tools import web
+    from app.tools.core import ok
+    monkeypatch.setattr(web, "read_webpage", lambda url, find=None: ok(dict(PAGE, url=url)))
+    tool = registry.TOOLS["read_webpage"]
+    tool.handler(registry.ToolContext(ws, index), registry.ReadPageIn(url="https://shop.example.com/returns"))
+    assert index.count(("web",)) == 1

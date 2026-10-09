@@ -93,7 +93,12 @@ Tier 2
   (by name, columns and values) in one index; each workspace re-indexed in the background when first
   opened. Measured on 76 held-out questions about the user's own workspaces: both models find every right
   passage; bge-small's scores for unrelated questions overlap its right ones (it answered 3 of 5 unrelated
-  questions), EmbeddingGemma's don't (0 of 5). Next in 13: web pages by meaning (13.1).
+  questions), EmbeddingGemma's don't (0 of 5).
+- Done (13.1, the web's use of meaning): search results in the engines' order fused with meaning (measured
+  on the user's 47 searches whose answer cited a result: a cited one in the top 3 for 91% against 87%);
+  pages the web helper reads kept in the workspace's index for 30 days, found by the knowledge helper after
+  the user's own files, dated. Measured and not kept: focusing a long page by meaning (5 of 5 facts found
+  by words alone too, 3-11 s more a read).
 - Not built, by the decision above: the five click/type tools - only if the fallback proves too little.
 
 Next: the docs merge (SYSTEM_MAP, TARGET_MAP and ASSISTANT_PLAN into this plan and ARCHITECTURE), the
@@ -401,9 +406,9 @@ question finds any of them (a typed question can find a matching image or a scre
 - [x] One full re-index (vectors from two models can't be mixed); the index records which model made each
       vector. Each workspace is re-indexed in the background when it is first opened (the user's largest,
       254 passages and 19 pictures, within a minute of opening); search meanwhile uses keywords for what waits.
-- [ ] Every item kind embedded: chats, notes, documents (chunks), reports, tables (name, columns, a few
-      values) and pictures (the picture itself) - done; web pages read (13.1) - not yet; audio and video
-      when the app accepts them. Search stays hybrid: keywords (FTS5) + vectors, fused (RRF).
+- [x] Every item kind embedded: chats, notes, documents (chunks), reports, tables (name, columns, a few
+      values), pictures (the picture itself) and web pages read (13.1); audio and video when the app
+      accepts them. Search stays hybrid: keywords (FTS5) + vectors, fused (RRF).
 
 ### 13.1 Web (frozen 2026-10-08)
 
@@ -477,18 +482,22 @@ main ── research_web(task) ──► web helper (slot 1)
       general test, not a list of sites; the page's HTML goes through the same extraction, never the
       snapshot
 - [x] Focus a long page on the question (today: by words)
-- [ ] Focus by meaning and headings (13.0), always keeping the page's opening
+- [x] Focus by meaning and headings - **built, measured, not kept** (2026-10-09, bench/web_focus.py): 10
+      long pages, questions worded unlike the page; the fact was found outside the opening by words alone
+      5 of 5, by words and meaning 5 of 5, at 3-11 s more a read (the whole page embedded). Words stay.
 - [x] Page age (published / updated date) for "latest" questions
-- [ ] Every read ends in one status: **ok**, **cut** (long page, focused), **blocked** (bot check, login
+- [x] Every read ends in one status: **ok**, **cut** (long page, focused), **blocked** (bot check, login
       or paywall - detected by general signals), **not found**, or **unsupported** - each with what to try
-      next
+      next (also **partial**: a page drawn by JavaScript, and **unreachable**)
 
 **B. Search (web_search)**
 - [x] Public search engines through ddgs, no key, DuckDuckGo first; a second tier only when the first finds
       nothing - kept
-- [ ] `recent` (day / week / month / year) for "latest" questions, passed to the engines' own time filter
-- [ ] Results in one shape (title, link, snippet, site, date when known), duplicates removed, ranked by
-      meaning against the task (13.0) so the best 1-3 are read first
+- [x] `recent` (day / week / month / year) for "latest" questions, passed to the engines' own time filter
+- [x] Results in one shape (title, link, snippet, site), duplicates removed, the engines' order fused with
+      meaning (the query against title and snippet; RRF). Measured on the user's own 47 searches whose
+      answer cited a result (bench/web_rank.py): a cited result first 47% (engines alone 45%), in the top 3
+      91% (87%) - on data that favours the engines' order; meaning alone did worse (40% / 83%)
 
 **C. Browser (new) - Playwright MCP**
 - [x] One MCP client in Zen (the official Python SDK); another MCP server later is settings, not code
@@ -501,12 +510,13 @@ main ── research_web(task) ──► web helper (slot 1)
       the normal approved download. Gate: checked by clicking Kaggle's Download button; if Playwright MCP
       can't turn downloads off, they land in a quarantine folder that is emptied at once and reported
 - [ ] Screenshots go to the helper as an image (Gemma 4 sees them) and to the user as a card
-- [ ] Never offered to the model: running code in the page, cookies and storage, file upload, proxies
+- [x] Never offered to the model: running code in the page, cookies and storage, file upload, proxies (the
+      model has no browser tool at all: the browser only reads, inside read_webpage)
 
 **D. Site adapters (official APIs) - one interface, one file each**
 - [x] GitHub (repository, folder, file)
 - [x] YouTube (title, channel, length, date, description)
-- [ ] Wikipedia and any MediaWiki wiki, including Fandom (blocked to both the plain fetch and the browser)
+- [x] Wikipedia and any MediaWiki wiki, including Fandom (blocked to both the plain fetch and the browser)
 - [ ] Adding one later = one file + its tests; nothing else changes
 
 **E. Safety**
@@ -516,9 +526,10 @@ main ── research_web(task) ──► web helper (slot 1)
       blocked in the browser (Playwright's own list is "not a security boundary"), and the app's API
       refuses requests that come from a web page
 - [x] Page text marked as untrusted: instructions inside a page can't steer the helper
-- [ ] Honest identity, no stealth, no proxies, no CAPTCHA solving; a blocked page is reported, and another
+- [x] Honest identity, no stealth, no proxies, no CAPTCHA solving; a blocked page is reported, and another
       source is tried
-- [ ] Nothing that changes a site: no submitting, buying, posting or signing in from this role. Code can't
+- [x] Nothing that changes a site: no submitting, buying, posting or signing in from this role (no click or
+      type tools are built; the browser only opens a page and reads it). Code can't
       judge every click, so the real guard is what a click can reach: the browser holds no logins, the
       helper holds only its task (never the user's files or notes), and every page and click shows in the
       steps
@@ -526,10 +537,11 @@ main ── research_web(task) ──► web helper (slot 1)
 **F. Reliability**
 - [x] Bounded retries on temporary errors only (rate limits, server errors)
 - [x] The same failed page or search is not repeated
-- [ ] Page cache in the index: hours for news and "latest", days for docs - a repeat costs nothing and
-      the knowledge role can recall pages read before. Web pages are their own kind: always shown with
-      address and date, ranked below the user's own files, and dropped after 30 days unless saved, so
-      old web text never crowds out the user's documents or passes as a current fact
+- [x] Pages read in the index: the text the web helper read, under the page's address (a later read
+      replaces it), found by search_files after the user's own files, always with address and date and a
+      note that it is that day's text, dropped after 30 days - so old web text never crowds out the
+      user's documents or passes as a current fact. Not built: a cache that outlives the app - the
+      reading cache stays in memory for an hour (after a restart a page is read again)
 - [x] Per-site pacing: a pause between pages of one site and a cap per task (Amazon checked us after 2-3
       quick visits)
 - [ ] Versions pinned (ddgs, trafilatura, Playwright MCP, the MCP SDK); an update every 1-3 months, kept
@@ -540,9 +552,9 @@ main ── research_web(task) ──► web helper (slot 1)
 - [ ] A loop: plan 1-3 searches → read the best 1-3 pages → gaps? search again (bounded) → answer; when
       sources disagree, say so
 - [ ] The browser only when reading fails or the task needs clicking, a form or a screenshot
-- [ ] ask_user when the task is unclear (which shop, which country, which version)
-- [ ] Step budget 6 → 12; page texts already used shrink to their key lines, so it fits 16k context (more
-      if decision 12 raises the slot)
+- [x] ask_user when the task is unclear (which shop, which country, which version) - asked in place
+- [x] Step budget 6 → 12; when the slot fills, the oldest tool results (page texts) are shortened - cut to
+      their start, not to their key lines; whether 12 steps fit the slot is the gate below, on the 26B
 - [ ] The shared result shape: answer, sources (address, title, date, how read), a table when the task
       compares things, download links, what failed and why, what to try next
 

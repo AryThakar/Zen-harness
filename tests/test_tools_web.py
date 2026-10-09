@@ -5,8 +5,10 @@ from __future__ import annotations
 import socket
 
 import httpx
+import numpy as np
 import pytest
 
+from app.rag.embed import EmbedderUnavailable
 from app.tools import web
 from app.tools.web import read_webpage, web_search
 
@@ -33,6 +35,37 @@ HITS = [{"title": "Python 3.14 released", "href": "https://www.python.org/downlo
         {"title": "What's new", "href": "https://docs.python.org/3/whatsnew/3.14.html", "body": "Summary  of\nchanges."},
         {"title": "Dup", "href": "https://www.python.org/downloads/release/python-3140/", "body": "again"},
         {"title": "Elsewhere", "href": "https://example.com/python", "body": "unrelated site"}]
+
+
+class Meaning:
+    """A stand-in embedding model: a result means the query when its snippet holds ``word``."""
+    name = "fake"
+
+    def __init__(self, word, down=False):
+        self.word, self.down = word, down
+
+    def embed_query(self, text):
+        return np.array([1.0, 0.0])
+
+    def embed_documents(self, texts, titles=None):
+        if self.down:
+            raise EmbedderUnavailable("down")
+        return np.array([[1.0, 0.0] if self.word in t else [0.0, 1.0] for t in texts])
+
+
+FIVE = [{"title": f"Result {i}", "href": f"https://e{i}.example.com/", "body": "about cats" if i == 3 else "about dogs"}
+        for i in range(5)]
+
+
+def test_results_are_fused_with_meaning():
+    order = [r["title"] for r in web_search("cats", engine=engine(FIVE), embedder=Meaning("cats")).result["results"]]
+    assert order == ["Result 0", "Result 3", "Result 1", "Result 2", "Result 4"]  # up from 4th; the engines' first stays
+
+
+def test_without_the_model_the_engines_order_stays():
+    for embedder in (None, Meaning("cats", down=True)):
+        order = [r["title"] for r in web_search("cats", engine=engine(FIVE), embedder=embedder).result["results"]]
+        assert order == [f"Result {i}" for i in range(5)]
 
 
 def test_results_are_cleaned_and_deduplicated():

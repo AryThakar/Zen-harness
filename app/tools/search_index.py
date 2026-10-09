@@ -1,6 +1,7 @@
 """One search engine for documents, notes, past conversations and pictures: SQLite FTS5 + embeddings.
 
-Every passage is stored once with its source ('document', 'report', 'note', 'chat', 'image', 'table'). A search
+Every passage is stored once with its source ('document', 'report', 'note', 'chat', 'image', 'table',
+'web' - a page the web helper read). A search
 runs two rankings over the sources asked for - keywords (FTS5's BM25, Porter-stemmed) and meaning
 (cosine similarity of the embedding model's vectors: EmbeddingGemma 2 on llama-server, or bge-small
 on the CPU - app/rag/embed.py) - and fuses them by rank (reciprocal rank fusion), so neither score
@@ -48,6 +49,7 @@ CANDIDATES = 50
 MIN_SIMILARITY = 0.55
 PICTURE = "image"
 TABLE = "table"
+WEB = "web"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS passages (
@@ -162,6 +164,13 @@ class SearchIndex:
         with self._db() as db:
             return {r[0]: (r[1], r[2], r[3]) for r in db.execute(
                 "SELECT ref, meta, model, title FROM passages WHERE source = ?", (source,))}
+
+    def expire(self, source: str, before: str) -> int:
+        """Remove a source's passages stored before this time (ISO); returns how many."""
+        with self._lock, self._db() as db:
+            n = db.execute("DELETE FROM passages WHERE source = ? AND created < ?", (source, before)).rowcount
+            self._version += 1
+        return n
 
     def count(self, sources: tuple[str, ...]) -> int:
         with self._db() as db:

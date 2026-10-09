@@ -83,8 +83,9 @@ RECENT = {"day": "d", "week": "w", "month": "m", "year": "y"}  # ddgs's timelimi
 
 @tool
 def web_search(query: str, site: str | None = None, k: int = 5, recent: str | None = None, *,
-               engine=None) -> ToolResult:
-    """Search the web; returns titles, links and snippets (read a page before quoting details)."""
+               engine=None, embedder=None) -> ToolResult:
+    """Search the web; returns titles, links and snippets (read a page before quoting details), in the
+    engines' order fused with meaning when the embedding model runs (_by_meaning)."""
     query = " ".join(str(query).split())
     if len(query) < 2:
         raise ToolError("query is empty.", field="query")
@@ -96,7 +97,7 @@ def web_search(query: str, site: str | None = None, k: int = 5, recent: str | No
     results, error = _search(engine or _ddgs, full_query, k * 2 if domain else k, RECENT.get(recent))
     if domain:
         results = [r for r in results if _host_in(r["url"], domain)]
-    results = results[:k]
+    results = _by_meaning(query, results[:k], embedder)
     if error and not results:
         raise ToolError(error, invalid=False)
     out = {"query": query, **({"site": domain} if domain else {}), **({"recent": recent} if recent else {}),
@@ -108,6 +109,29 @@ def web_search(query: str, site: str | None = None, k: int = 5, recent: str | No
     items = [{**r, "image": f"https://i.ytimg.com/vi/{v}/hqdefault.jpg", "video": v} if (v := youtube_id(r["url"])) else r
              for r in results]  # video results show their thumbnail in the UI
     return ok(out, {"type": "links", "query": query, "items": items})
+
+
+RRF_K = 60  # as the search index fuses its rankings
+
+
+def _by_meaning(query: str, results: list[dict], embedder) -> list[dict]:
+    """The engines' order fused by rank with meaning (the query against each result's title and snippet),
+    so the results worth reading come first. Measured on the user's own searches (bench/web_rank.py, 47
+    searches whose answer cited a result): the first cited result in the top 3 for 91% against 87% in the
+    engines' order, and first for 47% against 45% - on data that favours the engines' order (the helper
+    mostly read their top results); meaning alone did worse (83%). Without the model: the engines' order."""
+    if embedder is None or len(results) < 2:
+        return results
+    from app.rag.embed import EmbedderUnavailable
+    try:
+        q = embedder.embed_query(query)
+        docs = embedder.embed_documents([r["snippet"] or r["title"] for r in results], [r["title"] for r in results])
+    except EmbedderUnavailable:
+        return results
+    by_meaning = sorted(range(len(results)), key=lambda i: -float(docs[i] @ q))
+    place = {i: n for n, i in enumerate(by_meaning)}
+    score = [1 / (RRF_K + i + 1) + 1 / (RRF_K + place[i] + 1) for i in range(len(results))]
+    return [results[i] for i in sorted(range(len(results)), key=lambda i: (-score[i], i))]
 
 
 def _search(engine, query: str, k: int, timelimit: str | None = None) -> tuple[list[dict], str | None]:
@@ -831,7 +855,10 @@ def _youtube_page(body: bytes) -> dict:
 def _focus(text: str, find: str) -> tuple[str, str]:
     """The start of a long page plus the lines about the words in ``find`` (with a line of context
     each side), in page order, within the size limit. Lines with more of the words come first, so
-    'default port' finds the port line on a page where hundreds of lines say 'default'."""
+    'default port' finds the port line on a page where hundreds of lines say 'default'.
+    By words only: focusing by meaning too was measured on 10 long pages with questions worded unlike the
+    page (bench/web_focus.py, 2026-10-09) - no fact found that words missed (5 of 5 both ways), at 3-11 s
+    more a read - so it was not kept."""
     words = [w for w in re.findall(r"\w+", find.lower()) if len(w) > 2] or find.lower().split()
     patterns = [re.compile(r"(?<!\w)" + re.escape(w)) for w in words]  # word starts: 'port' not in 'support'
     lines = text.splitlines()

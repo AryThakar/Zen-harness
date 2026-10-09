@@ -72,7 +72,8 @@ class Trace:
         if name == "web_search":
             self.found_urls.update(r["url"] for r in res.get("results", []))
             self.last_query = args.get("query") or self.last_query
-        notes = res.get("notes", []) if name == "search_files" else []  # forecast's "notes" are plain lines
+        # search_files' notes and pages read before are sources too (forecast's "notes" are plain lines)
+        notes = res.get("notes", []) + res.get("web_pages", []) if name == "search_files" else []
         for p in res.get("passages", []) + notes + res.get("turns", []):
             source = p.get("source") or f"conversation {p.get('conversation')}"
             self.sources.add(source)
