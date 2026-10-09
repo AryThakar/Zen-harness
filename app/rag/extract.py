@@ -1,8 +1,9 @@
-"""Text out of uploaded documents: PDF, Word (.docx), plain text and Markdown.
+"""Text out of documents: PDF, Word (.docx), PowerPoint (.pptx), plain text and Markdown - the one
+reader for uploads, read_file and web links to documents.
 
 Each document becomes a list of blocks - a paragraph (or table row) with the PDF
-page it is on and the heading it sits under - so search results can say where
-a passage came from.
+page or slide it is on and the heading it sits under - so search results can say
+where a passage came from. lines() writes a document out as text for reading.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePath
 
-KINDS = {".pdf": "pdf", ".docx": "docx", ".txt": "txt", ".md": "md", ".markdown": "md"}
+KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".txt": "txt", ".md": "md", ".markdown": "md"}
 MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -42,7 +43,8 @@ class Extracted:
 def kind_of(filename: str) -> str:
     suffix = PurePath(filename).suffix.lower()
     if suffix not in KINDS:
-        raise DocumentError(f"'{suffix or filename}' files aren't supported; use PDF, Word (.docx), .txt or .md.")
+        raise DocumentError(f"'{suffix or filename}' files aren't supported; use PDF, Word (.docx), PowerPoint "
+                            "(.pptx), .txt or .md.")
     return KINDS[suffix]
 
 
@@ -57,6 +59,8 @@ def extract(filename: str, data: bytes) -> Extracted:
         result = _pdf(data, stem)
     elif kind == "docx":
         result = _docx(data, stem)
+    elif kind == "pptx":
+        result = _pptx(data, stem)
     else:
         result = _text(_decode(data), stem, markdown=kind == "md")
     result.blocks = [b for b in result.blocks if b.text]
@@ -125,6 +129,65 @@ def _docx(data: bytes, stem: str) -> Extracted:
                     blocks.append(Block(" | ".join(cells), section=section))
     title = _clean(document.core_properties.title or "") or stem
     return Extracted("docx", title, blocks or headings)
+
+
+def _pptx(data: bytes, stem: str) -> Extracted:
+    """Each slide's text - its title as the passages' section, then its text boxes and table rows in order;
+    a slide's number is its page."""
+    import zipfile
+
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    try:
+        deck = Presentation(io.BytesIO(data))
+    except (zipfile.BadZipFile, ValueError, KeyError) as exc:
+        raise DocumentError("The PowerPoint file couldn't be read; save it as .pptx and try again.") from exc
+
+    def shapes(group):
+        for shape in group:
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                yield from shapes(shape.shapes)
+            else:
+                yield shape
+
+    blocks: list[Block] = []
+    for n, slide in enumerate(deck.slides, start=1):
+        title_shape = slide.shapes.title
+        section = (_clean(title_shape.text_frame.text) if title_shape is not None else "") or f"Slide {n}"
+        for shape in shapes(slide.shapes):
+            if title_shape is not None and shape.shape_id == title_shape.shape_id:
+                continue
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    text = _clean("".join(run.text for run in para.runs))
+                    if text:
+                        blocks.append(Block(text, page=n, section=section))
+            elif getattr(shape, "has_table", False) and shape.has_table:
+                for row in shape.table.rows:
+                    cells = [_clean(cell.text) for cell in row.cells if _clean(cell.text)]
+                    if cells:
+                        blocks.append(Block(" | ".join(cells), page=n, section=section))
+        if not any(b.page == n for b in blocks) and section != f"Slide {n}":
+            blocks.append(Block(section, page=n, section=section))  # a slide with only its title
+    title = _clean(deck.core_properties.title or "") or stem
+    return Extracted("pptx", title, blocks, pages=len(deck.slides))
+
+
+def lines(doc: Extracted) -> list[str]:
+    """A document written out for reading: a [page N] (or [slide N]) line where the page changes, a heading
+    line where the section changes, then each block's text."""
+    out, page, section = [], None, None
+    marker = "slide" if doc.kind == "pptx" else "page"
+    for b in doc.blocks:
+        if b.page is not None and b.page != page:
+            page = b.page
+            out.append(f"[{marker} {page}]")
+        if b.section and b.section != section and b.text != b.section:
+            section = b.section
+            out.append(f"## {section}")
+        out.append(b.text)
+    return out
 
 
 def _text(text: str, stem: str, markdown: bool) -> Extracted:

@@ -249,6 +249,7 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
     elif truncated:
         text = text[:MAX_TEXT].rsplit(" ", 1)[0] + " ..."
     files = meta.pop("files", None)
+    note = meta.pop("note", None)
     status = "partial" if meta.pop("partial", False) else "cut" if truncated else "ok"
     result = {"url": final, "read": status, "title": title, "site": meta["site"],
               **{k: meta[k] for k in ("published", "updated", "author", "via") if meta.get(k)},
@@ -257,6 +258,8 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
     if files:  # main can download these with the user's approval; the web helper never does
         result["files"] = files
         result["files_note"] = "Files this page links to: if the task wants one, give its link in downloads."
+    if note:
+        result["note"] = note
     if shown:
         result["shown"] = shown
     elif truncated:
@@ -410,8 +413,17 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
     """(title, text, card, final url) of a page fetched as is."""
     body, ctype, charset, final = _fetch(http, url, resolve)
     meta = {"site": _site(final), "favicon": urljoin(final, "/favicon.ico")}
-    if ctype == "application/pdf" or body[:5] == b"%PDF-":
-        title, text = _pdf_text(body)
+    kind = _link_kind(final, ctype, body)
+    if kind in DOCUMENT_KINDS:
+        title, text = _document_text(final, kind, body)
+    elif kind in TABLE_SUFFIXES:
+        title, text = _table_preview(final, kind, body, charset)
+        meta["note"] = (f"This link is a data file ({kind.lstrip('.').upper()}), not a page: shown are its first rows. "
+                        "To work with it, give its link in downloads - main brings it in as a table (import_table), "
+                        "with the user's approval.")
+    elif ctype.startswith("image/"):
+        raise ToolError(f"This link is an image ({ctype}), not a page: it has no text to read.", invalid=False,
+                        reason="unsupported")
     elif "html" in ctype or _looks_html(body):
         title, text, page_meta = _html_text(body, charset, final)
         meta.update(page_meta, _html=True)
@@ -1134,12 +1146,54 @@ def _fetch_image(url, max_bytes, http, resolve, allow_svg: bool) -> tuple[bytes,
     return (body, RASTER[fmt]) if fmt in RASTER else None
 
 
-def _pdf_text(body: bytes) -> tuple[str | None, str]:
-    from pypdf import PdfReader
+DOCUMENT_TYPES = {"application/pdf": ".pdf",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+                  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx"}
+DOCUMENT_KINDS = set(DOCUMENT_TYPES.values())
+PREVIEW_ROWS = 20
+
+
+def _link_kind(url: str, ctype: str, body: bytes) -> str | None:
+    """What a link holds, by its content type, else its name (servers often say only octet-stream), else
+    its first bytes: '.pdf', '.docx', '.pptx', '.csv', '.tsv', '.xlsx', '.xls' - or None (a page, text, an
+    image ...)."""
+    if body[:5] == b"%PDF-":
+        return ".pdf"
+    kind = DOCUMENT_TYPES.get(ctype) or TABLE_TYPES.get(ctype)
+    if kind:
+        return kind
+    suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
+    if suffix in DOCUMENT_KINDS | {".xlsx", ".xls"} and ctype in ("", "application/octet-stream", "binary/octet-stream",
+                                                                 "application/zip", "application/x-zip-compressed"):
+        return suffix
+    if suffix in (".csv", ".tsv") and not ("html" in ctype or _looks_html(body)):
+        return suffix
+    return None
+
+
+def _document_text(url: str, kind: str, body: bytes) -> tuple[str | None, str]:
+    """A PDF, Word or PowerPoint file read by the one document reader (the knowledge helper's and read_file's)."""
+    from app.rag.extract import DocumentError, extract, lines
+    name = PurePosixPath(urlsplit(url).path).name or "document"
     try:
-        reader = PdfReader(io.BytesIO(body))
-        pages = [p.extract_text() or "" for p in reader.pages[:30]]
-    except Exception as exc:  # noqa: BLE001 - pypdf raises many types for broken files
-        raise ToolError("The PDF could not be read.", invalid=False) from exc
-    title = (reader.metadata or {}).get("/Title") if reader.metadata else None
-    return (str(title) if title else None), "\n\n".join(f"[page {i + 1}]\n{t.strip()}" for i, t in enumerate(pages) if t.strip())
+        doc = extract(name if name.lower().endswith(kind) else f"{name}{kind}", body)
+    except DocumentError as exc:
+        raise ToolError(f"The document could not be read: {exc}", invalid=False, reason="unsupported") from exc
+    return doc.title, "\n".join(lines(doc))
+
+
+def _table_preview(url: str, kind: str, body: bytes, charset: str | None) -> tuple[str | None, str]:
+    """A data file's first rows and its columns - what it holds, so the helper can say whether it is the one."""
+    import pandas as pd
+    name = PurePosixPath(urlsplit(url).path).name or f"data{kind}"
+    try:
+        if kind in (".xlsx", ".xls"):
+            df = pd.read_excel(io.BytesIO(body), nrows=PREVIEW_ROWS)
+        else:
+            df = pd.read_csv(io.BytesIO(body), sep="\t" if kind == ".tsv" else None, engine="python", nrows=PREVIEW_ROWS,
+                             encoding=charset or "utf-8", encoding_errors="replace", on_bad_lines="skip")
+    except Exception as exc:  # noqa: BLE001 - pandas raises many kinds for a file that isn't what it says
+        raise ToolError(f"This link is a data file ({kind.lstrip('.').upper()}) that could not be read as a table.",
+                        invalid=False, reason="unsupported") from exc
+    columns = ", ".join(map(str, df.columns))
+    return name, f"Columns ({len(df.columns)}): {columns}\n\nFirst {len(df)} rows:\n{df.to_csv(index=False)}"

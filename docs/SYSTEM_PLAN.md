@@ -474,9 +474,12 @@ main ── research_web(task) ──► web helper (slot 1)
 **A. One reading pipeline (read_webpage)**
 - [x] Only public addresses; every redirect checked again (the computer's own services stay out of reach)
 - [x] Size limits (3 MB download, 12,000 characters of text)
-- [ ] Route by what the link is: a web page → the steps above; PDF / Word / PowerPoint → one document
-      converter (the same one the knowledge role uses); CSV / Excel → "a data file: download it as a table";
-      an image → "an image: download or look at it"
+- [x] Route by what the link is (by its content type, else its name, else its first bytes): a web page
+      → the steps above; PDF / Word / PowerPoint → the one document reader (app/rag/extract.py - also the
+      knowledge role's and read_file's; PowerPoint added to it, so uploaded slides are searchable too);
+      CSV / TSV / Excel → its columns and first 20 rows, with "a data file: give its link in downloads -
+      main brings it in as a table (import_table)"; an image → "an image, not a page: no text to read"
+      (no download is offered: download_file takes GitHub files only)
 - [x] Fast path: a plain fetch, then main-text extraction to Markdown - tables kept as rows, menus,
       footers and pop-ups out, link addresses out of the text but files kept as a list. **Today's
       extractor, not trafilatura** (gate run 2026-10-09, bench/web_extract.py, 35 pages the web helper

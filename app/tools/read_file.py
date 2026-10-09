@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.rag.extract import DocumentError, extract, kind_of
+from app.rag.extract import lines as document_lines
 
 from .core import ToolError, ToolResult, ok, tool
 from .workspace import Workspace
@@ -96,23 +97,17 @@ def _not_text(ws: Workspace, item: str, e: dict, tool: str = "files") -> dict:
 
 
 def units(name: str, data: bytes, numbered: bool) -> list[str]:
-    """The lines of a file: pages and paragraphs of documents (with [page N] lines), lines of other text."""
+    """The lines of a file: pages and paragraphs of documents (with [page N] lines and their headings),
+    lines of other text."""
     try:
         doc_kind = kind_of(name)
     except DocumentError:
         doc_kind = None
-    if doc_kind in ("pdf", "docx"):
+    if doc_kind in ("pdf", "docx", "pptx"):
         try:
-            doc = extract(name, data)
+            return document_lines(extract(name, data))
         except DocumentError as exc:
             raise ToolError(str(exc), invalid=False) from exc
-        out, page = [], None
-        for b in doc.blocks:
-            if b.page != page and b.page is not None:
-                page = b.page
-                out.append(f"[page {page}]")
-            out.append(b.text)
-        return out
     text = data.decode("utf-8", "replace") if not data.startswith(b"\xff\xfe") else data.decode("utf-16")
     if b"\x00" in data[:4000] and not data.startswith(b"\xff\xfe"):
         raise ToolError("This file is binary, not text.", invalid=False)

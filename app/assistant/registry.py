@@ -363,8 +363,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent,
                                              embedder=getattr(c.index, "embedder", None)),
        labels=("Searching the web", "Searched the web")),
-    Tool("read_webpage", "Read the text of one web page (HTML, text or PDF). A YouTube link gives the video's title, "
-       "channel, length, date and description (not what is said in it).", ReadPageIn,
+    Tool("read_webpage", "Read the text of one web page (HTML, text, or a PDF, Word or PowerPoint file; a data file "
+       "shows its columns and first rows). A YouTube link gives the video's title, channel, length, date and "
+       "description (not what is said in it).", ReadPageIn,
        lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
     Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or "

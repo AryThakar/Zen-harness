@@ -284,7 +284,7 @@ def list_items(ws_id: str, request: Request) -> list[dict]:
 
 @router.post("/workspaces/{ws_id}/files", status_code=status.HTTP_201_CREATED)
 def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
-    """A table (CSV, Excel) for the data analyst, a document (PDF, Word, text, Markdown) indexed for
+    """A table (CSV, Excel) for the data analyst, a document (PDF, Word, PowerPoint, text, Markdown) indexed for
     search, or any other file for the coder to read."""
     _workspace(request, ws_id)
     name = Path(file.filename or "upload").name.strip() or "upload"

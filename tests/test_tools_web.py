@@ -104,7 +104,7 @@ def test_site_restricts_results():
 
 # ---------------------------------------------------------------- read_webpage
 
-PUBLIC = {"news.example.com": "93.184.216.34", "anime.example.com": "93.184.216.40", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
+PUBLIC = {"news.example.com": "93.184.216.34", "anime.example.com": "93.184.216.40", "data.example.com": "93.184.216.41", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
           "sneaky.example.com": "10.0.0.5", "rebind.example.com": "127.0.0.1", "app.example.com": "93.184.216.37",
           "shop.example.com": "93.184.216.38"}
 
@@ -194,7 +194,8 @@ def test_large_binary_missing_and_empty_pages_fail_clearly():
                  "https://docs.example.com/app": httpx.Response(200, content=b"<html><body><div id=app></div><script>x</script></body></html>",
                                                                 headers={"content-type": "text/html"})})
     assert "larger than 3 MB" in read_webpage("https://docs.example.com/big", http=http, resolve=resolve).result["error"]["message"]
-    assert "not text" in read_webpage("https://docs.example.com/img", http=http, resolve=resolve).result["error"]["message"]
+    message = read_webpage("https://docs.example.com/img", http=http, resolve=resolve).result["error"]["message"]
+    assert "an image" in message and "no text" in message
     assert "JavaScript" in read_webpage("https://docs.example.com/app", http=http, resolve=resolve).result["error"]["message"]
     r = read_webpage("https://docs.example.com/missing", http=http, resolve=resolve)
     assert r.status == "failed" and "404" in r.result["error"]["message"]
@@ -573,3 +574,61 @@ def test_a_cookie_notice_is_not_page_text():
             b"<p>The real content is here.</p></main></body></html>")
     text = web._html_text(page, "utf-8", "https://news.example.com/x")[1]
     assert "uses cookies" not in text and "Grandma bakes cookies" in text and "real content" in text
+
+
+# ---------------------------------------------------------------- links that aren't pages
+
+
+def _office(kind: str) -> bytes:
+    import io as _io
+    out = _io.BytesIO()
+    if kind == "docx":
+        from docx import Document
+        doc = Document()
+        doc.add_heading("Refund policy", 1)
+        doc.add_paragraph("Opened phones can be returned within 14 days.")
+        doc.save(out)
+    else:
+        from pptx import Presentation
+        deck = Presentation()
+        slide = deck.slides.add_slide(deck.slide_layouts[1])
+        slide.shapes.title.text = "Q4 results"
+        slide.placeholders[1].text = "Revenue grew 12% in the North"
+        deck.save(out)
+    return out.getvalue()
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+
+def test_word_and_powerpoint_links_are_read_like_documents():
+    http = site({"https://docs.example.com/policy": httpx.Response(200, content=_office("docx"), headers={"content-type": DOCX}),
+                 "https://docs.example.com/deck.pptx": httpx.Response(200, content=_office("pptx"),
+                                                                       headers={"content-type": "application/octet-stream"})})
+    word = read_webpage("https://docs.example.com/policy", http=http, resolve=resolve).result
+    assert word["read"] == "ok" and "## Refund policy" in word["text"] and "within 14 days" in word["text"]
+    slides = read_webpage("https://docs.example.com/deck.pptx", http=http, resolve=resolve).result
+    assert "[slide 1]" in slides["text"] and "## Q4 results" in slides["text"] and "grew 12%" in slides["text"]
+
+
+def test_a_data_file_link_shows_its_first_rows_and_how_to_bring_it_in():
+    rows = "region,sales\n" + "".join(f"R{i},{i}\n" for i in range(100))
+    http = site({"https://data.example.com/sales.csv": httpx.Response(200, content=rows.encode(),
+                                                                       headers={"content-type": "text/csv"})})
+    r = read_webpage("https://data.example.com/sales.csv", http=http, resolve=resolve).result
+    assert r["read"] == "ok" and "Columns (2): region, sales" in r["text"] and "R19,19" in r["text"]
+    assert "R20,20" not in r["text"]  # the first rows only
+    assert "data file" in r["note"] and "downloads" in r["note"] and "import_table" in r["note"]
+
+
+def test_an_excel_link_shows_its_first_rows():
+    import io as _io
+
+    import pandas as pd
+    out = _io.BytesIO()
+    pd.DataFrame({"city": ["Pune", "Delhi"], "temp": [31, 35]}).to_excel(out, index=False)
+    http = site({"https://data.example.com/t.xlsx": httpx.Response(200, content=out.getvalue(), headers={
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})})
+    r = read_webpage("https://data.example.com/t.xlsx", http=http, resolve=resolve).result
+    assert "city, temp" in r["text"] and "Pune,31" in r["text"] and "XLSX" in r["note"]

@@ -2,7 +2,7 @@
 
 Documents enter through add_document (from store_file: an upload, or a file downloaded from GitHub
 with the user's approval - never by the model directly): the text is
-extracted (PDF, Word, .txt, .md - claude-cloud's tested extractor), split into ~250-word passages
+extracted (PDF, Word, PowerPoint, .txt, .md - claude-cloud's tested extractor), split into ~250-word passages
 that never cross a page or heading, and indexed. Notes are indexed when they are saved (notes.py). Scanned PDFs
 (images of pages) have no text and are refused with that reason. Pictures are found too - by their name and
 prompt, and by what they show when the embedding model takes pictures; tables by their name, columns
@@ -152,7 +152,7 @@ def _picture_bytes(path: Path) -> bytes:
 
 def store_file(ws: Workspace, index: SearchIndex, path: str | Path) -> dict:
     """An uploaded or downloaded file, kept by what it is: a table (CSV, Excel) for the data analyst,
-    a document (PDF, Word, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything
+    a document (PDF, Word, PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything
     else as a file for the coder.
     Raises ToolError if a table or document can't be read."""
     path = Path(path)
