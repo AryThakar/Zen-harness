@@ -1,0 +1,281 @@
+[
+ {
+  "id": "pricing_changes",
+  "split": "holdout",
+  "why": "two documents -> differences -> a Markdown file and a Word file",
+  "ok": true,
+  "problem": null,
+  "seconds": 27.0,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(invalid_arguments)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "I've compared the two files. Here is what changed:\n\n*   **Basic:** Increased from 9 to 12 euros.\n*   **Pro:** Increased from 29 to 35 euros.\n*   **Team plan:** A new plan for 99 euros replaces the Enterprise plan (199 euros).\n\nI've saved the details to `changes.md` and created `prices.docx` with the new rates for you."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-pricing_changes-kp9mw26z"
+ },
+ {
+  "id": "fiscal_memory",
+  "split": "holdout",
+  "why": "a note -> a new chat -> reasoning from it",
+  "ok": true,
+  "problem": null,
+  "seconds": 10.9,
+  "truth": {},
+  "tools": [
+   "main:notes(ok)",
+   "main:notes(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "I've noted that. From now on, I'll remember that your fiscal year starts on 1 July and you report in EUR.",
+   "Your fiscal Q3 starts in **January**.\n\nSince your fiscal year begins on 1 July, the quarters fall as follows:\n*   **Q1:** July – September\n*   **Q2:** October – December\n*   **Q3:** January – March\n*   **Q4:** April – June"
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-fiscal_memory-3zns16gp"
+ },
+ {
+  "id": "fibonacci_chart",
+  "split": "holdout",
+  "why": "coder -> a table -> the analyst's chart",
+  "ok": true,
+  "problem": null,
+  "seconds": 62.7,
+  "truth": {},
+  "tools": [
+   "main:write_code(ok)",
+   "coder:run_code(ok)",
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:make_chart(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "The 20th Fibonacci number is 4,181. \n\nI've created `fib.csv` with the sequence and generated a chart for you below.\n\n![sum-of-value-by-index.png](image_1)"
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-fibonacci_chart-v9pjsmqy"
+ },
+ {
+  "id": "mumbai_trip_note",
+  "split": "holdout",
+  "why": "forecast -> answer -> note",
+  "ok": true,
+  "problem": null,
+  "seconds": 17.0,
+  "truth": {},
+  "tools": [
+   "main:get_weather(ok)",
+   "main:notes(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "It looks like there's a slight chance of drizzle on the 10th and 11th, but nothing significant. Oct 12 should be clear.\n\nI've saved this under \"mumbai trip\" for you, Arya."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-mumbai_trip_note-kvb9kqrl"
+ },
+ {
+  "id": "ab_report",
+  "split": "holdout",
+  "why": "A/B test -> chart -> Word file",
+  "ok": true,
+  "problem": null,
+  "seconds": 47.6,
+  "truth": {
+   "rate_a": 9.9,
+   "rate_b": 13.0
+  },
+  "tools": [
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:compare(ok)",
+   "data:query_data(ok)",
+   "data:make_chart(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Yes, Arya, variant B is significantly better. It has a conversion rate of 12.98%, which is a 31.4% relative increase over variant A's 9.88%. The difference is statistically significant (p < 0.0001).\n\nI've saved the full results and the conversion rate chart into `ab_result.docx`."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-ab_report-lin1x69x"
+ },
+ {
+  "id": "spike_explained",
+  "split": "holdout",
+  "why": "anomaly in a table -> its cause in a document",
+  "ok": true,
+  "problem": null,
+  "seconds": 44.8,
+  "truth": {
+   "spike_day": "2025-10-08",
+   "spike_words": [
+    "2025-10-08",
+    "8 October",
+    "October 8"
+   ]
+  },
+  "tools": [
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:clean_data(ok)",
+   "data:find_patterns(ok)",
+   "main:ask_knowledge(ok)",
+   "knowledge:search_files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "The unusual spike in sales occurred on **2025-10-08**, when sales jumped to 1,900.\n\nAccording to your `marketing_log.md`, this was due to an autumn sale email being sent to all 40,000 customers on that day."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-spike_explained-elm7dayc"
+ },
+ {
+  "id": "budget_left",
+  "split": "holdout",
+  "why": "an earlier chat recalled -> exact sum",
+  "ok": false,
+  "problem": "reply lacks left=7649.25",
+  "seconds": 16.3,
+  "truth": {
+   "left": 7649.25
+  },
+  "tools": [
+   "main:ask_knowledge(ok)",
+   "knowledge:recall(ok)",
+   "main:calculate(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "You have 1,649.25 euros left for March, Arya.\n\nBased on our previous agreement, the March allocation was 6,000 euros. Since March spending was 4,350.75 euros, the remaining balance is 1,649.25 euros."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-budget_left-ojwdif60"
+ },
+ {
+  "id": "titanic_link",
+  "split": "holdout",
+  "why": "a data link -> import with permission -> computed, not remembered",
+  "ok": true,
+  "problem": null,
+  "seconds": 42.3,
+  "truth": {},
+  "tools": [
+   "main:files(None)",
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:query_data(ok)",
+   "data:query_data(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Download titanic.csv (58.9 KB) from GitHub into this workspace?",
+    "options": [
+     "Download",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "download_file",
+     "url": "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv",
+     "name": "titanic.csv",
+     "type": "text/plain",
+     "bytes": 60302,
+     "host": "raw.githubusercontent.com",
+     "github": true
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "There were 891 passengers in total, and 342 survived, which is a survival share of 38.38%."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-titanic_link-cje1q17w"
+ },
+ {
+  "id": "keep_then_rename",
+  "split": "holdout",
+  "why": "a delete refused -> a rename instead",
+  "ok": true,
+  "problem": null,
+  "seconds": 9.8,
+  "truth": {},
+  "tools": [
+   "main:files(None)",
+   "main:files(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Delete file_1 (draft.txt) from this workspace? This can't be undone.",
+    "options": [
+     "Delete",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "delete_files",
+     "items": [
+      "file_1"
+     ],
+     "named": [
+      "file_1 (draft.txt)"
+     ]
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "The deletion of `draft.txt` was cancelled.",
+   "Done. I've renamed `draft.txt` to `draft_v2.txt`."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-keep_then_rename-w0cu0ggb"
+ },
+ {
+  "id": "fix_script",
+  "split": "holdout",
+  "why": "a broken file -> fixed in place -> its output",
+  "ok": true,
+  "problem": null,
+  "seconds": 27.7,
+  "truth": {
+   "mean": 15.1
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:write_code(None)",
+   "coder:read_file(ok)",
+   "coder:fix_code(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Update your file stats.py (file_1)? Its current text can't be brought back.",
+    "options": [
+     "Update",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "replace_file",
+     "item": "file_1",
+     "name": "stats.py",
+     "content": "readings = [14.5, 9.25, 22.0, 18.75, 11.0]\n\n\ndef mean(values):\n    return sum(values) / len(values)\n\n\nprint('mean reading:', mean(readings))\n",
+     "report": "# Calculates and prints the mean of a list of readings\n\n## How it works\n`mean(values)` calculates the average of a list of numbers. `print` outputs the result for the predefined `readings` list.\n\n## Inputs and outputs\nReads nothing (uses hardcoded list). Prints the mean of `readings`.\n\n## How to run or change it\npython stats.py\n\n## Limits and next steps\nOnly calculates the mean of a hardcoded list.\n\n## Facts (written by the app)\n- File: stats.py (file_1), saved 2026-10-10 00:19\n- Last run: passed in 0.27 s\n- It printed: mean reading: 15.1\n",
+     "outputs": []
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "The error was a typo where `len(value)` was used instead of `len(values)`. I've fixed it, and the script now prints:\n\n`mean reading: 15.1`"
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-fix_script-4m852tmm"
+ }
+]
