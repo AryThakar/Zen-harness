@@ -107,7 +107,7 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
     # the system prompt is the role's fixed instructions (cached across tasks); what changes is in the task
     assert first["system"] == PROFILES["web"].instructions
     opening = first["messages"][0]["content"]
-    assert opening.startswith("Now: ") and "Workspace:" in opening and "The user's message: any rate news?" in opening
+    assert opening.startswith("Now: ") and "Workspace:" in opening and "do only your task): any rate news?" in opening
 
 
 def test_the_result_says_how_pages_were_read_and_which_failed(ctx, monkeypatch):

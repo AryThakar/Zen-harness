@@ -17,7 +17,8 @@ Two halves, written together before any was run (2026-10-09): 'dev' is for findi
 it was tuned to the test.
 
     python -m bench.combos dev|holdout|all [--only id,id] [--keep]   (llama-server on BIZ_LLAMACPP_URL, 2 slots)
-        -> bench/combos_<split>.md and .json; --keep leaves each job's store (its path is in the report)
+        -> bench/combos_<split>.md and .json (with --only: combos_<split>_only); --keep leaves each job's store
+           (its path is in the report)
 
 The web jobs read live pages, so a site that changes can fail one; such a failure is reported with what
 the site gave.
@@ -659,7 +660,7 @@ def main() -> None:
         if not args.keep:
             shutil.rmtree(folder, ignore_errors=True)
         print(f"{'PASS' if row['ok'] else 'FAIL'} {combo.id:<20} {seconds:>6}s  {problem or ''}", flush=True)
-    name = f"combos_{args.split}"
+    name = f"combos_{args.split}" + ("_only" if args.only else "")  # a partial run never replaces the whole run's
     (HERE / f"{name}.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     (HERE / f"{name}.md").write_text(report(rows, args.split), encoding="utf-8")
     passed = sum(r["ok"] for r in rows)

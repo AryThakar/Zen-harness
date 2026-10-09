@@ -1,0 +1,64 @@
+[
+ {
+  "id": "invoice_rupees",
+  "split": "dev",
+  "why": "live web rate + a table's total -> exact conversion",
+  "ok": false,
+  "problem": "reply lacks total_usd=11204.31",
+  "seconds": 153.9,
+  "truth": {
+   "total_usd": 11204.31
+  },
+  "tools": [
+   "main:research_web(ok)",
+   "web:web_search(ok)",
+   "web:read_webpage(ok)",
+   "main:analyze_data(ok)",
+   "data:inspect_data(ok)",
+   "data:query_data(ok)",
+   "main:calculate(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "The USD to INR exchange rate for today is 96.66.\n\nThe total of `invoices.csv` is 1,083,008.60 INR."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-invoice_rupees-4_qxkf0u"
+ },
+ {
+  "id": "cancel_download",
+  "split": "dev",
+  "why": "a permission refused -> nothing done, said plainly",
+  "ok": true,
+  "problem": null,
+  "seconds": 7.7,
+  "truth": {},
+  "tools": [
+   "main:files(None)"
+  ],
+  "cards": [
+   {
+    "question": "Download README.md (11.1 KB) from GitHub into this workspace?",
+    "options": [
+     "Download",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "download_file",
+     "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/README.md",
+     "name": "README.md",
+     "type": "text/plain",
+     "bytes": 11348,
+     "host": "raw.githubusercontent.com",
+     "github": true
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "I couldn't download it because the request was cancelled."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-cancel_download-czlxop3u"
+ }
+]

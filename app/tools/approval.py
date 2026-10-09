@@ -64,9 +64,12 @@ def carry_out(ws: Workspace, index: SearchIndex | None, approval: dict, options:
     said = " ".join((answer or "").split())
     allowed = said.lower() == options[0].lower() or said.lower().rstrip(".!") in YES
     if not allowed:
-        told = f" They said: {said}." if said and said != CANCEL else ""
-        return {"status": "ok", "allowed": False, "note": "The user did not allow this, so nothing was done." + told
-                + " Don't try to do it another way."}, None
+        # Said as what already happened: "did not allow" alone was read as "not allowed yet" - the model never
+        # sees the card, and asked the user to click a button they had just declined (measured on the 26B).
+        chose = f"answered '{said}'" if said and said != CANCEL else f"chose {CANCEL}"
+        return {"status": "ok", "allowed": False, "cancelled": True,
+                "note": f"The user was shown the {options[0]} button and {chose}: it is cancelled, and nothing was "
+                        "done. Tell them it was cancelled - don't ask again or try another way."}, None
     try:
         if approval["action"] == "import_table":
             done = web.fetch_table(ws, approval, http=http, resolve=resolve)

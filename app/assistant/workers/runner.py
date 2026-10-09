@@ -21,7 +21,7 @@ from app.tools.vision import prepare
 from app.tools.workspace import ITEM_REF
 
 from ..context import IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_tool_results
-from ..prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT
+from ..prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT, USER_MESSAGE
 from ..registry import ToolContext, execute, typed_optionals
 from .checks import _numbers_problem
 from .contracts import BRIEF, MAX_ASKS, SUBMIT, DataReport, Profile, SaveResult
@@ -83,7 +83,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     table = table if table and table in ctx.ws.ids("table") else None
     given = _load(ctx, file) if file else _table_report(ctx, table) if table else ""
     opening = (f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given
-               + (f"The user's message: {user_message}\n\n" if user_message else "") + f"Your task: {task}")
+               + (USER_MESSAGE.format(said=user_message) + "\n\n" if user_message else "") + f"Your task: {task}")
     messages: list[dict] = [{"role": "user", "content": opening}]
     named = _task_images(ctx, task) if sees else []
     if named:  # on the opening itself: one user turn, not two in a row

@@ -132,7 +132,9 @@ def test_nothing_happens_unless_the_user_allows_it(ws, index):
     ask = approval.import_request(f"{RAW}/sales.csv", http=site({f"{RAW}/sales.csv": CSV}), resolve=public).artifact
     for said in ("Cancel", None, "no, use the other file"):
         result, card = approval.carry_out(ws, index, ask["approval"], ask["options"], said)
-        assert result["allowed"] is False and card is None and ws.ids() == []
+        assert result["allowed"] is False and result["cancelled"] and card is None and ws.ids() == []
+        # what happened, in the past: "did not allow" alone was read as "not allowed yet - please click"
+        assert "shown the Import button" in result["note"] and "it is cancelled" in result["note"]
     assert "use the other file" in result["note"]  # what the user typed reaches the model
 
 

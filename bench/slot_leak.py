@@ -11,7 +11,7 @@ Measured 2026-10-09 on the 26B: 0 of 6 in each of the three ways (and 0 of 10 ea
 The app itself never sends two requests at once - one turn at a time (app/assistant/main.py, _busy), helpers
 inside it - so only two benchmark processes run side by side can, and the benchmarks are run one at a time.
 
-    python -m bench.slot_leak [rounds] [--no-think]        (llama-server at BIZ_LLAMACPP_URL)
+    python -m bench.slot_leak [rounds] [--no-think] [--stream]        (llama-server at BIZ_LLAMACPP_URL)
 """
 
 from __future__ import annotations
@@ -30,18 +30,31 @@ TALKS = {"PINEAPPLE-42": ("tropical fruit farming", ("pineapple", "mango", "bana
          "GLACIER-77": ("glaciers and polar ice", ("glacier", "iceberg", "polar", "arctic"))}
 
 
+STREAM = "--stream" in sys.argv  # as the app asks: streamed, chunk by chunk
+
+
 def ask(word: str, slot: int, think: bool) -> str:
     topic = TALKS[word][0]
     messages = [{"role": "system", "content": "You are a careful writer."},
                 {"role": "user", "content": f"Write 30 numbered lines about {topic}. Start every line with the code "
                                             f"word {word}, e.g. '{word} 1: ...'. One sentence per line."}]
     body = {"model": settings.llamacpp_model, "messages": messages, "max_tokens": 2500, "id_slot": slot,
-            "cache_prompt": True, "chat_template_kwargs": {"enable_thinking": think}}
+            "cache_prompt": True, "chat_template_kwargs": {"enable_thinking": think}, "stream": STREAM}
     request = urllib.request.Request(settings.llamacpp_url.rstrip("/") + "/v1/chat/completions",
                                      json.dumps(body).encode(), {"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=900) as response:
-        message = json.load(response)["choices"][0]["message"]
-    return (message.get("reasoning_content") or "") + "\n" + (message.get("content") or "")
+        if not STREAM:
+            message = json.load(response)["choices"][0]["message"]
+            return (message.get("reasoning_content") or "") + "\n" + (message.get("content") or "")
+        parts = []
+        for line in response:
+            line = line.decode("utf-8", "replace").strip()
+            if not line.startswith("data:") or line == "data: [DONE]":
+                continue
+            for choice in json.loads(line[5:]).get("choices", []):
+                delta = choice.get("delta") or {}
+                parts.append((delta.get("reasoning_content") or "") + (delta.get("content") or ""))
+        return "".join(parts)
 
 
 def leaked(word: str, answer: str) -> list[str]:

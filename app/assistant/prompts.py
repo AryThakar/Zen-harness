@@ -109,6 +109,12 @@ SHOWN = {"weather": "The user sees all of this in a weather card: answer in one 
 
 # ---------------------------------------------------------------- helpers
 
+# The user's own words in a helper's opening, before its task: context, not more work. Measured on the 26B: main
+# split "today's USD to INR rate, and convert invoices.csv's total" between the web helper and the analyst; the web
+# helper answered the rate, then said it couldn't see invoices.csv and asked for the total - the other helper's part.
+USER_MESSAGE = ("The user's message, for context (main may have given other parts of it to other helpers - do only "
+                "your task): {said}")
+
 # The end of the web and knowledge prompts: how they finish (the data analyst and the coder have their own).
 HELPER_FINISH = ("When you are done, call submit_result exactly once. If the tools can't answer the task, say so in "
                  "the answer - never fill gaps from memory - and add a suggestion of what else could be tried.")
