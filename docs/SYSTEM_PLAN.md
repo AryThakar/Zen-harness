@@ -144,7 +144,14 @@ Tier 2
 Thinking stays on for every step, main's and the helpers' (the user's decision, 2026-10-10): no on/off
 policy to measure. ("Try again, answer quickly" after a reply that thought until the limit stays.)
 
-Next, on the 26B: the parked findings (section 14).
+- One coherent system (2026-10-10, commit 816fdab): the data analyst and the coder merged into one helper,
+  the analyst-programmer (analyze_or_code: task, data, file; finish + save_code); judgment guards explain and
+  take confirm: true, safety guards never do; repeats return their earlier result; every field described.
+  528 tests pass. On the 26B, stopped by the user after 2 of the 10 dev jobs: both passed (expense_memo in
+  617 s against 221 s before - to look at in its trace).
+
+Next, on the 26B: the dev jobs on the merged design (all 10, read each trace), then the held-out half once;
+then the parked findings (section 14).
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
