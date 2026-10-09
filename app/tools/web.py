@@ -44,6 +44,7 @@ import ipaddress
 import json
 import re
 import socket
+import logging
 import tempfile
 import threading
 import time
@@ -57,6 +58,7 @@ import httpx
 from . import net
 from .core import ToolError, ToolResult, ok, tool
 
+log = logging.getLogger(__name__)
 TIERS = (("duckduckgo", "brave", "mojeek", "wikipedia"), ("google", "yahoo", "startpage"))
 SEARCH_DEADLINE = 15.0
 MAX_BYTES = 3 * 1024 * 1024
@@ -65,6 +67,11 @@ MAX_REDIRECTS = 5
 DROP = ("script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "iframe", "button",
         "template", "canvas", "select")
 BLOCKS = {"p", "li", "pre", "blockquote", "td", "th", "dt", "dd", "figcaption", "caption", "div", "section"}
+# A cookie notice, by what it says: a short block about cookies with a consent word (seen: Kaggle's, a plain div
+# with generated class names, opening every page read through the browser). A short line about baking cookies
+# that mentions a privacy setting would go too - a cost accepted for one rule that fits every site.
+COOKIE_NOTICE = re.compile(r"\bcookies?\b.{0,200}\b(?:accept|agree|consent|got it|learn more|privacy|preferences|"
+                           r"settings|reject|allow)\b", re.I | re.S)
 CHROME = re.compile(r"\b[\w-]*(?:nav|menu|sidebar|breadcrumb|related|footer|cookie|banner|share|social|advert|"
                     r"promo|newsletter|subscribe|skip-link|toc)[\w-]*\b")
 
@@ -184,7 +191,7 @@ def _host_in(url: str, domain: str) -> bool:
 
 @tool
 def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None = None,
-                 resolve=None) -> ToolResult:
+                 resolve=None, browser=None) -> ToolResult:
     """The readable text of one public web page (HTML, plain text or PDF). A page longer than 12,000
     characters is cut; with ``find`` the parts about those words are shown instead."""
     url = str(url).strip()
@@ -199,13 +206,15 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         cached = _cached(url)
         if cached is None:
             _pace(urlsplit(url).hostname or "")
+            from . import browser as real_browser
             with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False,
                               headers={"User-Agent": net.USER_AGENT,
                                        "Accept": "text/html,text/plain,application/pdf,*/*;q=0.5"}) as own:
-                cached = _keep(url, _page(own, url, resolve))
+                cached = _keep(url, _page(own, url, resolve, browser or (real_browser.page if real_browser.available()
+                                                                          else None)))
         title, text, meta, final = cached[0], cached[1], dict(cached[2]), cached[3]
     else:
-        title, text, meta, final = _page(http, url, resolve)
+        title, text, meta, final = _page(http, url, resolve, browser)
     if not text.strip():
         raise ToolError("No readable text was found on the page (it may need JavaScript to show its content).",
                         invalid=False, reason="unsupported")
@@ -279,11 +288,16 @@ def _bot_check(title: str | None, text: str, url: str) -> bool:
     return bool(BOT_CHECK.search(f"{title or ''}\n{text}") or re.search(r"captcha|/cdn-cgi/challenge", url, re.I))
 
 
-def _page(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict, str]:
+THIN = 20  # words: an HTML page with less is likely drawn by JavaScript (the same bar as a "partial" read)
+
+
+def _page(http: httpx.Client, url: str, resolve, browser=None) -> tuple[str | None, str, dict, str]:
     """(title, text, card, final url): GitHub and YouTube through their own routes, anything else as is. A
     wiki page (/wiki/...) that refuses the plain read - an HTTP 403 or a bot check - is read through the
     site's own MediaWiki API instead: one general rule, not a list of sites (measured: Fandom answers its
-    pages with Cloudflare's 'Just a moment' and a 403, and its api.php with the page)."""
+    pages with Cloudflare's 'Just a moment' and a 403, and its api.php with the page). Then the browser
+    (browser.py), when there is one, by one general test too: the plain read was refused, met a bot check,
+    or an HTML page gave less than THIN words."""
     special = _from_github(http, url, resolve) or _from_youtube(http, url, resolve)
     if special:
         return (*special, url)
@@ -292,12 +306,43 @@ def _page(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
         if _bot_check(title, text, final):
             raise ToolError("The site showed a bot check instead of its page (it only serves people in a browser); "
                             "read another source.", invalid=False, reason="blocked")
+        if meta.pop("_html", False) and browser is not None and (meta.get("partial") or len(text.split()) < THIN):
+            seen = _from_browser(browser, url, resolve)
+            if seen is not None and len(seen[1].split()) > len(text.split()):
+                return seen
         return title, text, meta, final
     except ToolError as exc:
-        wiki = _from_wiki(http, url, resolve) if exc.reason == "blocked" else None
-        if wiki is None:
+        if exc.reason != "blocked":
             raise
-        return (*wiki, url)
+        wiki = _from_wiki(http, url, resolve)
+        if wiki is not None:
+            return (*wiki, url)
+        seen = _from_browser(browser, url, resolve) if browser is not None else None
+        if seen is None:
+            raise
+        return seen
+
+
+def _from_browser(browser, url: str, resolve) -> tuple[str | None, str, dict, str] | None:
+    """The page as the browser shows it, through the same extraction as a plain read; None when the browser
+    can't run (the plain read's outcome stands). A bot check in the browser too is a blocked page."""
+    from .browser import McpError
+    try:
+        final, shown_title, html = browser(url, lambda address: _check_public(address, resolve))
+    except McpError as exc:
+        log.warning("the browser could not read %s: %s", url, exc)
+        return None
+    body = html.encode("utf-8")
+    title, text, page_meta = _html_text(body, "utf-8", final)
+    title = title or shown_title
+    if _bot_check(title, text, final):
+        raise ToolError("The site showed a bot check even to a browser (it only serves people); read another source.",
+                        invalid=False, reason="blocked")
+    meta = {"site": _site(final), "favicon": urljoin(final, "/favicon.ico"), **page_meta, "via": "a browser"}
+    files = offered_files(body, final)
+    if files:
+        meta["files"] = files
+    return title, text, meta, final
 
 
 WIKI_PAGE = re.compile(r"^/wiki/([^?#]+)")
@@ -345,7 +390,7 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
         title, text = _pdf_text(body)
     elif "html" in ctype or _looks_html(body):
         title, text, page_meta = _html_text(body, charset, final)
-        meta.update(page_meta)
+        meta.update(page_meta, _html=True)
         files = offered_files(body, final)
         if files:
             meta["files"] = files
@@ -910,10 +955,11 @@ def _html_text(body: bytes, charset: str | None, base: str = "") -> tuple[str | 
             text = " ".join(el.text_content().split())
             if text:
                 lines.append(f"\n{'#' * int(tag[1])} {text}")
-        elif tag in BLOCKS and not any(isinstance(c.tag, str) and c.tag in BLOCKS | {"h1", "h2", "h3", "ul", "ol", "table"}
+        elif (tag in BLOCKS or "-" in tag) and not any(isinstance(c.tag, str) and (
+                c.tag in BLOCKS | {"h1", "h2", "h3", "ul", "ol", "table"} or "-" in c.tag)
                                        for c in el):
             text = " ".join(el.text_content().split())
-            if text:
+            if text and not (COOKIE_NOTICE.search(text) and len(text.split()) < 60):
                 lines.append(("- " if tag == "li" else "") + text)
     text = "\n".join(dict.fromkeys(lines)).strip()  # dict: drops repeated lines (menus copied twice)
     if not text:

@@ -75,7 +75,7 @@ Tier 1
 - Versions: requirements.lock holds every library's tested version; the UI's libraries are pinned.
 - Decided not to build: a separate capability list - main reads every tool's and helper's own description,
   and a second list would be a second copy to fall out of step.
-- Waiting for a download (the user's approval): trafilatura (the fast path, then its gate).
+- Downloaded, its gate next: trafilatura (kept only if it beats today's extractor on saved pages).
 - Waiting for the model (Kaggle): the prompt review (section 8), measuring the guessing checks with the trace
   (section 9), the thinking policy, and the evaluation.
 
@@ -84,9 +84,13 @@ Tier 2
   typed input, its output and the files it made shown - checked in the browser); finished documents (every
   chart also kept as a picture; Word and slides written from Markdown with pictures and charts in them); the
   plan card (main's plan as a checklist that ticks when its tools' calls end).
-- Waiting for downloads (the user's approval): Playwright MCP behind the web helper (needs the MCP Python
-  SDK; the Playwright MCP server itself is on this computer), EmbeddingGemma 2 (a llama.cpp build that knows
-  it, and its model files).
+- Done: Playwright MCP behind read_webpage (the MCP Python SDK 2.3, Playwright MCP 0.0.83 with the installed
+  Edge): a page that is blocked or gives too little text is opened in the browser and its HTML goes through
+  the same extraction. Measured: a Kaggle dataset page, 23 words read plainly, 909 through the browser
+  (12.7 s); a page the browser can't improve keeps its plain read; a local address is refused.
+- Building: EmbeddingGemma 2 (the llama.cpp build b11515 and the model files are on this computer; it
+  answers with 768 numbers a text on the RTX 3050). Next: its image gate, then its measure against bge-small.
+- Not built, by the decision above: the five click/type tools - only if the fallback proves too little.
 
 Next: the docs merge (SYSTEM_MAP, TARGET_MAP and ASSISTANT_PLAN into this plan and ARCHITECTURE), the
 downloads above once approved, then the evaluation on the 26B, then the README.
@@ -454,7 +458,7 @@ main ── research_web(task) ──► web helper (slot 1)
 - [ ] Fast path: a plain fetch, then main-text extraction (trafilatura) to Markdown - tables kept as rows,
       menus, footers and pop-ups out, garbled characters repaired (measured on Fandom), link addresses out
       of the text but kept as a list
-- [ ] Browser fallback (C) **only when** the fast path is blocked, gets a bot page or too little text - one
+- [x] Browser fallback (C) **only when** the fast path is blocked, gets a bot page or too little text - one
       general test, not a list of sites; the page's HTML goes through the same extraction, never the
       snapshot
 - [x] Focus a long page on the question (today: by words)
@@ -472,8 +476,8 @@ main ── research_web(task) ──► web helper (slot 1)
       meaning against the task (13.0) so the best 1-3 are read first
 
 **C. Browser (new) - Playwright MCP**
-- [ ] One MCP client in Zen (the official Python SDK); another MCP server later is settings, not code
-- [ ] Playwright MCP pinned (0.0.83), the installed Edge, headless, an in-memory profile, no stealth; one
+- [x] One MCP client in Zen (the official Python SDK); another MCP server later is settings, not code
+- [x] Playwright MCP pinned (0.0.83), the installed Edge, headless, an in-memory profile, no stealth; one
       browser for the app, started on first use and closed when idle
 - [ ] Five tools for the helper - open, find, click, type, screenshot. `open` returns the title, status and
       the start of the page's clean text (its HTML through the same extraction as A - not nothing, not the
@@ -493,10 +497,10 @@ main ── research_web(task) ──► web helper (slot 1)
 **E. Safety**
 - [x] Cite only pages actually read; download links only ones a page gave (checked by code)
 - [x] Downloads only with the user's approval
-- [ ] The browser can't reach this computer: every address checked before it opens, local addresses
+- [x] The browser can't reach this computer: every address checked before it opens, local addresses
       blocked in the browser (Playwright's own list is "not a security boundary"), and the app's API
       refuses requests that come from a web page
-- [ ] Page text marked as untrusted: instructions inside a page can't steer the helper
+- [x] Page text marked as untrusted: instructions inside a page can't steer the helper
 - [ ] Honest identity, no stealth, no proxies, no CAPTCHA solving; a blocked page is reported, and another
       source is tried
 - [ ] Nothing that changes a site: no submitting, buying, posting or signing in from this role. Code can't
@@ -511,7 +515,7 @@ main ── research_web(task) ──► web helper (slot 1)
       the knowledge role can recall pages read before. Web pages are their own kind: always shown with
       address and date, ranked below the user's own files, and dropped after 30 days unless saved, so
       old web text never crowds out the user's documents or passes as a current fact
-- [ ] Per-site pacing: a pause between pages of one site and a cap per task (Amazon checked us after 2-3
+- [x] Per-site pacing: a pause between pages of one site and a cap per task (Amazon checked us after 2-3
       quick visits)
 - [ ] Versions pinned (ddgs, trafilatura, Playwright MCP, the MCP SDK); an update every 1-3 months, kept
       only if the acceptance test passes

@@ -45,6 +45,11 @@ class Settings:
     # The assistant on Groq's cloud instead (BIZ_LLM_PROVIDER=groq): for testing the app with a large model.
     groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
     groq_model: str = os.environ.get("BIZ_GROQ_MODEL", "openai/gpt-oss-120b")
+    # A real browser for pages a plain read can't get (app/tools/browser.py): the folder Playwright MCP is
+    # installed in (npm install @playwright/mcp, run by node) or its cli.js, and the installed browser it drives.
+    # Empty: no browser.
+    playwright_mcp: str = os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", "")
+    browser_channel: str = os.environ.get("ASSISTANT_BROWSER", "msedge")
     # Document search: the embedding model (run locally by fastembed, downloaded once).
     embed_model: str = os.environ.get("BIZ_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
     embed_cache_dir: str = os.environ.get("BIZ_EMBED_CACHE_DIR", "data/models")

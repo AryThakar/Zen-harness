@@ -72,7 +72,8 @@ def test_site_restricts_results():
 # ---------------------------------------------------------------- read_webpage
 
 PUBLIC = {"news.example.com": "93.184.216.34", "docs.example.com": "93.184.216.35", "wiki.example.com": "93.184.216.36",
-          "sneaky.example.com": "10.0.0.5", "rebind.example.com": "127.0.0.1"}
+          "sneaky.example.com": "10.0.0.5", "rebind.example.com": "127.0.0.1", "app.example.com": "93.184.216.37",
+          "shop.example.com": "93.184.216.38"}
 
 
 def resolve(host, port, proto=0):
@@ -430,7 +431,7 @@ def test_the_same_page_twice_in_the_results_is_one_result():
 def test_a_page_read_again_within_the_hour_comes_from_the_cache(monkeypatch):
     calls = []
     monkeypatch.setattr(web, "_pages", {})
-    monkeypatch.setattr(web, "_page", lambda http, url, resolve: calls.append(url) or (
+    monkeypatch.setattr(web, "_page", lambda http, url, resolve, browser=None: calls.append(url) or (
         "Title", "Some text on the page.", {"site": "example.com", "files": ["https://example.com/a.csv"]}, url))
     first = read_webpage("https://example.com/cached")
     again = read_webpage("https://example.com/cached")
@@ -446,3 +447,77 @@ def test_pages_of_one_site_are_read_a_moment_apart(monkeypatch):
     web._pace("example.com")
     web._pace("other.example")
     assert len(waits) == 1 and 0 < waits[0] <= web.SITE_GAP
+
+
+# ---------------------------------------------------------------- the browser, only when the plain read can't
+
+DRAWN = b"""<!doctype html><html><head><title>App</title></head><body><div id="root"></div>
+<script src="/app.js"></script></body></html>"""
+RENDERED = """<html><head><title>Pricing</title></head><body><main><h1>Pricing</h1>
+<p>The basic plan costs 9 dollars a month and includes five projects with unlimited collaborators.</p>
+<p>The team plan costs 29 dollars a month and adds single sign-on, an audit log and priority support.</p>
+<my-card>Enterprise plans are priced per seat; ask the sales team for a quote that fits your company.</my-card>
+</main></body></html>"""
+
+
+def browser_showing(html, final=None, seen=None):
+    def page(url, check):
+        check(url)
+        (seen if seen is not None else []).append(url)
+        check(final or url)
+        return final or url, "From the browser", html
+    return page
+
+
+def test_a_page_drawn_by_javascript_is_read_through_the_browser():
+    http = site({"https://app.example.com/pricing": httpx.Response(200, content=DRAWN,
+                                                                     headers={"content-type": "text/html"})})
+    seen = []
+    r = read_webpage("https://app.example.com/pricing", http=http, resolve=resolve,
+                     browser=browser_showing(RENDERED, seen=seen))
+    assert seen == ["https://app.example.com/pricing"] and r.result["via"] == "a browser"
+    text = r.result["text"]
+    assert "basic plan costs 9 dollars" in text and "priced per seat" in text  # a custom element's text counts too
+    assert r.result["title"] == "Pricing" and r.result["read"] == "ok"
+
+
+def test_a_page_the_plain_read_gets_never_opens_the_browser():
+    http = site({"https://news.example.com/rates": httpx.Response(200, content=ARTICLE,
+                                                                   headers={"content-type": "text/html"})})
+    seen = []
+    r = read_webpage("https://news.example.com/rates", http=http, resolve=resolve, browser=browser_showing("x", seen=seen))
+    assert r.status == "ok" and seen == [] and "via" not in r.result
+
+
+def test_a_refused_page_is_tried_in_the_browser_and_a_bot_check_there_is_still_blocked():
+    http = site({"https://shop.example.com/item": httpx.Response(403)})
+    r = read_webpage("https://shop.example.com/item", http=http, resolve=resolve, browser=browser_showing(RENDERED))
+    assert r.status == "ok" and r.result["via"] == "a browser"
+    check = "<html><head><title>Just a moment...</title></head><body><p>Verifying you are human.</p></body></html>"
+    r = read_webpage("https://shop.example.com/item", http=http, resolve=resolve, browser=browser_showing(check))
+    assert r.status == "failed" and r.result["error"]["reason"] == "blocked" and "even to a browser" in r.result["error"]["message"]
+
+
+def test_the_browser_never_reads_a_page_on_this_computer():
+    http = site({"https://shop.example.com/item": httpx.Response(403)})
+    r = read_webpage("https://shop.example.com/item", http=http, resolve=resolve,
+                     browser=browser_showing(RENDERED, final="http://127.0.0.1:8080/props"))  # it was sent there
+    assert r.status == "invalid_arguments" and "this computer" in r.result["error"]["message"]
+
+
+def test_without_a_working_browser_the_plain_outcome_stands():
+    from app.tools.browser import McpError
+
+    def broken(url, check):
+        raise McpError("node is missing")
+    http = site({"https://shop.example.com/item": httpx.Response(403)})
+    r = read_webpage("https://shop.example.com/item", http=http, resolve=resolve, browser=broken)
+    assert r.status == "failed" and r.result["error"]["reason"] == "blocked"
+
+
+def test_a_cookie_notice_is_not_page_text():
+    page = (b"<html><body><main><div>This site uses cookies to improve your experience. Learn more. OK, Got it.</div>"
+            b"<p>Grandma bakes cookies every Sunday for the whole family, with butter and a lot of patience.</p>"
+            b"<p>The real content is here.</p></main></body></html>")
+    text = web._html_text(page, "utf-8", "https://news.example.com/x")[1]
+    assert "uses cookies" not in text and "Grandma bakes cookies" in text and "real content" in text
