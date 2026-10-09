@@ -676,7 +676,8 @@ def _release(turn: Live) -> None:
 
 
 def _finish(store: Store, chat: dict, index: SearchIndex, user_text: str) -> str:
-    """Remember the turn for recall, and name a new chat after its first message."""
+    """Remember the turn for recall, index the pictures and tables it made, and name a new chat after its first
+    message."""
     messages = store.messages(chat["id"], for_model=True)
     starts = [i for i, m in enumerate(messages) if m["role"] == "user" and not m.get("hidden")]
     current = messages[starts[-1]:] if starts else messages
@@ -684,6 +685,7 @@ def _finish(store: Store, chat: dict, index: SearchIndex, user_text: str) -> str
     calls = [{"name": c["name"], "arguments": c["input"]} for m in current if m["role"] == "assistant"
              for c in m.get("tool_calls", [])]
     remember_turn(index, chat["id"], user_text, answer, calls, when=current[0].get("at") if current else None)
+    store.sync_items(chat["workspace_id"])  # pictures and tables the turn made, changed or deleted: searchable now
     if chat["title"] == NEW_CHAT and user_text.strip():
         words = user_text.split()
         store.update_chat(chat["id"], title=" ".join(words[:8])[:60] + (" ..." if len(words) > 8 else ""))

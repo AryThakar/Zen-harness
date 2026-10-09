@@ -301,9 +301,12 @@ def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
                                         f"The file is larger than {limit // (1 << 20)} MB.")
                 out.write(chunk)
         try:
-            return files_tool.store_file(ws, index, path)
+            kept = files_tool.store_file(ws, index, path)
         except ToolError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
+    if kept.get("kind") in ("image", "table"):
+        _store(request).sync_items(ws_id)  # searchable by what it shows or holds
+    return kept
 
 
 def _item(request: Request, ws_id: str, item_id: str):
@@ -385,6 +388,7 @@ def run_file(ws_id: str, item_id: str, body: RunBody, request: Request) -> dict:
         ws.set_parent(item, item_id)
     if made:
         ws.set_meta(item_id, "run_outputs", {**earlier, **made})
+        _store(request).sync_items(ws_id)  # pictures it drew, tables it wrote: searchable now
     return jsonable({"status": result.status, **result.result})
 
 

@@ -17,6 +17,11 @@ Rows with role 'artifact' are what the UI was shown (charts, tables, sources); t
 redisplay and never sent to a model. A row with role 'trace' ends each turn: how it went (main.Live.trace)
 - never sent to a model nor shown in the chat.
 
+A workspace's search index is kept current here: refresh() gives text passages the current embedding
+model's vectors (after a change of model, or what was added while the model was unavailable) - in the
+background, when the workspace is first opened - and sync_items() indexes its pictures and tables,
+after every turn and every upload or run from the file panel.
+
 Design points (cascade deletes, removing the folder after the rows and only inside the data root)
 from Unsloth Studio's chat storage (studio/backend/storage/studio_db.py), written independently.
 """
@@ -24,6 +29,7 @@ from Unsloth Studio's chat storage (studio/backend/storage/studio_db.py), writte
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sqlite3
 import threading
@@ -31,8 +37,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from app.tools.search_index import SearchIndex
+from app.tools import files
+from app.tools.search_index import PICTURE, TABLE, SearchIndex
 from app.tools.workspace import Workspace
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -48,6 +57,26 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_chat ON messages (chat_id, id);
 """
 NEW_CHAT = "New chat"
+
+
+def _items_differ(ws: Workspace, index: SearchIndex) -> bool:
+    """Cheap check before a refresh (no call to the model): a picture or table added, deleted, changed or
+    renamed since it was indexed, or a picture embedded by another model."""
+    for kind, source in (("image", PICTURE), ("table", TABLE)):
+        have = index.stamps(source)
+        items = ws.ids(kind)
+        if set(have) != set(items):
+            return True
+        for item in items:
+            try:
+                stat = ws.content_path(item).stat()
+            except OSError:
+                continue
+            stamp, model, title = have[item]
+            if stamp != files.item_stamp(stat) or title != ws.entry(item)["name"] \
+                    or (source == PICTURE and model not in (None, index.embedder.name)):
+                return True
+    return False
 
 
 def _now() -> str:
@@ -70,6 +99,7 @@ class Store:
         self._db.execute("PRAGMA journal_mode = WAL")
         self._db.executescript(SCHEMA)
         self._open: dict[str, tuple[Workspace, SearchIndex]] = {}
+        self._refreshing: dict[str, bool] = {}  # workspace -> asked again while running
 
     def close(self) -> None:
         with self._lock:
@@ -122,10 +152,56 @@ class Store:
     def open(self, ws_id: str) -> tuple[Workspace, SearchIndex]:
         """The workspace's files and its search index (documents, notes, past chats)."""
         with self._lock:
-            if ws_id not in self._open:
+            first = ws_id not in self._open
+            if first:
                 folder = self.folder(ws_id)
                 self._open[ws_id] = (Workspace(folder), SearchIndex(folder / "search.sqlite", self.embedder))
-            return self._open[ws_id]
+            opened = self._open[ws_id]
+        if first and self.embedder is not None:
+            self.refresh(ws_id)
+        return opened
+
+    def refresh(self, ws_id: str) -> None:
+        """In the background: text passages without the current model's vector get one, then the pictures
+        and tables are synced. Nothing starts when there is nothing to do; one run at a time per workspace (a call
+        during a run makes it run once more)."""
+        ws, index = self._open[ws_id]
+        if not index.stale() and not _items_differ(ws, index):
+            return
+        with self._lock:
+            if ws_id in self._refreshing:
+                self._refreshing[ws_id] = True
+                return
+            self._refreshing[ws_id] = False
+        threading.Thread(target=self._refresh, args=(ws_id, ws, index), daemon=True, name=f"refresh-{ws_id}").start()
+
+    def _refresh(self, ws_id: str, ws: Workspace, index: SearchIndex) -> None:
+        try:
+            while True:
+                n = index.reindex()
+                m = files.index_items(ws, index)
+                if n or m:
+                    log.info("Workspace %s: %d passages and %d items indexed with %s", ws_id, n, m, index.embedder.name)
+                with self._lock:
+                    if not self._refreshing.get(ws_id):
+                        self._refreshing.pop(ws_id, None)
+                        return
+                    self._refreshing[ws_id] = False
+        except Exception:  # noqa: BLE001 - a workspace deleted meanwhile, a file gone: the next refresh retries
+            log.exception("Refreshing the search index of workspace %s failed", ws_id)
+            with self._lock:
+                self._refreshing.pop(ws_id, None)
+
+    def sync_items(self, ws_id: str) -> None:
+        """The workspace's pictures and tables indexed now (after a turn, an upload or a run): new ones,
+        changed ones, gone ones. Text passages still waiting for a vector are given one in the background."""
+        ws, index = self.open(ws_id)
+        try:
+            files.index_items(ws, index)
+        except Exception:  # noqa: BLE001 - a turn or an upload never fails for its index; the next sync retries
+            log.exception("Indexing the pictures and tables of workspace %s failed", ws_id)
+        if index.stale():
+            self.refresh(ws_id)
 
     def touch_workspace(self, ws_id: str) -> None:
         self._run("UPDATE workspaces SET updated_at = ? WHERE id = ?", (_now(), ws_id))

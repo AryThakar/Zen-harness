@@ -88,8 +88,12 @@ Tier 2
   Edge): a page that is blocked or gives too little text is opened in the browser and its HTML goes through
   the same extraction. Measured: a Kaggle dataset page, 23 words read plainly, 909 through the browser
   (12.7 s); a page the browser can't improve keeps its plain read; a local address is refused.
-- Building: EmbeddingGemma 2 (the llama.cpp build b11515 and the model files are on this computer; it
-  answers with 768 numbers a text on the RTX 3050). Next: its image gate, then its measure against bge-small.
+- Done: EmbeddingGemma 2 replaced bge-small for search by meaning (13.0 below): served by llama-server b11515,
+  which the app starts itself; documents, reports, notes, chats, pictures (by what they show) and tables
+  (by name, columns and values) in one index; each workspace re-indexed in the background when first
+  opened. Measured on 76 held-out questions about the user's own workspaces: both models find every right
+  passage; bge-small's scores for unrelated questions overlap its right ones (it answered 3 of 5 unrelated
+  questions), EmbeddingGemma's don't (0 of 5). Next in 13: web pages by meaning (13.1).
 - Not built, by the decision above: the five click/type tools - only if the fallback proves too little.
 
 Next: the docs merge (SYSTEM_MAP, TARGET_MAP and ASSISTANT_PLAN into this plan and ARCHITECTURE), the
@@ -371,24 +375,35 @@ every box is ticked and its acceptance test passes.
 code, images, audio and video in one space of 768 numbers - so one index holds every kind of item and one
 question finds any of them (a typed question can find a matching image or a screenshot).
 
-- [ ] Where it runs: **this PC** - an RTX 3050 Laptop GPU (bfloat16 works there, unlike the T4, where
+- [x] Where it runs: **this PC** - an RTX 3050 Laptop GPU (bfloat16 works there, unlike the T4, where
       float16 gave NaN), 15.7 GB of RAM; Google gives ~567 MB for the full model, quantised. Search,
       indexing and recall then keep working when Kaggle is off, with no second tunnel.
-- [ ] Served by llama-server (`--embeddings`, plus its multimodal projector) - the same engine as the LLM.
-      The llama.cpp build on this PC (b10930) knows only the first EmbeddingGemma: a build with
-      `gemma-embedding2` (PR #30054, merged 2026-10-06) is needed. The GGUF files are community builds a
-      few days old.
-- [ ] Gate: llama-server must return image vectors (the image path is the least tested). If it can't, the
-      same model runs through transformers on the RTX 3050 in bfloat16 - one model either way.
-- [ ] Text and images first (what the app holds today); audio and video are switched on the day the app
+- [x] Served by llama-server (`--embeddings`, plus its multimodal projector) - the same engine as the LLM.
+      Build b11515 (CUDA 13.4) with the Q8_0 model (296 MB) and projector (529 MB), in C:\zen-data. The app
+      starts it on first use (app/rag/embed_server.py: this computer only, port 8070; the GPU with the
+      layers fitted to free memory, else the CPU) and stops it when it exits; one already answering with
+      the same model file is used as it is.
+- [x] Gate: llama-server must return image vectors. Passed (2026-10-09), checked by search instead of
+      against transformers (no second download): 15 of 15 captions found their own picture first among 15,
+      look-alikes included (three lions, two pandas, three line charts); the same picture twice gives the
+      same vector. 0.27 s a picture.
+- [x] Text and images first (what the app holds today); audio and video are switched on the day the app
       accepts them - same space, so no re-index then.
-- [ ] Measured before switching: speed on this PC (text chunks a second, images a second) and recall
-      against today's bge-small on a held-out set of real questions from the user's chats.
-- [ ] One full re-index (vectors from two models can't be mixed); the index records which model made each
-      vector.
-- [ ] Every item kind embedded: chats, notes, documents (chunks), tables (name, columns, description),
-      images and screenshots (the picture itself), web pages read (13.1), audio and video when the app
-      accepts them. Search stays hybrid: keywords (FTS5) + vectors, fused (RRF).
+- [x] Measured before switching (bench/search_models.py; the questions are user data, kept out of git):
+      76 held-out questions about the user's own workspaces (67 with a right passage, 9 about nothing in
+      them), the cut-off chosen on half and scored on the other half. Both models put a right passage
+      first for 33 of 33 (EmbeddingGemma once second by meaning alone); unrelated questions answered by
+      meaning: bge-small 3 of 5, EmbeddingGemma 0 of 5. Over all 76: EmbeddingGemma's right passages
+      scored 0.712 or more, unrelated at most 0.631 (cut-off 0.68); bge-small's overlapped (0.575 / 0.688).
+      Pictures: own caption 0.623-0.81, unrelated questions at most 0.604 (cut-off 0.64). Speed: 21.7
+      passages a second when re-indexing, 0.04 s a question. analyze_text's labels (a business's own
+      categories): 56% / 45% against bge-small's 53% / 29%.
+- [x] One full re-index (vectors from two models can't be mixed); the index records which model made each
+      vector. Each workspace is re-indexed in the background when it is first opened (the user's largest,
+      254 passages and 19 pictures, within a minute of opening); search meanwhile uses keywords for what waits.
+- [ ] Every item kind embedded: chats, notes, documents (chunks), reports, tables (name, columns, a few
+      values) and pictures (the picture itself) - done; web pages read (13.1) - not yet; audio and video
+      when the app accepts them. Search stays hybrid: keywords (FTS5) + vectors, fused (RRF).
 
 ### 13.1 Web (frozen 2026-10-08)
 

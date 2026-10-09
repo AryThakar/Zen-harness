@@ -405,6 +405,7 @@ details.fold pre.code { margin-top: 8px; border-radius: 10px; background: var(--
 .doc-chip.on { background: var(--accent-strong); color: var(--on-accent); box-shadow: none; }
 .passage { margin-top: 8px; padding: 10px 14px; border-radius: 12px; background: var(--hover); font-size: 13.5px; line-height: 1.6; color: var(--muted); }
 .passage b { display: block; margin-bottom: 2px; color: var(--ink); font-weight: 500; }
+.passage-pic { display: block; max-width: min(100%, 320px); max-height: 240px; margin-top: 6px; border-radius: 10px; }
 
 /* ---------------------------------------------------------------- questions and permissions */
 .opt { padding: 8px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font-size: 14px; font-weight: 500; }

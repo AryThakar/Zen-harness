@@ -213,6 +213,12 @@ class Workspace:
         return self.root / e["file"]
 
     @_locked
+    def content_path(self, item_id: str) -> Path:
+        """The file that holds an item's content - a stored file, or a table's Parquet - for code that
+        follows changes to it (the search index); never shown to the model."""
+        e = self.entry(item_id)
+        return self.root / (e["file"] if "file" in e else f"{item_id}.parquet")
+
     def entry(self, item_id: str) -> dict:
         if item_id not in self._reg["items"]:
             raise ToolError(f"There is no '{item_id}'. Available: {', '.join(self._reg['items']) or 'nothing yet'}.",

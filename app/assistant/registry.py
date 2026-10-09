@@ -428,8 +428,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                                                 a.item, a.time_unit),
        labels=("Looking for patterns", "Looked for patterns")),
     Tool("analyze_text", "What a text column says, by meaning (local embeddings): themes (groups with their words "
-       "and examples - you name them), classify (into the user's labels; about 70% right on labels with a clear "
-       "meaning) or similar (rows most like a phrase). Saves the table with each row's theme or label.", TextIn,
+       "and examples - you name them), classify (into the user's labels; good on labels with a clear meaning, about "
+       "half right on a business's own categories) or similar (rows most like a phrase). Saves the table with each row's theme or label.", TextIn,
        lambda c, a: analyze_text.analyze_text(c.ws, a.data, a.kind, a.column, a.labels, a.query, a.count, a.value,
                                               embedder=c.index.embedder),
        labels=("Reading the texts", "Read the texts")),

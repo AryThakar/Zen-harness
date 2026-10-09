@@ -50,7 +50,14 @@ class Settings:
     # Empty: no browser.
     playwright_mcp: str = os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", "")
     browser_channel: str = os.environ.get("ASSISTANT_BROWSER", "msedge")
-    # Document search: the embedding model (run locally by fastembed, downloaded once).
+    # Search by meaning (documents, notes, chats and pictures): EmbeddingGemma 2 served by llama-server
+    # (app/rag/embed_server.py) - the model file (its GGUF), its picture projector, where the server listens,
+    # and the llama-server the app starts itself (empty: one started by hand at that address is used).
+    # No model file: fastembed's small CPU model (text only, downloaded once).
+    embed_gguf: str = os.environ.get("ASSISTANT_EMBED_GGUF", "")
+    embed_mmproj: str = os.environ.get("ASSISTANT_EMBED_MMPROJ", "")
+    embed_url: str = os.environ.get("ASSISTANT_EMBED_URL", "http://127.0.0.1:8070")
+    embed_server: str = os.environ.get("ASSISTANT_EMBED_SERVER", "")
     embed_model: str = os.environ.get("BIZ_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
     embed_cache_dir: str = os.environ.get("BIZ_EMBED_CACHE_DIR", "data/models")
     # Workspaces, chats and their files live here. Both model slots are served by the same llama-server

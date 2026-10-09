@@ -1,16 +1,18 @@
 """analyze_text: what a text column is about - themes, the user's own labels, or the rows like a phrase.
 
-    themes    texts grouped by meaning: local embeddings (the search index's model, bge-small) and
+    themes    texts grouped by meaning: local embeddings (the search index's model) and
               k-means, 3 to 8 themes chosen by silhouette unless given (the clearest split: unlike
               customer segments, two vague themes are no overview). Each theme comes with its share, its most telling words (class TF-IDF) and
               the texts closest to its centre, so the helper names it from evidence; with value, the
               average of a number per theme (rating by theme).
     classify  each text given the label it is closest to in meaning (zero-shot: the labels are
               embedded as 'This is about <label>.'); texts whose best and second-best labels are
-              almost equally close are marked unsure. Measured on real names with known labels: car
-              names -> country 70% (held out), pizza names -> 4 menu categories 53%, coffee products
-              -> 9 categories 29%. It works for labels that are about meaning, not a business's own
-              codes; other ways of embedding the labels did no better.
+              almost equally close are marked unsure (each model has its own gap: EmbeddingGemma 2's
+              label gaps are about half of bge-small's, measured without labels). Measured on real
+              names with known labels - pizza names -> 4 menu categories: EmbeddingGemma 2 56%,
+              bge-small 53%; coffee products -> 9 categories: 45% and 29%; car names -> country
+              (bge-small, held out) 70%. It works for labels that are about meaning, not a business's
+              own codes; other ways of embedding the labels did no better (bge-small).
     similar   the rows closest in meaning to a phrase.
 
 Repeated texts (product names, categories) are embedded once and weighted by how often they occur;
@@ -36,6 +38,7 @@ MAX_TEXTS = 5000
 MIN_TEXTS = 20
 MAX_THEMES = 8
 UNSURE = 0.02  # cosine gap between the best and second-best label below which a text is marked unsure
+               # (bge-small's; a model with another scale has its own unsure_gap - app/rag/embed.py)
 EXAMPLE_CHARS = 160
 
 
@@ -185,7 +188,7 @@ def _classify(texts, weights, vectors, labels, embedder, method, column):
     best = sims.argmax(axis=1)
     ordered = np.sort(sims, axis=1)
     gap = ordered[:, -1] - ordered[:, -2]
-    unsure = gap < UNSURE
+    unsure = gap < getattr(embedder, "unsure_gap", UNSURE)
     total = weights.sum()
     out, rows = [], []
     for j, lab in enumerate(labels):
@@ -198,13 +201,19 @@ def _classify(texts, weights, vectors, labels, embedder, method, column):
         rows.append([lab, int(weights[mask].sum()), number(share, 3), examples[0] if examples else ""])
     unsure_share = float(weights[unsure].sum() / total)
     result = {"labels": out, "unsure_share": number(unsure_share, 3),
-              "caveat": "Matched by meaning with a small embedding model (about 70% right on labels with a clear "
-                        "meaning, much less on a business's own codes): check the examples. Texts marked unsure were "
-                        "almost as close to another label; for exact rules use query_data with LIKE."}
+              "caveat": "Matched by meaning with an embedding model - good on labels with a clear meaning, about half "
+                        "right on a business's own categories (measured 45-56% on menus): check the examples. Texts "
+                        "marked unsure were almost as close to another label; for exact rules use query_data with LIKE."}
     artifact = {"type": "table", "title": f"{column} by label", "columns": ["label", "rows", "share", "example"],
                 "rows": rows, "notes": [f"{unsure_share:.0%} of the texts are unsure (two labels almost equally close)."]}
     mapping = {t: labels[b] for t, b in zip(texts, best)}
     return result, artifact, mapping
+
+
+def _loose(embedder) -> float:
+    """The similarity below which a match is loose: the model's own cut-off for search, which asks the same
+    question (a phrase against texts) - 0.6 for bge-small, measured when this tool was made."""
+    return getattr(embedder, "min_similarity", 0.6)
 
 
 def _similar(df, texts, unique, freq, vectors, query, embedder, method, column):
@@ -220,7 +229,7 @@ def _similar(df, texts, unique, freq, vectors, query, embedder, method, column):
     matches = [{"text": unique[i][:EXAMPLE_CHARS], "similarity": number(float(sims[i]), 3),
                 "rows": int(freq.iloc[i]), "first_row": int(first_row.get(unique[i], -1)) + 1} for i in top]
     result = {"query": query, "matches": matches,
-              "note": "similarity is cosine (1 = same meaning); below about 0.6 a match is loose."}
+              "note": f"similarity is cosine (1 = same meaning); below about {_loose(embedder)} a match is loose."}
     artifact = {"type": "table", "title": f"{column} like '{query}'", "columns": ["text", "similarity", "rows"],
                 "rows": [[m["text"], m["similarity"], m["rows"]] for m in matches]}
     return result, artifact

@@ -337,12 +337,14 @@ export function passagesEl(items) {
   const wrap = h("div", { class: "sources" }), row = h("div", { class: "docs" });
   let open = null;
   for (const item of unique) {
-    const chip = h("button", { class: "doc-chip", type: "button", "aria-expanded": "false", title: item.source, html: svg("doc") }, item.source);
+    const picture = /^image_\d+$/.test(item.ref || "");  // a picture found by what it shows: show the picture
+    const chip = h("button", { class: "doc-chip", type: "button", "aria-expanded": "false", title: item.source, html: svg(picture ? "image" : "doc") }, item.source);
     chip.addEventListener("click", () => {
       const was = open?.chip === chip;
       open?.panel.remove(); open?.chip.classList.remove("on"); open?.chip.setAttribute("aria-expanded", "false"); open = null;
       if (was) return;
-      const panel = h("div", { class: "passage" }, h("b", {}, item.source), item.text);
+      const panel = h("div", { class: "passage" }, h("b", {}, item.source),
+        picture ? h("img", { class: "zoomable passage-pic", src: itemUrl(item.ref), alt: item.text || item.ref }) : item.text);
       wrap.append(panel);
       chip.classList.add("on");
       chip.setAttribute("aria-expanded", "true");

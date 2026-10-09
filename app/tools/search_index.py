@@ -1,13 +1,20 @@
-"""One search engine for documents, notes and past conversations: SQLite FTS5 + embeddings.
+"""One search engine for documents, notes, past conversations and pictures: SQLite FTS5 + embeddings.
 
-Every passage is stored once with its source ('document', 'note', 'chat'). A search runs two
-rankings over the sources asked for - keywords (FTS5's BM25, Porter-stemmed) and meaning (cosine
-similarity of bge-small embeddings, run locally by fastembed) - and fuses them by rank
-(reciprocal rank fusion), so neither score scale has to be trusted. Keyword search is the part
-that must work: if the embedding model can't load, passages are stored without vectors and search
-says it used keywords only.
+Every passage is stored once with its source ('document', 'report', 'note', 'chat', 'image', 'table'). A search
+runs two rankings over the sources asked for - keywords (FTS5's BM25, Porter-stemmed) and meaning
+(cosine similarity of the embedding model's vectors: EmbeddingGemma 2 on llama-server, or bge-small
+on the CPU - app/rag/embed.py) - and fuses them by rank (reciprocal rank fusion), so neither score
+scale has to be trusted. Keyword search is the part that must work: if the embedding model can't
+load, passages are stored without vectors and search says it used keywords only.
 
-search_files (documents + notes) and recall (chat) are thin tools over this index.
+A picture is one passage: its name and what made it (a prompt) for keywords, and the picture itself
+for meaning - a vector in the same space as text, so a typed question finds it. A table is one passage
+too: its name, size, columns and a few example values (files.index_items keeps both current).
+
+Each vector records its model; vectors of two models can't be compared, so search uses only the
+current model's, and reindex() gives the others new ones (a new model = a full re-index).
+
+search_files (documents, reports, pictures + notes) and recall (chat) are thin tools over this index.
 """
 
 from __future__ import annotations
@@ -33,9 +40,14 @@ us was we were what when where which who why will with would you your about any 
 """.split())  # left out of keyword queries: they match almost every passage
 CANDIDATES = 50
 # Meaning-only matches below this cosine similarity are dropped, so an unrelated question finds
-# nothing instead of the least-bad passage. Measured with bge-small-en-v1.5 on 11 queries: the right
-# passage scored 0.64-0.75, the best passage for unrelated questions at most 0.47.
+# nothing instead of the least-bad passage. Each model has its own scale: an embedder's own
+# min_similarity (and min_similarity_pictures) wins. This default was measured with bge-small-en-v1.5
+# on 11 queries: the right passage scored 0.64-0.75, the best passage for unrelated questions at most
+# 0.47. (On 2026-10-09's held-out questions bge-small's ranges overlapped - right 0.575-0.88, unrelated
+# up to 0.688 - one reason EmbeddingGemma 2 replaced it.)
 MIN_SIMILARITY = 0.55
+PICTURE = "image"
+TABLE = "table"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS passages (
@@ -105,7 +117,7 @@ class SearchIndex:
         passages = [p for p in passages if p.text.strip()]
         if not passages:
             return True
-        vectors, model = self._embed([f"{p.section}\n{p.text}" if p.section else p.text for p in passages])
+        vectors, model = self._embed([_text(p.section, p.text) for p in passages], [title] * len(passages))
         created = created or datetime.now().isoformat(timespec="seconds")
         rows = [(source, ref, title, p.page, p.section, p.text, created, meta,
                  vectors[i].tobytes() if vectors is not None else None, model) for i, p in enumerate(passages)]
@@ -124,6 +136,32 @@ class SearchIndex:
     def replace(self, source: str, ref: str, title: str | None, passages: list[Passage], meta: str | None = None) -> bool:
         self.remove(source, ref)
         return self.add(source, ref, title, passages, meta)
+
+    def add_picture(self, ref: str, title: str, text: str, data: bytes, stamp: str) -> bool:
+        """A picture as one passage: ``text`` (its name, what made it) for keywords, the picture itself
+        for meaning when the model takes pictures; ``stamp`` marks the file version it was made from.
+        Replaces the picture's earlier passage. Returns whether it got a vector."""
+        vector, model = None, None
+        if getattr(self.embedder, "images", False):
+            try:
+                vector, model = self.embedder.embed_images([data])[0], self.embedder.name
+            except EmbedderUnavailable:
+                pass
+        with self._lock, self._db() as db:
+            db.execute("DELETE FROM passages WHERE source = ? AND ref = ?", (PICTURE, ref))
+            db.execute("INSERT INTO passages (source, ref, title, text, created, meta, vector, model) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (PICTURE, ref, title, text, datetime.now().isoformat(timespec="seconds"), stamp,
+                        vector.tobytes() if vector is not None else None, model))
+            self._version += 1
+        return vector is not None
+
+    def stamps(self, source: str) -> dict[str, tuple[str | None, str | None, str | None]]:
+        """The indexed items of a source kept in step with the workspace (pictures, tables):
+        ref -> (stamp of the file version, model of its vector, title)."""
+        with self._db() as db:
+            return {r[0]: (r[1], r[2], r[3]) for r in db.execute(
+                "SELECT ref, meta, model, title FROM passages WHERE source = ?", (source,))}
 
     def count(self, sources: tuple[str, ...]) -> int:
         with self._db() as db:
@@ -173,32 +211,71 @@ class SearchIndex:
             q = self.embedder.embed_query(query)
         except EmbedderUnavailable:
             return [], False
-        ids, matrix = self._matrix(sources)
+        ids, matrix, pictures = self._matrix(sources)
         if not len(ids):
             return [], True
         sims = matrix @ q
-        return [int(ids[j]) for j in np.argsort(-sims)[:CANDIDATES] if sims[j] >= MIN_SIMILARITY], True
+        # Each model has its own scale, and a question scores lower against a picture than against text.
+        text_floor = getattr(self.embedder, "min_similarity", MIN_SIMILARITY)
+        floors = np.where(pictures, getattr(self.embedder, "min_similarity_pictures", text_floor), text_floor)
+        return [int(ids[j]) for j in np.argsort(-sims)[:CANDIDATES] if sims[j] >= floors[j]], True
 
-    def _matrix(self, sources: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:
-        """Vectors of these sources, cached until the index changes."""
+    def _matrix(self, sources: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Vectors of these sources (and which rows are pictures), cached until the index changes."""
         cached = self._vectors.get(sources)
         if cached and cached[0] == self._version:
-            return cached[1], cached[2]
+            return cached[1:]
         with self._db() as db:
-            rows = db.execute(f"SELECT id, vector FROM passages WHERE vector IS NOT NULL AND model = ? "
+            rows = db.execute(f"SELECT id, vector, source FROM passages WHERE vector IS NOT NULL AND model = ? "
                               f"AND source IN ({_marks(sources)})", (self.embedder.name, *sources)).fetchall()
         ids = np.array([r[0] for r in rows], dtype=np.int64)
         matrix = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in rows]) if rows else np.zeros((0, 1), np.float32)
-        self._vectors[sources] = (self._version, ids, matrix)
-        return ids, matrix
+        pictures = np.array([r[2] == PICTURE for r in rows], dtype=bool)
+        self._vectors[sources] = (self._version, ids, matrix, pictures)
+        return ids, matrix, pictures
 
-    def _embed(self, texts: list[str]) -> tuple[np.ndarray | None, str | None]:
+    def _embed(self, texts: list[str], titles: list[str | None]) -> tuple[np.ndarray | None, str | None]:
         if self.embedder is None:
             return None, None
         try:
-            return self.embedder.embed_documents(texts), self.embedder.name
+            return self.embedder.embed_documents(texts, titles), self.embedder.name
         except EmbedderUnavailable:
             return None, None
+
+    # ------------------------------------------------------------------ the model's vectors
+
+    def stale(self) -> int:
+        """Text passages without a vector of the current model: made by another model, or added while
+        the model was unavailable. Search by meaning doesn't see them until reindex() gives them one.
+        (Pictures are kept current by their own sync, files.index_items: their vectors need the file.)"""
+        if self.embedder is None:
+            return 0
+        with self._db() as db:
+            return db.execute("SELECT count(*) FROM passages WHERE (vector IS NULL OR model IS NOT ?) AND source != ?",
+                              (self.embedder.name, PICTURE)).fetchone()[0]
+
+    def reindex(self, batch: int = 64) -> int:
+        """Give every stale text passage a vector of the current model (vectors of two models can't be
+        compared, so a new model means a full re-index); returns how many got one. Stops at the first
+        failure - the model unavailable - and the rest wait for the next call."""
+        if self.embedder is None:
+            return 0
+        done, last = 0, 0
+        while True:
+            with self._db() as db:
+                rows = db.execute("SELECT id, title, section, text FROM passages WHERE (vector IS NULL OR model IS NOT ?) "
+                                  "AND source != ? AND id > ? ORDER BY id LIMIT ?",
+                                  (self.embedder.name, PICTURE, last, batch)).fetchall()
+            if not rows:
+                return done
+            vectors, model = self._embed([_text(r[2], r[3]) for r in rows], [r[1] for r in rows])
+            if vectors is None:
+                return done
+            with self._lock, self._db() as db:
+                db.executemany("UPDATE passages SET vector = ?, model = ? WHERE id = ?",
+                               [(vectors[i].tobytes(), model, r[0]) for i, r in enumerate(rows)])
+                self._version += 1
+            done, last = done + len(rows), rows[-1][0]
 
 
 def _ends_first(scored: list[tuple[int, float]]) -> list[int]:
@@ -221,6 +298,11 @@ def _ends_first(scored: list[tuple[int, float]]) -> list[int]:
         run_score = round(score, 9)
     flush()
     return out
+
+
+def _text(section: str | None, text: str) -> str:
+    """What is embedded of a passage: its section heading, then its text (the title goes apart)."""
+    return f"{section}\n{text}" if section else text
 
 
 def _marks(values) -> str:
