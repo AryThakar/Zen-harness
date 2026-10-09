@@ -1,0 +1,97 @@
+[
+ {
+  "case": "hello",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Hi Arya. How can I help you today?",
+  "nudges": []
+ },
+ {
+  "case": "who_are_you",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 25.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I am Zen, Arya. I'm an assistant running on a local open model on this computer—not ChatGPT, Claude, or any other product.",
+  "nudges": []
+ },
+ {
+  "case": "bad_place",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 26.9,
+  "tools": [
+   "get_weather({\"location\": \"Qwxzplorvia\"}) invalid_arguments"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "location": "Qwxzplorvia"
+    },
+    "status": "invalid_arguments"
+   }
+  ],
+  "asked": null,
+  "answer": "I couldn't find a place called Qwxzplorvia. Could you check the spelling or let me know which country it's in?",
+  "nudges": []
+ },
+ {
+  "case": "missing_file",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 41.0,
+  "tools": [
+   "files({\"mode\": \"find\", \"name\": \"budget_2025.xlsx\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "name": "budget_2025.xlsx"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I couldn't find a file named `budget_2025.xlsx` in your workspace. If you have it on your computer, please upload it and I'll be happy to calculate the total for you, Arya.",
+  "nudges": []
+ },
+ {
+  "case": "you_were_wrong",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "My mistake, Arya. 12 times 12 is 144.",
+  "nudges": []
+ },
+ {
+  "case": "upset",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 28.3,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I'm so sorry, Arya. That is incredibly frustrating.\n\nIf there is anything I can do to help you rebuild what you lost—whether that's drafting outlines, researching topics you were working on, or helping you re-organize your thoughts—just let me know. I'm ready to help you get back on track.",
+  "nudges": []
+ }
+]

@@ -208,6 +208,13 @@ def test_data_worker_numbers_must_come_from_tool_results(ctx):
     assert "33%" in model.requests[3]["messages"][-1]["content"]
 
 
+def test_a_report_without_its_title_takes_the_task_instead_of_a_resend(ctx):
+    model = ScriptedProvider([report(question="")])
+    out = run_worker(model, PROFILES["data"], "Is the die fair?\nUse rolls.csv.", ctx)
+    assert "warnings" not in out and out["report"].startswith("# Is the die fair?")
+    assert len(model.requests) == 1  # no step spent resending it
+
+
 def test_data_worker_passes_a_question_up_instead_of_guessing(ctx):
     model = ScriptedProvider([tools_turn(call("save_report", question_for_user="Are the dates day first or month first?",
                                               options=["day first", "month first"]))])
@@ -222,6 +229,9 @@ def test_data_worker_passes_a_question_up_instead_of_guessing(ctx):
     ("Top 5 groups; growth was 42.7%.", ['{"x": 1}'], ["42.7%"]),
     ("Revenue was 817,860.", ['{"total": 817860.05}'], []),  # rounded as written
     ("Revenue was 817,900.", ['{"total": 817860.05}'], ["817,900"]),
+    # conventions of method pass; a made-up p-value does not
+    ("p = 0.7717, well above 0.05; with 95% confidence it is fair.", ['{"p_value": 0.771668}'], []),
+    ("p = 0.03, below 0.05.", ['{"chi2": 2.53}'], ["0.03"]),
 ])
 def test_number_grounding(answer, evidence, missing):
     assert ungrounded_numbers(answer, evidence) == missing

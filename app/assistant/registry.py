@@ -323,15 +323,17 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "or the time in another place.",
        WeatherIn, lambda c, a: weather.get_weather(a.location, a.days),
        labels=("Checking the weather", "Checked the weather")),
-    Tool("generate_image", "Generate one picture - a scene, art, a photo-like image - from a detailed description; "
-       "the user sees it. Use it when the user asks for a picture, an illustration or art. Not for technical "
-       "drawings (circuits, charts, labelled parts): an image model draws them "
-       "wrong, with unreadable labels - draw_diagram shows how something works.",
+    Tool("generate_image", "Generate one picture - a scene, art or a photo-like image - from a detailed description; the user sees "
+       "it. Not for anything that must be exact or labelled (an image model draws labels and numbers wrong): how "
+       "something works or is built goes to draw_diagram, a chart of a table's numbers to analyze_data, a plot "
+       "of a formula or a simulation to write_code.",
        ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size, look=c.look),
        labels=("Creating an image", "Created an image")),
-    Tool("draw_diagram", "Draw a flowchart, sequence, class, state, ER, gantt, pie, mindmap or timeline diagram "
-       "from Mermaid code. Use it when the user wants to see how something works or is built - steps, logic, states, "
-       "structure, a plan over time - or asks for a visual explanation.",
+    Tool("draw_diagram", "Draw a diagram from Mermaid code, in the kind that fits: flowchart (steps and decisions), sequence "
+       "(messages between parties, in order), class, state (the states something moves through), ER (data and "
+       "its relations), gantt (tasks on dates), pie (a few shares), mindmap or timeline. Use it to show how "
+       "something works or is built, or when the user asks for a visual explanation. Not for a table's numbers "
+       "(analyze_data charts them) or a plot of a formula (write_code).",
        DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title),
        labels=("Drawing a diagram", "Drew a diagram")),
     Tool("calculate", "Exact arithmetic: use it for every number you work out - even a sum or an average - "
@@ -368,17 +370,17 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "description (not what is said in it).", ReadPageIn,
        lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
-    Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or "
-       "to open, show, save, change, rename, delete or download one. list: everything, a page at a time; find: whether "
-       "a name exists; read: a file's report (what a helper did with it), or its text from line start on (an "
-       "image or a table says which tool reads it); write: a new file the user asked for (.md, .txt, .csv, .json, "
-       ".py ...; a Word .docx or slides .pptx are made from Markdown - for slides, each # heading starts a slide - and "
-       "a line that is only ![caption](image_7) puts in that picture or chart); update: change an existing file - its "
-       "whole text, or lines "
-       "start-end; rename; delete: one "
-       "file; download: one file from GitHub, or a data table (CSV, Excel) from any public link. Delete, "
-       "download and updating the user's own file ask the user with a button - call it straight away, don't ask "
-       "first in words.",
+    Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or to open, "
+       "save, change, rename, delete or bring in one. list: everything, a page at a time; find: whether a name "
+       "exists; read: a file's report (what a helper did with it), or its text from line start on (an image or a "
+       "table says which tool reads it); write: a new file the user asked for - text, Markdown, CSV, JSON, code, "
+       "and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading starts a "
+       "slide; a line that is only ![caption](image_7) puts in that picture or chart); update: change an "
+       "existing file - its whole text, or lines start-end; rename; delete: one file; download: one file from "
+       "GitHub, or a data table (CSV, Excel) from any public link - a repository's or folder's page lists the "
+       "files it has, to pick one. Not for running code (write_code) or finding where something is on the web "
+       "(research_web). Delete, download and updating the user's own file ask the user with a button - call it "
+       "straight away, don't ask first in words.",
        FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
                                             end=a.end, content=a.content, new_name=a.new_name, link=a.link),
        labels=("Working with files", "Worked with files"),
@@ -387,7 +389,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                     "update": ("Updating a file", "Updated a file"), "rename": ("Renaming a file", "Renamed a file"),
                     "delete": ("Asking to delete a file", "Asked to delete a file"),
                     "download": ("Asking to download", "Asked to download")}),
-    Tool("search_files", "Find passages in the user's documents and saved notes that match a query.", FilesQueryIn,
+    Tool("search_files", "Find what matches a query in the user's documents and file reports, their pictures (by what they show) "
+       "and tables (by their columns and values) - then, apart, their saved notes and pages read in earlier "
+       "research (dated).", FilesQueryIn,
        lambda c, a: files.search_files(c.index, a.query),
        labels=("Searching your documents and notes", "Searched your documents and notes")),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",

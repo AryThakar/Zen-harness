@@ -95,7 +95,9 @@ def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():
                  "can you remember the file I sent", "remember?",
                  # chat 7a918668b138: a question typed without "you" or "?", and a note named as a thing
                  "do remember when i like to drink coffee", "a note that you used to answer me on my last question",
-                 "A note that you used to ans my question", "remember when we fixed the chart"):
+                 "A note that you used to ans my question", "remember when we fixed the chart",
+                 # chat f1e15a9a801e: a reproach about the past, typed without "?"
+                 "i given you name dont you remember", "didn't you remember my tea time"):
         assert not asked_to_remember(said), said
     for said in ("please note that the deadline moved to Friday", "note that I prefer tea", "so you can remember it, "
                  "my PIN rule is 4 digits"):

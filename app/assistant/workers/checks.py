@@ -65,14 +65,19 @@ def numbers_in(text: str) -> list[tuple[str, float, float, bool]]:
     return out
 
 
+# Numbers of method, not of data: significance levels, confidence levels, a coin-flip baseline. Measured on the 26B
+# (2026-10-09): "the p-value is well above 0.05" was refused as an invented number and cost the analyst a retry.
+CONVENTIONS = (0.001, 0.01, 0.05, 0.1, 0.5, 0.9, 0.95, 0.99, 90.0, 95.0, 99.0)
+
+
 def ungrounded_numbers(answer: str, evidence: list[str]) -> list[str]:
     """Numbers in the answer that no tool result (or the task itself) contains, allowing for the
     rounding the answer shows and for shares written as percentages (0.3003 -> '30%'). Small whole
-    numbers (up to 10) pass: 'top 5', '3 groups'."""
+    numbers (up to 10) pass: 'top 5', '3 groups'; so do the conventions of method (CONVENTIONS)."""
     pool = [v for text in evidence for _, v, _, _ in numbers_in(text)]
     missing = []
     for raw, value, tol, percent in numbers_in(answer):
-        if value == int(value) and abs(value) <= 10:
+        if value == int(value) and abs(value) <= 10 or any(abs(value - c) < 1e-9 for c in CONVENTIONS):
             continue
         if not any(abs(v - value) <= tol or (percent and abs(v * 100 - value) <= tol) for v in pool):
             missing.append(raw)

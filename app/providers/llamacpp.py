@@ -39,6 +39,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import logging
 import re
 import socket
 import threading
@@ -48,6 +49,8 @@ import uuid
 
 from .base import Cancelled, EventCallback, ModelTurn, ProviderError, answered_ids, estimate_tokens
 from .gemma_calls import QUOTE, heal
+
+log = logging.getLogger(__name__)
 
 MAX_TOKENS = 4096           # per turn, without thinking
 MAX_TOKENS_THINKING = 8192  # thinking counts against it
@@ -63,6 +66,12 @@ TEXT_TOOL_CALL = re.compile(r"<tool_call>.*?(?:</tool_call>|$)", re.DOTALL)
 # What a connection to the server can fail with: no answer at all (URLError, OSError), or an answer cut off
 # part way - the Kaggle tunnel dropping mid-stream raises http.client.IncompleteRead, which is neither.
 NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
+# A request whose connection fails before anything comes back is tried again after these pauses (seconds): a
+# model on another computer - the 26B on Kaggle, through its bridge and a tunnel - drops a connection now and
+# then (2026-10-09: 2 of the first 5 acceptance jobs failed on one dropped request, the bridge's 502). A server
+# that answered with its own error (4xx, 500), a timeout and a stopped turn are not retried.
+RETRY_PAUSES = (2.0, 6.0)
+RETRY_STATUS = {502, 503, 504}
 
 
 def template_switches(thinking: bool) -> dict:
@@ -186,10 +195,32 @@ class LlamaCppProvider:
         return {"Content-Type": "application/json"}
 
     def _open(self, path: str, body: dict, timeout: float, stream: bool = False):
-        """POST a request to the server; the open response."""
+        """POST a request to the server; the open response. A connection that fails before anything comes back
+        is tried again (RETRY_PAUSES); nothing has streamed yet, so a retry can't repeat an answer."""
         headers = {**self._headers(), **({"Accept": "text/event-stream"} if stream else {})}
-        request = urllib.request.Request(f"{self.base_url}{path}", data=json.dumps(body).encode(), headers=headers)
-        return urllib.request.urlopen(request, timeout=timeout)
+        data = json.dumps(body).encode()
+        for pause in (*RETRY_PAUSES, None):
+            request = urllib.request.Request(f"{self.base_url}{path}", data=data, headers=headers)
+            try:
+                return urllib.request.urlopen(request, timeout=timeout)
+            except urllib.error.HTTPError as exc:
+                if pause is None or exc.code not in RETRY_STATUS or self._stopped():
+                    raise
+                why = f"HTTP {exc.code}"
+                exc.close()
+            except urllib.error.URLError as exc:
+                if pause is None or self._stopped() or isinstance(exc.reason, (socket.timeout, TimeoutError)):
+                    raise
+                why = str(exc.reason)
+            except ConnectionError as exc:  # reset or closed while opening (http.client's RemoteDisconnected)
+                if pause is None or self._stopped():
+                    raise
+                why = type(exc).__name__
+            log.warning("%s: %s failed (%s); trying again in %.0f s", self.where, path, why, pause)
+            (self.cancel or threading.Event()).wait(pause)
+
+    def _stopped(self) -> bool:
+        return self.cancel is not None and self.cancel.is_set()
 
     def _unreachable(self) -> str:
         return f"Could not reach the local model at {self.base_url}; is llama-server running?"

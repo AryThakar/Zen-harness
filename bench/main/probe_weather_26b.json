@@ -1,0 +1,190 @@
+[
+ {
+  "case": "here_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 12.3,
+  "tools": [
+   "get_weather({\"days\": 0}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "It's a clear evening in Ahmedabad, with a temperature of 33.5°C that feels like 34.2°C. Air quality is currently moderate.",
+  "nudges": []
+ },
+ {
+  "case": "rain_tomorrow",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 20.0,
+  "tools": [
+   "get_weather({\"days\": 1, \"location\": \"Mumbai\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 1,
+     "location": "Mumbai"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "It looks like there's a chance of a light drizzle tomorrow in Mumbai, with about 1.1mm of rain expected.",
+  "nudges": []
+ },
+ {
+  "case": "weekend",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 29.1,
+  "tools": [
+   "get_weather({\"days\": 2, \"location\": \"Pune\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 2,
+     "location": "Pune"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "It looks like a great weekend for being outdoors in Pune. Saturday and Sunday will be partly cloudy with highs around 34°C and very little chance of rain.\n\nJust a heads-up: the air quality is currently a bit high (unhealthy for sensitive groups), so you might want to keep that in mind if you're planning something strenuous.",
+  "nudges": []
+ },
+ {
+  "case": "air",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.8,
+  "tools": [
+   "get_weather({\"days\": 0}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 0
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "The air quality in Ahmedabad is currently moderate, with an AQI of 78.",
+  "nudges": []
+ },
+ {
+  "case": "umbrella",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 13.9,
+  "tools": [
+   "get_weather({\"days\": 1}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "days": 1
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "No umbrella needed today, Arya. It's currently a clear sky with 0% chance of rain, and that looks to be the case for tomorrow as well.",
+  "nudges": []
+ },
+ {
+  "case": "time_now",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.6,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "It is 7:01 PM on Friday, October 9, 2026.",
+  "nudges": []
+ },
+ {
+  "case": "time_typo",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.3,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "It is 19:01.",
+  "nudges": []
+ },
+ {
+  "case": "date",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Today is Friday, October 9, 2026.",
+  "nudges": []
+ },
+ {
+  "case": "time_tokyo",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.8,
+  "tools": [
+   "get_weather({\"location\": \"Tokyo, Japan\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {
+     "location": "Tokyo, Japan"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "It is 10:32 PM in Tokyo.",
+  "nudges": []
+ },
+ {
+  "case": "explain",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 49.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Weather forecasting is essentially a massive, continuous puzzle-solving task. It involves taking a snapshot of the atmosphere right now and using physics to predict how that snapshot will change over time.\n\nThe process follows four main steps:\n\n### 1. Observation (Collecting the data)\nTo predict the future, we first need to know exactly what is happening right now. A global network of sensors gathers data constantly:\n*   **Satellites:** Monitor cloud patterns, water vapor, and ocean temperatures from space.\n*   **Weather Balloons (Radiosondes):** Released several times a day to measure temperature, humidity, and pressure at different altitudes.\n*   **Surface Stations:** Thousands of sensors on land and buoys at sea measure wind speed, precipitation, and ground temperature.\n*   **Aircraft and Ships:** Commercial flights and maritime vessels provide \"in-situ\" data from various points in the atmosphere.\n\n### 2. Data Assimilation\nThis raw data is messy and unevenly distributed (we have more data over cities than the middle of the ocean). Computers perform \"data assimilation,\" which is a mathematical process of merging the new observations with previous forecasts to create a consistent, high-resolution \"starting map\" of the entire atmosphere.\n\n### 3. Numerical Weather Prediction (NWP)\nThis is the engine of modern forecasting. Scientists use complex mathematical equations—based on the laws of physics (thermodynamics, fluid dynamics, etc.)—to describe how air moves and how heat and moisture are exchanged.\n*   **Models:** These equations are coded into models (like the GFS or ECMWF).\n*   **Supercomputers:** Because these equations are incredibly complex and must be calculated for millions of \"grid points\" across the globe, they require massive supercomputing power to run.\n\n### 4. Human Interpretation and Local Adjustment\nModels are not perfect; they are approximations of reality. Meteorologists review the output from various models to look for consistency or conflicting signals. They use their understanding of local geography—like how a specific mountain range might trigger rain or how a coastline affects temperature—to refine the computer's raw data into the forecast you see on your phone.\n\n***\n\n**In short:** We observe the present $\\rightarrow$ convert it into a digital map $\\rightarrow$ run it through physics-based simulations on supercomputers $\\rightarrow$ let meteorologists fine-tune the results.",
+  "nudges": []
+ }
+]

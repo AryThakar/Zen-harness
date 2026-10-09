@@ -1,0 +1,159 @@
+[
+ {
+  "case": "fiscal",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call save_note (called: notes)",
+  "seconds": 9.4,
+  "tools": [
+   "notes({\"content\": \"The user's fiscal year starts in April.\", \"mode\": \"save\", \"title\": \"Fiscal Year Start\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "notes",
+    "input": {
+     "content": "The user's fiscal year starts in April.",
+     "mode": "save",
+     "title": "Fiscal Year Start"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've noted that, Arya. I'll keep that in mind for any future fiscal calculations or planning.",
+  "nudges": []
+ },
+ {
+  "case": "names",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call save_note (called: notes)",
+  "seconds": 6.4,
+  "tools": [
+   "notes({\"content\": \"The user's name is Arya and the assistant's name is Zen.\", \"mode\": \"save\", \"title\": \"User and Assistant Names\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "notes",
+    "input": {
+     "content": "The user's name is Arya and the assistant's name is Zen.",
+     "mode": "save",
+     "title": "User and Assistant Names"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Understood, Arya. I've noted that. I'm Zen.",
+  "nudges": []
+ },
+ {
+  "case": "pin",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call save_note (called: notes)",
+  "seconds": 7.8,
+  "tools": [
+   "notes({\"content\": \"The user wants all answers to be in metric units in every chat.\", \"mode\": \"save\", \"title\": \"Metric Units Preference\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "notes",
+    "input": {
+     "content": "The user wants all answers to be in metric units in every chat.",
+     "mode": "save",
+     "title": "Metric Units Preference"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Understood, Arya. I've noted that you want all answers in metric units. I'll keep that in mind for our future conversations.",
+  "nudges": []
+ },
+ {
+  "case": "save_code",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call files (called: write_code)",
+  "seconds": 16.3,
+  "tools": [
+   "write_code({\"task\": \"Create a file named parabola.py with the following content:\\nimport numpy as np\\nx = np.linspace(-5, 5, 100)\\nprint((x ** 2).max()…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "write_code",
+    "input": {
+     "task": "Create a file named parabola.py with the following content:\nimport numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've saved that code into a file called `parabola.py` for you, Arya.",
+  "nudges": []
+ },
+ {
+  "case": "no_note",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 4.8,
+  "tools": [
+   "calculate({\"expression\": \"12 * 12\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "12 * 12"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "12 times 12 is 144.",
+  "nudges": []
+ },
+ {
+  "case": "your_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 14.8,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "I am Zen, an assistant running on a local open model on this computer—not ChatGPT, Claude, or any other product.",
+  "nudges": []
+ },
+ {
+  "case": "my_name",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 1.9,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Your name is Arya.",
+  "nudges": []
+ },
+ {
+  "case": "who_talking",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.7,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "You're talking to Zen, an assistant running on a local open model on this computer. I'm here to help you with whatever you need, Arya.",
+  "nudges": []
+ }
+]

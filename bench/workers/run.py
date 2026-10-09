@@ -18,7 +18,8 @@ from pathlib import Path
 from app.providers.llamacpp import THINKING_BUDGET, LlamaCppProvider
 from app.assistant.registry import ToolContext
 from app.assistant.workers import PROFILES, run_worker
-from app.rag.embed import FastEmbedder
+from app.config import settings
+from app.rag.embed import make_embedder
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -69,7 +70,7 @@ def main() -> None:
     tasks = [t for t in TASKS if ((args.split == "all" and t.split in ("dev", "holdout")) or t.split == args.split)
              and (not args.role or t.role == args.role) and (not args.only or t.id in args.only.split(","))]
     tasks = [t for t in tasks for _ in range(args.repeat)]
-    embedder = FastEmbedder("BAAI/bge-small-en-v1.5", "data/models")
+    embedder = make_embedder(settings)  # the app's own search model
     rows = []
     for task in tasks:
         root = Path(tempfile.mkdtemp()) / "ws"
@@ -112,10 +113,20 @@ def main() -> None:
     print(f"\n{sum(r['passed'] for r in rows)}/{len(rows)} passed -> {name}.md")
 
 
+def _served_model() -> str:
+    """The model file llama-server serves (its /props), for the report's header."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(settings.llamacpp_url.rstrip("/") + "/props", timeout=20) as r:
+            return Path(str(json.load(r).get("model_path", "?")).replace("\\", "/")).name
+    except (OSError, ValueError):
+        return "unknown model"
+
+
 def report(rows: list[dict], split: str) -> str:
     lines = [f"# Worker benchmark - {split}", "",
-             "Local model: Gemma 4 E4B (Q4_K_XL + MTP draft) on llama-server, worker slot, thinking on, "
-             "RTX 3050 Laptop 4 GB.", "", "| role | passed | median seconds | model calls |", "|---|---|---|---|"]
+             f"Model: {_served_model()} on llama-server ({settings.llamacpp_url}), worker slot, thinking on.",
+             "", "| role | passed | median seconds | model calls |", "|---|---|---|---|"]
     for role in dict.fromkeys(r["role"] for r in rows):
         rr = [r for r in rows if r["role"] == role]
         secs = sorted(r["seconds"] for r in rr)

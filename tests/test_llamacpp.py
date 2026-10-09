@@ -62,7 +62,7 @@ class QuietServer(ThreadingHTTPServer):
 class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
-    def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False):
+    def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False, fail_first=0):
         self.requests = []
         fake = self
 
@@ -81,8 +81,8 @@ class FakeServer:
 
             def do_POST(self):
                 fake.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                if error:
-                    body = json.dumps({"error": {"message": error}}).encode()
+                if error or len(fake.requests) <= fail_first:
+                    body = json.dumps({"error": {"message": error or "The Kaggle server can't be reached"}}).encode()
                     self.send_response(status)
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
@@ -193,6 +193,31 @@ def test_errors_become_provider_errors(fake):
         LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
     with pytest.raises(ProviderError, match="is llama-server running"):
         LlamaCppProvider("m", "http://127.0.0.1:9").complete("s", [{"role": "user", "content": "q"}], [])
+
+
+def test_a_connection_that_fails_before_anything_streams_is_tried_again(fake):
+    """The Kaggle bridge's 502 when the tunnel drops a request: 2 of the first 5 acceptance jobs failed on one."""
+    done = {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    server = fake(chunks=[delta(content="Answer."), done], status=502, fail_first=1)
+    turn = LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
+    assert turn.text == "Answer." and len(server.requests) == 2
+
+
+def test_only_a_failed_connection_is_retried_and_never_for_ever(fake):
+    down = fake(status=502, error="The Kaggle server can't be reached")
+    with pytest.raises(ProviderError, match="502"):
+        LlamaCppProvider("m", down.url).complete("s", [{"role": "user", "content": "q"}], [])
+    assert len(down.requests) == 3  # the first try and two more
+    refused = fake(status=400, error="the request exceeds the available context size")
+    with pytest.raises(ProviderError, match="context size"):
+        LlamaCppProvider("m", refused.url).complete("s", [{"role": "user", "content": "q"}], [])
+    assert len(refused.requests) == 1  # the server answered: its error stands
+    stopped = fake(status=502, error="down")
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(ProviderError):
+        LlamaCppProvider("m", stopped.url, cancel=cancel).complete("s", [{"role": "user", "content": "q"}], [])
+    assert len(stopped.requests) == 1  # the user pressed Stop: no retry
 
 
 def test_an_answer_cut_off_part_way_is_a_provider_error(fake):

@@ -1,0 +1,278 @@
+[
+ {
+  "case": "flowchart",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 32.7,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"flowchart TD\\n    Start([Start]) --> Visit[User visits website]\\n    Visit --> LoginPage[Website displays Login page]\\n    Logi…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "flowchart TD\n    Start([Start]) --> Visit[User visits website]\n    Visit --> LoginPage[Website displays Login page]\n    LoginPage --> Input[User enters credentials]\n    Input --> Submit[User clicks Login]\n    Submit --> Server[Server validates credentials]\n    Server --> Valid{Is valid?}\n    \n    Valid -- Yes --> Success[Create Session/Token]\n    Success --> Dashboard[Redirect to Dashboard]\n    Dashboard --> End([End: Login Successful])\n    \n    Valid -- No --> Error[Show Error Message]\n    Error --> LoginPage\n",
+     "title": "User Login Process Flowchart"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've drawn a flowchart showing the typical sequence of a user logging into a website, from visiting the page to successful redirection or handling an error.",
+  "nudges": []
+ },
+ {
+  "case": "sequence",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 25.9,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"sequenceDiagram\\n    participant Browser\\n    participant WebServer as Web Server\\n    participant Database as Database\\n\\n    …) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "sequenceDiagram\n    participant Browser\n    participant WebServer as Web Server\n    participant Database as Database\n\n    Browser->>WebServer: HTTP GET /page\n    WebServer->>Database: SQL Query (SELECT...)\n    Database-->>WebServer: Query Results\n    WebServer->>WebServer: Process data & generate HTML\n    WebServer-->>Browser: HTTP Response (200 OK, HTML content)\n    Note right of Browser: Browser renders the page",
+     "title": "Browser Loading a Page via Web Server and Database"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Here is a sequence diagram showing the flow from the browser's request, through the web server, to the database and back.",
+  "nudges": []
+ },
+ {
+  "case": "class",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 43.5,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"classDiagram\\n    class Book {\\n        +String isbn\\n        +String title\\n        +String author\\n        +Boolean is_availa…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "classDiagram\n    class Book {\n        +String isbn\n        +String title\n        +String author\n        +Boolean is_available\n    }\n    class Member {\n        +String member_id\n        +String name\n        +String email\n        +borrow_book()\n        +return_book()\n    }\n    class Loan {\n        +String loan_id\n        +Date loan_date\n        +Date due_date\n        +Date return_date\n    }\n\n    Member \"1\" -- \"*\" Loan : places\n    Book \"1\" -- \"*\" Loan : is part of",
+     "title": "Library System Class Diagram"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've created the class diagram for your library system, showing the relationships between Books, Members, and Loans.",
+  "nudges": []
+ },
+ {
+  "case": "state",
+  "run": 1,
+  "ok": false,
+  "problem": "drew a flowchart, not a state",
+  "seconds": 42.4,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"flowchart TD\\n    A([Order Placed]) --> B{Payment Success?}\\n    B -- No --> C([Order Cancelled])\\n    B -- Yes --> D[Order Con…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "flowchart TD\n    A([Order Placed]) --> B{Payment Success?}\n    B -- No --> C([Order Cancelled])\n    B -- Yes --> D[Order Confirmed]\n    D --> E[Processing & Packing]\n    E --> F[Shipped]\n    F --> G[Out for Delivery]\n    G --> H{Delivered?}\n    H -- Yes --> I([Delivered])\n    H -- No --> J[Delivery Attempt Failed/Retry]\n    J --> G\n    D -.-> K([Order Cancelled])",
+     "title": "Online Order Lifecycle"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Here is a flowchart showing the typical lifecycle of an online order, from the moment it's placed until it reaches your door.",
+  "nudges": []
+ },
+ {
+  "case": "er",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 24.3,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"erDiagram\\n    USER ||--o{ POST : writes\\n    USER ||--o{ COMMENT : writes\\n    POST ||--o{ COMMENT : contains\\n\\n    USER {\\n …) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "erDiagram\n    USER ||--o{ POST : writes\n    USER ||--o{ COMMENT : writes\n    POST ||--o{ COMMENT : contains\n\n    USER {\n        int id PK\n        string username\n        string email\n        string password_hash\n        datetime created_at\n    }\n\n    POST {\n        int id PK\n        string title\n        text content\n        int author_id FK\n        datetime created_at\n    }\n\n    COMMENT {\n        int id PK\n        text content\n        int post_id FK\n        int user_id FK\n        datetime created_at\n    }",
+     "title": "Blog ER Diagram"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've drawn an ER diagram for your blog schema, showing the relationships between users, posts, and comments.",
+  "nudges": []
+ },
+ {
+  "case": "gantt",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 12.0,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"gantt\\n    title Website Project Timeline\\n    dateFormat  YYYY-MM-DD\\n    section Phases\\n    Design           :a1, 2026-10-12…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "gantt\n    title Website Project Timeline\n    dateFormat  YYYY-MM-DD\n    section Phases\n    Design           :a1, 2026-10-12, 7d\n    Build            :after a1, 7d\n    Test             :after a2, 7d\n",
+     "title": "3-Week Website Project"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've created a Gantt chart showing the three stages of your project: Design, Build, and Test, each spanning one week.",
+  "nudges": []
+ },
+ {
+  "case": "pie",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 25.0,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"pie title My Day\\n    \\\"Sleep\\\" : 8\\n    \\\"Work\\\" : 9\\n    \\\"Commute\\\" : 2\\n    \\\"Rest\\\" : 5\", \"title\": \"My Day Distribution\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "pie title My Day\n    \"Sleep\" : 8\n    \"Work\" : 9\n    \"Commute\" : 2\n    \"Rest\" : 5",
+     "title": "My Day Distribution"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Here is a pie chart showing your day: sleep takes up 8 hours, work is 9 hours, commute is 2 hours, and rest is 5 hours.",
+  "nudges": []
+ },
+ {
+  "case": "mindmap",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 29.0,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"mindmap\\n  root((Machine Learning))\\n    Supervised Learning\\n      Regression\\n        Linear Regression\\n        Polynomial R…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "mindmap\n  root((Machine Learning))\n    Supervised Learning\n      Regression\n        Linear Regression\n        Polynomial Regression\n      Classification\n        Logistic Regression\n        SVM\n        Decision Trees\n        Random Forest\n        k-Nearest Neighbors\n        Naive Bayes\n    Unsupervised Learning\n      Clustering\n        K-Means\n        Hierarchical Clustering\n        DBSCAN\n      Dimensionality Reduction\n        PCA\n        t-SNE\n      Association Rule Learning\n    Reinforcement Learning\n      Q-Learning\n      Policy Gradient\n      Deep Q-Networks\n    Deep Learning\n      Neural Networks\n        ANN\n        CNN\n        RNN\n      Architectures\n        Transformers\n        GANs\n        Autoencoders\n    Evaluation Metrics\n      Classification\n        Accuracy\n        Precision\n        Recall\n        F1-Score\n      Regression\n        MSE\n        MAE\n        R-squared\n    Data Preprocessing\n      Cleaning\n      Feature Engineering\n      Scaling\n      Encoding",
+     "title": "Machine Learning Topics Mind Map"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've created a mind map for you, Arya, covering the core branches of machine learning from supervised and unsupervised learning to deep learning and evaluation metrics.",
+  "nudges": []
+ },
+ {
+  "case": "timeline",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 34.2,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"timeline\\n    title Python Major Releases\\n    1991 : Python 0.9.0\\n    1994 : Python 1.0\\n    2000 : Python 2.0\\n    2008 : Py…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "timeline\n    title Python Major Releases\n    1991 : Python 0.9.0\n    1994 : Python 1.0\n    2000 : Python 2.0\n    2008 : Python 3.0\n    2020 : End of Python 2 support\n",
+     "title": "Python Major Releases Timeline"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "Here is a timeline of Python's major releases.\n\n![Python Major Releases Timeline](https://via.placeholder.com/800x400?text=Python+Major+Releases+Timeline)",
+  "nudges": []
+ },
+ {
+  "case": "colours",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 33.7,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"flowchart TD\\n    Start([Start]) --> Boil[Boil water]\\n    Boil --> TeaBag[Add tea bag to cup]\\n    TeaBag --> Pour[Pour hot wa…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "flowchart TD\n    Start([Start]) --> Boil[Boil water]\n    Boil --> TeaBag[Add tea bag to cup]\n    TeaBag --> Pour[Pour hot water into cup]\n    Pour --> Steep[Wait for tea to steep]\n    Steep --> Remove[Remove tea bag]\n    Remove --> End([End])\n\n    style Start fill:#00FF00,stroke:#333,stroke-width:2px\n    style End fill:#FF0000,stroke:#333,stroke-width:2px",
+     "title": "How to Make Tea"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've drawn a flowchart for you showing the steps to make tea, with the start step in green and the end step in red.",
+  "nudges": []
+ },
+ {
+  "case": "jk",
+  "run": 1,
+  "ok": false,
+  "problem": "didn't call draw_diagram (called: nothing)",
+  "seconds": 42.5,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "A JK flip-flop is a universal flip-flop because it can behave like an SR flip-flop or a T (toggle) flip-flop depending on the inputs. It solves the \"invalid state\" problem of the SR flip-flop by adding a toggle mode.\n\nHere is a summary of how it behaves:\n\n*   **J=0, K=0**: **Hold** (No change in state).\n*   **J=1, K=0**: **Set** (Output $Q$ becomes 1).\n*   **J=0, K=1**: **Reset** (Output $Q$ becomes 0).\n*   **J=1, K=1**: **Toggle** (Output $Q$ flips to its opposite state).\n\n### State Transition Diagram\n\nThis diagram shows how the flip-flop moves between states based on the inputs:\n\n```mermaid\nstateDiagram-v2\n    direction LR\n    [*] --> Hold: J=0, K=0\n    Hold --> Hold: J=0, K=0\n    Hold --> Set: J=1, K=0\n    Hold --> Reset: J=0, K=1\n    Hold --> Toggle: J=1, K=1\n    Set --> Hold: J=0, K=0\n    Set --> Reset: J=0, K=1\n    Set --> Toggle: J=1, K=1\n    Reset --> Hold: J=0, K=0\n    Reset --> Set: J=1, K=0\n    Reset --> Toggle: J=1, K=1\n    Toggle --> Hold: J=0, K=0\n    Toggle --> Set: J=1, K=0\n    Toggle --> Reset: J=0, K=1\n```\n\n*Note: In a real circuit, these transitions are synchronized by a clock signal (either rising or falling edge).*",
+  "nudges": []
+ },
+ {
+  "case": "tree",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 44.3,
+  "tools": [
+   "draw_diagram({\"mermaid\": \"graph TD\\n    Start([Start with Dataset]) --> Split[Calculate Split Quality<br/>Gini Impurity or Information Gain]\\n    Split -…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "draw_diagram",
+    "input": {
+     "mermaid": "graph TD\n    Start([Start with Dataset]) --> Split[Calculate Split Quality<br/>Gini Impurity or Information Gain]\n    Split --> Select[Select feature and threshold<br/>that maximizes purity]\n    Select --> Node[Create Decision Node]\n    Node --> Check{Is node pure?<br/>or max depth reached?}\n    Check -- No --> Branches[Create branches for each outcome]\n    Branches --> Split\n    Check -- Yes --> Leaf[Create Leaf Node<br/>Final Prediction]\n",
+     "title": "Decision Tree Algorithm Logic"
+    },
+    "status": "ok"
+   }
+  ],
+  "asked": null,
+  "answer": "I've created a flowchart for you that illustrates the logical flow of the Decision Tree algorithm.",
+  "nudges": []
+ }
+]

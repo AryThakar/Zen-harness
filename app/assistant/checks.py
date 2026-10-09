@@ -78,7 +78,9 @@ REMEMBER = re.compile(r"\b(?:remember|memori[sz]e|take (?:a )?note|make a note|"
                       r"note (?:that|this|it|down)|"
                       r"keep (?:that |this |it )?in (?:mind|view)|don'?t forget|from now on|in (?:every|all|future) "
                       r"chats?)\b", re.I)
-RECALLING = re.compile(r"\b(?:do|did|can|could|would) (?:you|u) (?:still )?remember\b"
+# ("i given you name dont you remember" - a reproach about the past, no question mark - was nudged; found
+# replaying today's checks over the 301 stored tool-less replies, 2026-10-09: 17 right, this one wrong.)
+RECALLING = re.compile(r"\b(?:do|did|can|could|would|don'?t|didn'?t|can'?t|won'?t) (?:you|u) (?:still )?remember\b"
                        r"|^\W*(?:do|did|can|could|would) (?:still )?remember\b|\bremember when\b", re.I)
 
 

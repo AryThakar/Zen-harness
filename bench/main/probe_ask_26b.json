@@ -1,0 +1,77 @@
+[
+ {
+  "case": "vague",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 34.3,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Which format did you have in mind? \n\nI can convert it to ISO 8601 (**2026-10-09 18:59:00**), a US style (**10/09/2026 06:59 PM**), or something else entirely. Let me know which you need, Arya.",
+  "nudges": []
+ },
+ {
+  "case": "typo",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 12.4,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "The capital of France is Paris.",
+  "nudges": []
+ },
+ {
+  "case": "trip",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 10.3,
+  "tools": [
+   "ask_user({\"options\": [\"Weekend getaway\", \"Long vacation\", \"Adventure trip\", \"Relaxing retreat\"], \"question\": \"I'd love to help you plan a trip, Arya.…) asked"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_user",
+    "input": {
+     "options": [
+      "Weekend getaway",
+      "Long vacation",
+      "Adventure trip",
+      "Relaxing retreat"
+     ],
+     "question": "I'd love to help you plan a trip, Arya. To get started, what kind of trip are you dreaming of?"
+    },
+    "status": "asked"
+   }
+  ],
+  "asked": {
+   "question": "I'd love to help you plan a trip, Arya. To get started, what kind of trip are you dreaming of?",
+   "options": [
+    "Weekend getaway",
+    "Long vacation",
+    "Adventure trip",
+    "Relaxing retreat"
+   ],
+   "via": null,
+   "approval": null
+  },
+  "answer": "",
+  "nudges": []
+ },
+ {
+  "case": "clear",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 2.0,
+  "tools": [],
+  "calls": [],
+  "asked": null,
+  "answer": "Soft gray clouds descend,\nRhythm on the window pane,\nEarth drinks deep and rests.",
+  "nudges": []
+ }
+]

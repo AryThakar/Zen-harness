@@ -122,7 +122,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             if not turn.text.strip():
                 return _done(ctx, profile, {"answer": ""}, trace, ["the worker returned no answer"], note=note)
             written = _json_in_text(turn.text)
-            outcome = _submitted(profile, written, trace, opening) if written is not None else None
+            outcome = _submitted(profile, written, trace, opening, task) if written is not None else None
             if isinstance(outcome, dict):
                 result, problems = outcome["result"], outcome["problems"]
             else:
@@ -149,7 +149,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         drawn_before, read = len(ctx.scratch.images), []
         for call in turn.tool_calls:
             if call["name"] == profile.finish:
-                outcome = _submitted(profile, call["input"], trace, opening)
+                outcome = _submitted(profile, call["input"], trace, opening, task)
                 progress({"type": "worker_check", "worker": profile.name,
                           "problems": [outcome] if isinstance(outcome, str) else outcome["problems"],
                           "retry": not (isinstance(outcome, dict) and (not outcome["problems"] or retried))})
@@ -293,10 +293,15 @@ def _load(ctx: ToolContext, file: str) -> str:
             + (f"Its latest report:\n{report}\n\n" if report else "It has no report yet.\n\n"))
 
 
-def _submitted(profile: Profile, raw, trace: Trace, context: str) -> dict | str:
-    """{'result', 'problems'} for a well-formed submission, or an error text to send back."""
+def _submitted(profile: Profile, raw, trace: Trace, context: str, task: str = "") -> dict | str:
+    """{'result', 'problems'} for a well-formed submission, or an error text to send back. A field the code
+    already knows is filled in rather than sent back: the analyst's report title is the task it was given
+    (measured on the 26B: a report without one cost a whole step to resend)."""
     if not isinstance(raw, dict):
         return f"{profile.finish} needs JSON arguments."
+    if profile.result_model is DataReport and not str(raw.get("question") or "").strip() and task.strip():
+        first = task.strip().splitlines()[0]
+        raw = {**raw, "question": first if len(first) <= 120 else first[:120].rsplit(" ", 1)[0] + " ..."}
     if raw.get("question_for_user"):  # asking is the whole result; small models leave the rest out
         raw = {**{k: "" for k, f in profile.result_model.model_fields.items() if f.is_required()}, **raw}
     try:

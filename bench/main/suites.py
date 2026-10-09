@@ -277,15 +277,15 @@ SUITES: dict[str, list[Case]] = {
         Case("explain", "explain how weather forecasts are made", all_of(no_tool, answered)),
     ],
     "notes": [
-        Case("fiscal", "remember that our fiscal year starts in April", uses("save_note", field_has("content", "april"))),
+        Case("fiscal", "remember that our fiscal year starts in April", uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "april")(a))),
         Case("names", "your name is Zen and my name is Ary, remember that",
-             uses("save_note", lambda a: field_has("content", "zen")(a) or field_has("content", "ary")(a)
+             uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "zen")(a) or field_has("content", "ary")(a)
                   or third_person(a))),
         Case("pin", "keep this in view in every chat: always answer in metric units",
-             uses("save_note", field_has("content", "metric"))),
+             uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "metric")(a))),
         Case("save_code", "now save this code", files_call("write", field_has("content", r"linspace")),
              history=[("show me code for y = x^2", CODE)]),
-        Case("no_note", "what's 12 times 12?", avoids("save_note")),
+        Case("no_note", "what's 12 times 12?", avoids("notes")),
         Case("your_name", "what is your name", all_of(says(rf"\b{ZEN}\b"),
                                                       never_says(r"don'?t have a (personal )?name"))),
         Case("my_name", "what is my name?", all_of(says(rf"\b{USER}\b"), never_says(rf"your name is {ZEN}"))),

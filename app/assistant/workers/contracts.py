@@ -146,11 +146,12 @@ class Delegate:
 
 
 DELEGATES = {
-    "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches, reads pages and returns "
-                     "a cited answer, dated for 'latest' questions, how each cited page was read, the pages it could "
-                     "not read and why, and the links of files the task asks for (a dataset, a script) for you to "
-                     "download. Use it for what is current or what you don't know - news, releases, "
-                     "prices, people, events - and to read a link the user gives.",
+    "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches, reads pages and returns a cited answer, dated for "
+                     "'latest' questions, how each cited page was read, the pages it could not read and why, and the links of "
+                     "files the task asks for (a dataset, a script) for you to download. Use it for what is current or what "
+                     "you don't know - news, releases, prices, people, events - and to read a page the user links to. Not for "
+                     "the user's own files (ask_knowledge), or for bringing in a file whose link you have (files, "
+                     "mode='download').",
                              "Web researcher", ("Researching on the web", "Researched on the web")),
     "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own documents, saved notes and earlier "
                       "conversations, with sources. Use it when the user asks about their documents or notes, what was "
@@ -158,17 +159,18 @@ DELEGATES = {
                       "come first: when a document or note in the workspace may cover the question (judge by its "
                       "name and title), ask here before research_web.",
                               "Knowledge", ("Looking through your files and chats", "Looked through your files and chats")),
-    "analyze_data": Delegate("data", DataTaskIn, "Give a data task to the data analyst. Use it for any question about the "
-                     "numbers in the user's tables: cleaning, "
-                     "exact numbers, charts, whether a difference or A/B result is real, trends and forecasts, what "
-                     "predicts or drives a column, customer segments, unusual days, items bought together, themes "
-                     "in text.",
+    "analyze_data": Delegate("data", DataTaskIn, "Give a data task to the data analyst. Use it for any question about the numbers in the user's tables: "
+                     "cleaning, exact numbers, charts, whether a difference or A/B result is real, trends and forecasts, what "
+                     "predicts or drives a column, customer segments, unusual days, items bought together, themes in text. Not "
+                     "for numbers typed in the chat (calculate), or data that isn't a table in the workspace yet (bring it in "
+                     "first: files, mode='download').",
                              "Data analyst", ("Analysing your data", "Analysed your data")),
-    "write_code": Delegate("coder", CodeTaskIn, "Have the coder write one file and keep it - a Python script it runs and "
-                   "fixes, or a file in any language - or change an existing one (give its name as file). For when "
-                   "the user asks for code or the work needs a program (loops, simulations, files), not for working "
-                   "out a formula. You get its report, never the code: answer from the report and never paste or "
-                   "retype code; the user sees the file in the chat.",
+    "write_code": Delegate("coder", CodeTaskIn, "Have the coder write one file and keep it - a Python script it runs, tests and fixes, or a file in any "
+                     "language - or change an existing one (give its name as file). Use it when the user asks for code, or the "
+                     "work needs a program: simulations, conversions, editing a picture, a plot of a formula. Not for a sum "
+                     "you can calculate, a table's numbers or charts (analyze_data), or documents - Word, slides, Markdown, "
+                     "text (files, mode='write'). You get its report, never the code: answer from the report and never paste "
+                     "or retype code; the user sees the file in the chat.",
                            "Coder", ("Writing and running code", "Wrote and ran code")),
 }
 

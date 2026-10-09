@@ -107,8 +107,27 @@ Tier 2
 - Done: the docs merge - ARCHITECTURE.md describes the app as it is; the three older plans removed, their
   open findings in section 14.
 
-Next: the README; then, on the 26B (Kaggle), the prompt review (sections 8 and 14), the guessing checks
-measured with the trace (section 9), the thinking policy and the evaluation.
+- First session on the 26B (Gemma 4 26B-A4B, Kaggle, 2 slots of 16k; 2026-10-09). The way of working, the
+  user's rule: the app's code is fixed where a bug or a design gap is found, generally; a model's slip is a limit
+  to measure, never a rule for one case; tests measure and find bugs.
+  - Helpers (bench/workers, 33 tasks): web 7/7, knowledge 7/7, data 9/11, coder 2/8 - most failures were the
+    benchmark's own checks, out of date with the app (a removed model item, the 'files' field, a tool's new
+    name); fixed, the re-run passed them, and showed the coder's run-to-run variance (a self-contained sum
+    once took 1 step, once 11 - kept as an observation, not patched).
+  - Main (bench/main, 75 cases): weather 10/10, persona 6/6, image 5/5, ask 4/4, routing 18/20, diagram 10/12,
+    files 8/11, import 2/3; notes, coder and analyst need the real helpers to mean anything (re-run with them).
+  - Guessing checks (section 9), replayed over the user's 301 stored tool-less replies: 18 real fires, 17 right,
+    1 wrong (a question about the past read as "remember") - fixed. The checks stay.
+  - App fixes, each general: a model request whose connection drops before anything streams is retried (the
+    Kaggle tunnel's 502s failed whole jobs); conventions of method (0.05, 95%) are no longer refused as invented
+    numbers; the analyst's report title is filled from its task instead of costing a step; the overlapping
+    tools' descriptions now follow one routing design (what for, when not, which instead) - section 8's
+    template.
+  - The acceptance jobs (bench/combos.py, 20 whole jobs on fresh data in a new store each, 10 held out): the
+    first dev run lost 7 of 10 to the tunnel going down; to be run again.
+
+Next, on the 26B: the acceptance jobs (dev, then the held-out half once), the thinking policy, then
+the prompt review against what the jobs show (sections 8 and 14).
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 

@@ -30,7 +30,7 @@ from app.assistant import workers
 from app.assistant.registry import TOOLS
 from app.assistant.store import Store
 from app.config import settings
-from app.rag.embed import FastEmbedder
+from app.rag.embed import make_embedder
 from app.tools.core import ok
 
 from .suites import OLD, SUITES, Case, Seen
@@ -84,6 +84,11 @@ def run(case: Case, store: Store, provider: LlamaCppProvider) -> Seen:
         elif kind in ("error", "stopped"):
             seen.error = event.get("message", kind)
     seen.ws = store.open(ws_id)[0]
+    # The hidden checks that fired (checks.py), each with the reply it answered: to measure whether a check
+    # caught a real failure or misfired (SYSTEM_PLAN section 9).
+    said = store.messages(chat_id, for_model=True)
+    seen.nudges = [{"nudge": str(m.get("content", ""))[:90], "after": str(prev.get("text") or "")[:400]}
+                   for prev, m in zip(said, said[1:]) if m.get("check")]
     return seen
 
 
@@ -126,7 +131,7 @@ def main() -> None:
         workers.run_worker = _helper
     provider = LlamaCppProvider(settings.llamacpp_model, settings.llamacpp_url, settings.assistant_thinking, slot=int(os.environ.get("PROBE_SLOT", "1")),
                                 max_tokens=settings.assistant_max_tokens)
-    embedder = FastEmbedder("BAAI/bge-small-en-v1.5", "data/models")
+    embedder = make_embedder(settings)  # the app's own search model
     cases = [c for c in SUITES[args.suite] if not args.only or c.id in args.only.split(",")]
     rows = []
     for case in cases:
@@ -142,7 +147,8 @@ def main() -> None:
                 store.close()
             row = {"case": case.id, "run": n, "ok": problem is None, "problem": problem,
                    "seconds": round(time.perf_counter() - started, 1), "tools": [brief(t) for t in seen.tools],
-                   "calls": seen.tools, "asked": seen.asked, "answer": seen.answer}
+                   "calls": seen.tools, "asked": seen.asked, "answer": seen.answer,
+                   "nudges": getattr(seen, "nudges", [])}
             rows.append(row)
             print(f"{case.id:<16} run{n} {'ok  ' if row['ok'] else 'FAIL'} {row['seconds']:>6}s  "
                   f"{'; '.join(row['tools'])[:110]}  {problem or ''}", flush=True)

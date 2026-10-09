@@ -111,19 +111,25 @@ def _chart_check(run: Run):
 
 
 def _model_check(run: Run):
-    models = [i for i in run.ws.ids("model")]
-    if not models:
+    """predict ran without the target's own source as a predictor, and the answer gives its score. (The model
+    item this read was dropped from the app on 2026-10-08: predict reports its drivers as a table card and its
+    score in the result.)"""
+    drivers = [a for a in run.artifacts if a.get("type") == "table" and str(a.get("title", "")).startswith("What predicts")]
+    if not drivers:
         return verdict(False, "no model trained")
-    meta = run.ws.entry(models[-1])["meta"]
-    leak = "affairs" in meta["features"]
-    score = meta["score"]
-    ok = not leak and 0.68 <= score <= 0.82 and has_number(run.out.get("answer", ""), score, 0.006) and clean(run)
-    return verdict(ok, f"features include affairs: {leak}; score {score}; answer cites it: "
-                       f"{has_number(run.out.get('answer', ''), score, 0.006)}")
+    leak = any(str(row[0]).lower() == "affairs" for row in drivers[-1].get("rows", []))
+    answer = run.out.get("answer", "")
+    cited = any(has_number(answer, s / 100, 0.006) or has_number(answer, s, 0.6) for s in range(68, 83))
+    ok = not leak and cited and clean(run)
+    return verdict(ok, f"features include affairs: {leak}; answer cites a score of 0.68-0.82: {cited}")
 
 
 def _ambiguous_check(run: Run):
-    asked = bool(run.out.get("question_for_user")) or re.search(r"day.{0,20}month|month.{0,20}day|date format|order of the date",
+    # Asking: a helper asks in place with ask_user now (shown as a card in the app); before, it handed the
+    # question back to main (question_for_user) or said it in the answer.
+    asked_card = any(t.get("name") == "ask_user" and re.search(r"day|month|date", str(t.get("input")), re.I)
+                     for t in run.tools)
+    asked = asked_card or bool(run.out.get("question_for_user")) or re.search(r"day.{0,20}month|month.{0,20}day|date format|order of the date",
                                                                 run.out.get("answer", ""), re.I)
     guessed = has_number(run.out.get("answer", ""), 618, 0.5) or has_number(run.out.get("answer", ""), 3 * 100 + 4, 0.5)
     return verdict(bool(asked), f"asked about date order: {bool(asked)}; also gave a number: {guessed}")
@@ -343,7 +349,7 @@ def _ran(r: Run, *expected: str):
     card = (r.out.get("approval_card") or {}).get("approval") or {}
     report = r.out.get("report") or card.get("report") or ""
     ok = (all(e.lower() in report.lower() for e in expected) and (called(r, "run_code") or called(r, "fix_code"))
-          and bool(r.out.get("file") or card) and "- Last run: passed" in report and clean(r))
+          and bool(r.out.get("file") or r.out.get("files") or card) and "- Last run: passed" in report and clean(r))
     return verdict(ok, f"saved (or asking to) with a report showing {expected}")
 
 
