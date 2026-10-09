@@ -1,9 +1,11 @@
 """Does a llama-server slot leak one conversation into another? Two conversations, each holding its own code word,
-asked on the same slot - one after the other, then both at once (each request straight to the server, without the
-app's per-slot lock) - and each answer checked for the other's word. Found 2026-10-09 on the 26B (Kaggle, b11474,
-two slots): while two clients shared slot 1, a helper answered another chat's task. If only 'at once' leaks, the
-app's one-request-per-slot lock (app/providers/llamacpp.py) is the whole fix; if 'one after the other' leaks too,
-the server's prompt cache is at fault and the server's settings must change.
+asked one after the other on one slot, then both at once on one slot (each request straight to the server), and
+each answer checked for the other's word.
+
+Asked after a run on the 26B (Kaggle, b11474, two slots) where a coder, given a task about dates, asked for an
+'invoices.csv' that another job was using. Measured 2026-10-09: 0 of 10 leaked one after the other, 0 of 10 at once
+on one slot, 0 of 10 at once on the two slots - no leak. llama-server queues a request for a busy slot itself, so
+the app needs no lock of its own; the coder had made the name up (a common one), a model slip to measure.
 
     python -m bench.slot_leak [rounds]        (llama-server at BIZ_LLAMACPP_URL)
 """
