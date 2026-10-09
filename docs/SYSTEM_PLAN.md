@@ -112,8 +112,11 @@ Tier 2
   to measure, never a rule for one case; tests measure and find bugs.
   - Helpers (bench/workers, 33 tasks): web 7/7, knowledge 7/7, data 9/11, coder 2/8 - most failures were the
     benchmark's own checks, out of date with the app (a removed model item, the 'files' field, a tool's new
-    name); fixed, the re-run passed them, and showed the coder's run-to-run variance (a self-contained sum
-    once took 1 step, once 11 - kept as an observation, not patched).
+    name); fixed, the re-run passed them. The coder's failures in that re-run don't count: it ran beside the
+    acceptance jobs, and two streams on the server got mixed (a coder's script held another job's churn
+    analysis and '<|tool_call>call:inspect_data'). bench/slot_leak.py could not reproduce it (0 leaks, one slot
+    or two, short or long answers, thinking on); the app never sends two requests at once (one turn at a time,
+    helpers inside it), so benchmarks are run one at a time. A per-slot lock added for it was reverted.
   - Main (bench/main, 75 cases): weather 10/10, persona 6/6, image 5/5, ask 4/4, routing 18/20, diagram 10/12,
     files 8/11, import 2/3; notes, coder and analyst need the real helpers to mean anything (re-run with them).
   - Guessing checks (section 9), replayed over the user's 301 stored tool-less replies: 18 real fires, 17 right,
@@ -123,11 +126,23 @@ Tier 2
     numbers; the analyst's report title is filled from its task instead of costing a step; the overlapping
     tools' descriptions now follow one routing design (what for, when not, which instead) - section 8's
     template.
-  - The acceptance jobs (bench/combos.py, 20 whole jobs on fresh data in a new store each, 10 held out): the
-    first dev run lost 7 of 10 to the tunnel going down; to be run again.
+  - The acceptance jobs (bench/combos.py, 20 whole jobs on fresh data in a new store each, 3-6 tools a job):
+    dev 8/10 (bench/combos_dev.md); held out, run once after the fixes, 9/10 (bench/combos_holdout.md). Every
+    failure left was a reply that took another fair reading than the check: the rupee total without the USD total
+    restated, growth as 225% (2,000 -> 6,500) instead of 4,500, "left" as March's half (1,649.25, said so)
+    instead of the whole budget. Model behaviour, measured, not patched.
+  - A full read of the prompts, tools and workflows (main's prompt, the 25 tools, the four helpers, the runner,
+    checks, repairs, context, sandbox): one rule in one place, the prompts' claims true to the code. Fixed from
+    the read and the jobs, each general: a cancelled action now reads as cancelled (main had asked the user to
+    click a button they had just declined); a Word or slide file naming a picture that isn't there is refused
+    with the pictures there are, instead of saved broken under "Saved"; a helper starts from main's task, not
+    the user's message (given it, helpers did parts main gave to others - the analyst built a one-slide deck).
+  - Seen, left as limits: main sends Word and slide files to the coder (python-docx/pptx in a script) more
+    than to files(write) from Markdown - the files are right either way; main sometimes repeats a written
+    file's text or names a chart by its file name in the reply (the UI drops a picture it can't show).
 
-Next, on the 26B: the acceptance jobs (dev, then the held-out half once), the thinking policy, then
-the prompt review against what the jobs show (sections 8 and 14).
+Next, on the 26B: the thinking policy (measured: thinking on vs off, pass rate and time), then the parked
+findings (section 14).
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 

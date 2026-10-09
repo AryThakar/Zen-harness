@@ -7,7 +7,8 @@ job's thinking about churn and a raw '<|tool_call>call:inspect_data' (a tool the
 version of this check asked for one word (40 tokens, thinking off) and found nothing: the two generations barely
 overlapped. This one makes both write for a while, thinking on, so their generations run side by side.
 
-Measured 2026-10-09 on the 26B: 0 of 6 in each of the three ways (and 0 of 10 each with the one-word version).
+Measured 2026-10-09/10 on the 26B: 0 of 6 in each of the three ways, whole answers and streamed (and 0 of 10
+each with the one-word version).
 The app itself never sends two requests at once - one turn at a time (app/assistant/main.py, _busy), helpers
 inside it - so only two benchmark processes run side by side can, and the benchmarks are run one at a time.
 
