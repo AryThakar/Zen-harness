@@ -14,7 +14,7 @@ from pptx import Presentation
 
 from app.rag.embed import HashEmbedder
 from app.tools import chart_image
-from app.tools.file_ops import files
+from app.tools.file_ops import files, markdown_docx
 from app.tools.files import search_files
 from app.tools.find_patterns import find_patterns
 from app.tools.forecast import forecast
@@ -73,11 +73,25 @@ def test_a_chart_that_cannot_be_drawn_has_no_picture_and_still_shows(ws, monkeyp
 def test_a_word_document_includes_a_chart(ws, index, sales):
     chart = make_chart(ws, sales, "bar", x="region", y="amount").result["picture"]
     r = files(ws, index, "write", name="report.docx",
-              content=f"# Sales report\n\nThe **North** leads.\n\n![Sales by region]({chart})\n\n![Missing](image_99)\n")
+              content=f"# Sales report\n\nThe **North** leads.\n\n![Sales by region]({chart})\n")
     assert r.status == "ok"
     doc = Document(io.BytesIO(ws.path(r.result["file"]).read_bytes()))
     assert len(doc.inline_shapes) == 1 and any(p.text == "Sales by region" for p in doc.paragraphs)
-    assert any("[picture image_99 not found]" in p.text for p in doc.paragraphs)
+
+
+def test_a_document_naming_a_picture_that_is_not_there_is_not_written(ws, index, sales):
+    """Not saved with '[picture ... not found]' in it under a result that says 'Saved': refused, with the
+    pictures there are, so the next call names one of them."""
+    chart = make_chart(ws, sales, "bar", x="region", y="amount").result["picture"]
+    before = set(ws.ids())
+    r = files(ws, index, "write", name="deck.pptx", content=f"# Sales\n![Sales]({chart})\n# More\n![Trend](image_99)\n")
+    message = r.result["error"]["message"]
+    assert r.status == "invalid_arguments" and "image_99" in message and chart in message
+    assert set(ws.ids()) == before  # nothing written
+    kept = files(ws, index, "write", name="notes.docx", content="# Notes\n- one\n").result["file"]
+    assert files(ws, index, "update", name=kept, content="# Notes\n![x](chart_9.png)\n").status == "invalid_arguments"
+    edited = Document(io.BytesIO(markdown_docx("![x](image_99)")))  # the user's own edit (the UI) shows where it was
+    assert any("[picture image_99 not found]" in p.text for p in edited.paragraphs)
 
 
 def test_slides_are_made_from_markdown_with_charts_and_notes(ws, index, sales):

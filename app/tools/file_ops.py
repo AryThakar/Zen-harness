@@ -111,6 +111,7 @@ def _write(ws: Workspace, index: SearchIndex | None, name: str, content: str) ->
         raise ToolError(f"A file called {ws.entry(existing)['name']} exists ({existing}): change it with "
                         "mode='update', or write under another name.", field="name")
     _writable(name)
+    _pictures_there(ws, name, content)
     return _store_new(ws, index, name, content)
 
 
@@ -123,6 +124,7 @@ def _update(ws: Workspace, index: SearchIndex | None, item: str, content: str, s
                         field="name")
     _writable(e["name"])  # before the user is asked to approve it: a PDF written as text would be broken
     _fits(content)
+    _pictures_there(ws, e["name"], content)
     if start is not None or end is not None:
         if e["name"].lower().endswith(FROM_MARKDOWN):
             raise ToolError(f"A {PurePath(e['name']).suffix} is updated whole: give its full text in Markdown, without "
@@ -237,7 +239,26 @@ PICTURE = re.compile(r"^\s*!\[([^\]]*)\]\(\s*<?([^)>]+?)>?\s*\)\s*$")
 
 
 def _missing_picture(ref: str) -> str:
+    """What a document shows for a picture that isn't there - only for the user's own edits (the UI): the
+    model's write and update are refused first (_pictures_there), so it never saves a broken document."""
     return f"[picture {ref} not found]"
+
+
+def _pictures_there(ws: Workspace, name: str, content: str) -> None:
+    """A .docx or .pptx whose Markdown names a picture that isn't in the workspace is refused, with the
+    pictures that are - instead of being saved with '[picture ... not found]' in it while the result says
+    'Saved'."""
+    if not name.lower().endswith(FROM_MARKDOWN):
+        return
+    refs = [m[2].strip() for m in map(PICTURE.match, content.splitlines()) if m]
+    missing = list(dict.fromkeys(r for r in refs if ws.find(r, ("image",)) is None))
+    if not missing:
+        return
+    images = ws.ids("image")[-10:]
+    have = (", ".join(f"{i} ({ws.entry(i)['name']})" for i in images) if images
+            else "none - a chart from analyze_data or a picture from generate_image is kept as one")
+    raise ToolError(f"No picture {', '.join(missing)} in the workspace, so nothing was written. Pictures: {have}. "
+                    "Name one of them in ![caption](id), or leave the picture out.", field="content")
 
 
 # ---------------------------------------------------------------- download
