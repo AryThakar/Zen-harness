@@ -25,7 +25,7 @@ main itself, each from a measured failure in the user's own test chat (found in 
                         ("remember X" answered "I saved a note" without saving it, 4 of 6)
 
 Each nudge is sent at most once per turn; after it the reply stands. Claims about what a tool that did
-run really did (an image "with the date added") are checked where they happen: the coder's report
+run really did (an image "with the date added") are checked where they happen: analyze_or_code's report
 against its run, vision after generate_image.
 """
 

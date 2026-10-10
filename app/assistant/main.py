@@ -17,7 +17,7 @@ What the main model gets at each step:
              analyze_or_code). Its instructions and nudges are in prompts.py.
 
 ask_user pauses the turn: the question goes to the UI and into chats.pending; the user's answer comes
-back as that call's result and the turn goes on. A helper's own ask_user (data, coder) pauses in place
+back as that call's result and the turn goes on. A helper's own ask_user (analyze_or_code) pauses in place
 instead: the turn keeps running and the helper waits (Turn.ask); the request that is streaming ends at
 the question, the user's answer (POST /answer) is handed to the waiting helper and its request streams
 the rest of the turn - the helper keeps everything it did (before, it ended, main asked, and the task
