@@ -29,6 +29,7 @@ limit of the model.
 | Answers fixed after the fact | each helper has its own result shape; the model writes facts the app knows (method, data used) | finish refused twice for a missing 'method' on a correct answer |
 | A frozen cursor | a hidden check's state is shown at the top of the reply; the end blinks | a 48 s re-check looked like a hang; the user stopped it |
 | A tool that cost more than it gave | plan: a checklist main must write before working | 31.6 s of thinking for a plan, then one call for its 3 steps |
+| The web helper loops | a helper remembers nothing between tasks (a site that refused, a page read); no limit on searching instead of reading; links copied by hand into sources | LeetCode: 9 searches in a row for the same text in snippets (about 300 s) without reading the pages they kept listing, out of steps; the next two tasks went to leetcode.com again (refused again) and read algo.monster again; one source link mis-copied, refused |
 
 Why each skipped tool was skipped, read from its description and prompt:
 - **calculate**: "Maths problems: solve them yourself ... and check the numbers here" - but it cannot check
@@ -171,7 +172,20 @@ is only for maths that needs a program (a simulation, a plot of many cases).
 - A helper whose next request would not fit is given its last step to finish with what it has; an
   oversized request is never sent.
 
-### 2.10 Checks that stay - and nothing else
+### 2.10 The web helper
+
+- **Pages are remembered for the chat.** A page read earlier in the chat comes back at once from memory,
+  with when it was read; a site that refused (a bot check, blocked) is refused at once with the earlier
+  reason. A web task starts with one line of each: "already read: ...; refused: leetcode.com (bot check)".
+- **Read, don't keep searching.** At most 3 searches in a row without reading a page; the 4th returns the
+  pages the searches found and nobody read, the most often listed first: read one, or finish with what you
+  have. (web_search is for choosing pages, not answering from snippets.)
+- **Sources by number.** Pages read are numbered in the results ([1], [2] ...); finish cites the numbers
+  and the app writes the links - no link is copied by hand.
+- **When the named source can't be read**, the answer says so and gives the text from the closest page
+  that quotes it, named as that page.
+
+### 2.11 Checks that stay - and nothing else
 
 | Check | Kind | Way out |
 |---|---|---|
@@ -181,14 +195,14 @@ is only for maths that needs a program (a simulation, a plot of many cases).
 | a repeated failing call; invented numbers in a task | judgement | confirm: true |
 | announced / claimed / asked to remember but nothing done | truth, one hidden nudge a turn | - (its text fixed: "was wrote") |
 
-### 2.11 Interactive programs
+### 2.12 Interactive programs
 
 - An `.html` file gets a live preview in a locked frame (scripts run; no network, no access to the app),
   in the chat and the file panel, with full screen: games, simulations, small tools.
 - A Python program that asks for input runs in a console card started from its file: output streams, the
   user types lines. What happened in the session is kept, so the model can read it when asked.
 
-### 2.12 The page
+### 2.13 The page
 
 1. @ picker in the message box; @-ed files shown as chips in the sent message.
 2. Pins: pin and unpin from the file panel, the @ menu and the chat header; pinned chips in the header.
@@ -199,7 +213,7 @@ is only for maths that needs a program (a simulation, a plot of many cases).
 6. Chart cards: native, animated, hover values, full screen, download PNG/CSV.
 7. Videos open in the viewer like pictures, 16:9, with a full-screen button; links open in a new tab (they
    already do).
-8. HTML preview card; Python console card (2.11).
+8. HTML preview card; Python console card (2.12).
 9. A model server that can't be reached (the tunnel down) is said in plain words, with a status dot; no raw
    error pages.
 10. The plan card goes with the plan tool.
@@ -219,7 +233,10 @@ that are going away. Each description follows one template:
 
 Each field says what its value holds, with an example. Main's prompt gets a short routing list: do it
 yourself with your tools (talk, maths with calculate, files, diagrams, images, weather); a helper for the
-web, many or long documents, tables and programs; tell a helper what is wanted, never how. Nothing is
+web, many or long documents, tables and programs; tell a helper what is wanted, never how. The persona
+may use a small visual touch when it helps - an emoji that fits a casual reply, bold for the key number -
+never in every reply and never in serious or technical answers (measured in phase 5: emoji in at most 1
+of 4 casual replies, none in serious ones). Nothing is
 tuned to a benchmark answer.
 
 ## 4. Removed
@@ -235,11 +252,11 @@ Each phase ends with its tests and its acceptance, and is committed before the n
 | Phase | Builds | Accepted when |
 |---|---|---|
 | 1. Files | 2.1, the file panel's paths, folders, versions; existing workspaces converted | the same path works from upload, @, main, a helper and a script; identical uploads are one file; the index matches the folder after every write (contract test); every existing item converted, none lost |
-| 2. The helper on files | 2.5, 2.6, 2.8, 2.9 | on the 26B: the picture-name edit in 3 runs or fewer with a real font; the calculus problem solved by main with calculate, no helper; Stop then "continue" picks up the same file; a 10-run job without overflow |
+| 2. The helpers | 2.5, 2.6, 2.8, 2.9, 2.10 | on the 26B: the picture-name edit in 3 runs or fewer with a real font; the calculus problem solved by main with calculate, no helper; Stop then "continue" picks up the same file; a 10-run job without overflow; the LeetCode request in 3 searches or fewer, no second visit to a refused site, saying LeetCode couldn't be read |
 | 3. Charts | 2.7 and its card | the Titanic showcase: every chart native, none shown twice, no PNG files unless a document needs one |
 | 4. Finding and memory | 2.2, 2.3, find; notes moved into agent.md and notes/ | "how many lion images" in one call; a question on a pinned document answered without ask_knowledge; "remember X" edits agent.md; the snapshot is not in the saved history (test); context raised to 20k if the server holds it |
 | 5. Descriptions and prompts | section 3 | routing probes on the 26B: maths to calculate; ML and statistics asks to predict, forecast, compare, find_patterns, analyze_text; documents to find, read and pins |
-| 6. The page | 2.11, 2.12 (the rest) | each item checked in the browser, light and dark, phone width |
+| 6. The page | 2.12, 2.13 (the rest) | each item checked in the browser, light and dark, phone width |
 | 7. Measure | the 10 dev jobs, then the 10 held-out jobs once; ARCHITECTURE and SYSTEM_MAP rewritten | results recorded as they are, with the model's limits named |
 
 ## 6. Fixed decisions
