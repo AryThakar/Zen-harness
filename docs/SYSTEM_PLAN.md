@@ -165,7 +165,7 @@ policy to measure. ("Try again, answer quickly" after a reply that thought until
   - A rule placed where the numbers are written: the helper keeps the data's own unit (it wrote $ for sales with
     no currency, and main repeated it).
 
-Next: the parked findings (section 14), measured on the 26B as limits unless one shows a design gap.
+Next: docs/REBUILD_PLAN.md (frozen 2026-10-10) - the shared building blocks (files, pins, agent.md, search, the helper on files, charts, maths) and its build order; the parked findings (section 14) are measured again after it.
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
