@@ -27,6 +27,7 @@ from pathlib import Path, PurePath
 
 from . import approval, read_file
 from .core import ToolError, ToolResult, ok, tool
+from .filetypes import BINARY, FROM_MARKDOWN
 from .search_index import SearchIndex
 from .workspace import Workspace
 
@@ -34,12 +35,8 @@ PAGE = 15  # items per list page
 KINDS = ("table", "image", "file")  # everything but notes
 MAX_WRITE = 1_000_000  # characters
 MODES = ("list", "find", "read", "write", "update", "rename", "delete", "download")
-# Formats that are not text: text written under such a name would be a broken file (a .docx and a .pptx are
-# the exceptions - they are built from Markdown). A script makes them (analyze_or_code).
-FROM_MARKDOWN = (".docx", ".pptx")
-BINARY = {".pdf", ".xlsx", ".xlsm", ".xls", ".doc", ".ppt", ".odt", ".ods", ".png", ".jpg", ".jpeg", ".gif",
-          ".webp", ".bmp", ".ico", ".zip", ".gz", ".7z", ".rar", ".parquet", ".joblib", ".pkl", ".exe", ".dll", ".bin",
-          ".mp3", ".mp4", ".wav"}
+# Formats that are not text (filetypes.BINARY): text written under such a name would be a broken file (a .docx and
+# a .pptx are the exceptions - FROM_MARKDOWN, built from Markdown). A script makes them (analyze_or_code).
 
 
 @tool

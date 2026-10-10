@@ -44,19 +44,20 @@ from rapidfuzz import fuzz, process
 from app.tools.table_reader import ReadError, read_file
 
 from .core import ToolError
+from .filetypes import IMAGE as IMAGE_SUFFIXES  # noqa: F401 - the image kinds, re-exported for the sandbox
+from .filetypes import IMAGE_FORMATS, SCRIPT_TABLES, TABLE
 from .values import type_columns
 
 PREFIX = {"table": "data", "image": "image", "file": "file", "note": "note"}
-IMAGE_FORMATS = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"), "WEBP": ("webp", "image/webp"),
-                 "GIF": ("gif", "image/gif")}
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-TABLE_FILES = {".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".parquet", ".json"}  # left off a derived table's name
+TABLE_FILES = (*TABLE, *SCRIPT_TABLES)  # the extensions left off a derived table's name
 ITEM_REF = re.compile(r"\b((?:data|image|file|note)_\d+(?:_\w+)?)\b")
 # The tool that does handle an item of the wrong kind, said in the error so the model's next call fits.
 WRONG_KIND = {("table", "file"): " A table: a script reads it with table('{id}'), and analyze_or_code works with it.",
               ("image", "file"): " An image: it has no text - view_image looks at it and says what it shows.",
               ("image", "table"): " An image, not a table: view_image looks at it and says what it shows.",
-              ("file", "table"): " A file, not a table: its text is read with files(read) or read_file."}
+              ("file", "table"): " A file, not a table: its text is read with files(read) or read_file.",
+              ("file", "image"): " A file, not a picture: its text is read with files(read) or read_file.",
+              ("table", "image"): " A table, not a picture: analyze_or_code charts it."}
 
 
 def _locked(method):

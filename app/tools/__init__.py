@@ -12,7 +12,8 @@ main's own:     files (file_ops.py, read_file.py), notes (notes.py), get_weather
                 ask_user (ask.py), view_image (vision.py)
 web:            web_search, read_webpage (web.py)
 knowledge:      search_files (files.py), recall (memory.py), read_file
-data:           inspect_data, clean_data, query_data (+ sql_guard.py), make_chart, compare, forecast,
-                predict (ml.py), find_patterns, analyze_text; column roles (roles.py), periods.py
-code:           run_code, fix_code (scratch.py on sandbox.py); reports.py for the reports kept on items
+engineer:       inspect_data, clean_data, query_data (+ sql_guard.py), make_chart, compare, forecast,
+                predict (ml.py), find_patterns, analyze_text; column roles (roles.py), periods.py;
+                run_code, fix_code (scratch.py on sandbox.py), read_file; reports.py for the reports kept on items
+Which kind of file a name is - table, document, image, code, binary - is defined once, in filetypes.py.
 """

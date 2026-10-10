@@ -74,8 +74,8 @@ class GroqProvider(LlamaCppProvider):
     def count_tokens(self, system: str, messages: list[dict], tools: list[dict], *, allow_tools: bool = True) -> int:
         return estimate_tokens(system, messages, tools)
 
-    def _body(self, system, messages, tools, allow_tools, think=True, budget=None) -> dict:
-        body = {k: v for k, v in super()._body(system, messages, tools, allow_tools, think, budget).items()
+    def _body(self, system, messages, tools, allow_tools, think=True, budget=None, require_tool=False) -> dict:
+        body = {k: v for k, v in super()._body(system, messages, tools, allow_tools, think, budget, require_tool).items()
                 if k not in LLAMA_ONLY}
         thinking = self.thinking and think
         if "gpt-oss" in self.model:

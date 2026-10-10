@@ -71,7 +71,8 @@ def fix_code(ws: Workspace, scratch: Scratch, from_line: int, to_line: int, new_
     """Replace lines from_line-to_line (inclusive) of the scratch file with new_code, and run it.
     to_line = from_line - 1 inserts before from_line without removing anything."""
     if not scratch.code:
-        return _invalid("There is no code yet: write the whole script with run_code first.", "from_line")
+        return _invalid("There is no code yet: write the whole script with run_code first (a stored script to "
+                        "change comes in as the task's file - else write it whole with run_code).", "from_line")
     lines = scratch.code.splitlines()
     if not (1 <= from_line <= len(lines) + 1 and from_line - 1 <= to_line <= len(lines)):
         return _invalid(f"The script has {len(lines)} lines: from_line must be 1-{len(lines) + 1} and to_line "

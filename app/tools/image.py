@@ -26,6 +26,7 @@ from PIL import Image, UnidentifiedImageError
 
 from . import net
 from .core import ToolError, ToolResult, ok, tool
+from .filetypes import IMAGE_FORMATS as FORMATS
 from .vision import prepare
 from .workspace import Workspace
 
@@ -38,7 +39,6 @@ SIZES = {"square": (1024, 1024), "wide": (1344, 768), "tall": (768, 1344)}
 MAX_PROMPT = 4000
 NAME_CHARS = 40  # of the file name made from the prompt
 MAX_BYTES = 25 * 1024 * 1024
-FORMATS = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"), "WEBP": ("webp", "image/webp")}
 SELF_CHECK = "Describe this image in one or two sentences. If it contains any writing, quote it exactly."
 CHECK = ("Compare this with what the user asked for. If a requested detail (text, how many things, a colour) is "
          "missing or wrong, say so plainly - or generate it once more with a clearer prompt.")

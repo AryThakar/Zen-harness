@@ -159,8 +159,9 @@ class TaskIn(_In):
 
 class WorkTaskIn(TaskIn):
     data: str | None = Field(None, description="the table the task is about, e.g. 'data_1'")
-    file: str | None = Field(None, description="the file to keep or change, e.g. 'primes.py': a new name makes it, "
-                                               "an existing file is changed (omit when no file is wanted)")
+    file: str | None = Field(None, description="the program to keep or change, e.g. 'primes.py': a new name makes "
+                                               "it, an existing one is changed (omit when no program is wanted; a "
+                                               "table goes in data)")
 
 
 class QuestionIn(_In):
@@ -501,9 +502,11 @@ def execute(ctx: ToolContext, name: str, raw_input, tools: dict[str, Tool] | Non
     """Validate and run one call (from ``tools``, default every registered tool); artifacts go to the
     UI through ctx.emit. A confirm in the input is the guards' business, not the tool's: it is taken off."""
     raw_input, _ = split_confirm(raw_input)
-    tool = (tools if tools is not None else TOOLS).get(name)
-    if tool is None:
-        return ToolResult("invalid_arguments", {"error": {"message": f"There is no tool '{name}'."}})
+    offered = tools if tools is not None else TOOLS
+    tool = offered.get(name)
+    if tool is None:  # the ones there are: an old chat may hold calls to tools since merged or renamed
+        return ToolResult("invalid_arguments", {"error": {"message": f"There is no tool '{name}'. Tools: "
+                                                                     f"{', '.join(offered)}."}})
     if not isinstance(raw_input, dict):
         return ToolResult("invalid_arguments", {"error": {"message": "The arguments were not valid JSON."}})
     try:

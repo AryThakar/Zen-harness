@@ -20,13 +20,13 @@ from app.rag.extract import DocumentError, extract, kind_of
 from app.rag.extract import lines as document_lines
 
 from .core import ToolError, ToolResult, ok, tool
+from .filetypes import CODE
 from .workspace import Workspace
 
 MAIN_CHARS = 8_000
 HELPER_CHARS = 12_000
-# Line numbers help to talk about code; in data or prose they would be copied as if they were content.
-CODE = {".py", ".js", ".ts", ".java", ".c", ".h", ".cpp", ".cs", ".go", ".rs", ".rb", ".php", ".sh", ".ps1",
-        ".sql", ".r", ".html", ".css", ".kt", ".swift", ".scala", ".m", ".pl", ".lua"}
+# Line numbers help to talk about code (filetypes.CODE); in data or prose they would be copied as if they were
+# content.
 MAX_FILE = 10 * 1024 * 1024
 KINDS = ("file", "note", "image", "table")
 

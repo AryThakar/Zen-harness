@@ -84,12 +84,14 @@ class Provider(Protocol):
         tools: list[dict],
         *,
         allow_tools: bool = True,
+        require_tool: bool = False,
         on_event: EventCallback | None = None,
         think: bool = True,
         budget: int | None = None,
     ) -> ModelTurn:
         """One model turn. ``tools`` are {"name", "description", "input_schema"}.
         With ``allow_tools=False`` the model must answer in text (tools stay
-        declared because the history may contain earlier tool calls). ``think=False``
+        declared because the history may contain earlier tool calls); with ``require_tool`` it must call one
+        of them (a helper: it acts or finishes, never answers in prose). ``think=False``
         switches thinking off for this call; ``budget`` caps its thinking tokens (main's
         "answer quickly" retry after a reply that thought until the length limit)."""

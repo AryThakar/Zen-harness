@@ -152,15 +152,6 @@ def test_a_second_bad_submission_returns_with_a_warning(ctx, fake_web):
     assert out["answer"] == "Still made up." and "never found or read" in out["warnings"][0]
 
 
-def test_step_limit_forces_a_plain_answer(ctx, fake_web):
-    steps = PROFILES["web"].max_steps
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
-                             + [ModelTurn(text="I could not finish.")])
-    out = run_worker(model, PROFILES["web"], "loop forever", ctx)
-    assert model.requests[-1]["allow_tools"] is False
-    assert out["answer"] == "I could not finish." and out["note"] == "answered at the step limit" and "warnings" not in out
-
-
 def test_the_web_helper_asks_the_user_in_place_when_the_task_is_unclear(ctx, fake_web):
     asked = []
     ctx.ask = lambda card: asked.append(card) or {"answer": "India"}
@@ -330,39 +321,6 @@ def test_long_worker_tasks_shorten_old_tool_results():
     assert shorten_tool_results(msgs[:2], 8_000, count) == (msgs[:2], 0)
 
 
-def test_plain_text_answers_get_the_same_checks(ctx):
-    data = ctx.ws.add_table(pd.DataFrame({"region": ["N", "S"], "amount": [150.5, 200.25]}), "s.csv")
-    model = ScriptedProvider([
-        tools_turn(call("query_data", sql=f"SELECT region, amount FROM {data}")),
-        ModelTurn(text="South sells 210.75."),            # not in any result: one chance to fix
-        ModelTurn(text="South sells the most: 200.25."),
-    ])
-    out = run_worker(model, ENGINEER, "who sells most?", ctx)
-    assert out["answer"] == "South sells the most: 200.25." and "warnings" not in out  # still checked, still used
-    told = model.requests[2]["messages"][-1]["content"]
-    assert "210.75" in told and "finish by calling finish" in told and "no report was kept" in out["note"]
-
-
-def test_plain_text_web_answer_is_checked_by_its_urls(ctx, fake_web):
-    model = ScriptedProvider([
-        tools_turn(call("read_webpage", url="https://news.example.com/rates")),
-        ModelTurn(text="Rates rose 0.25 points (https://news.example.com/rates)."),
-    ])
-    out = run_worker(model, PROFILES["web"], "rates?", ctx)
-    assert out["sources"] == ["https://news.example.com/rates"] and "warnings" not in out
-
-
-def test_a_finish_call_written_as_markup_comes_off_the_answer(ctx, fake_web):
-    """Measured: '<submit_result answer="...">' after the same answer in prose reached the user as it was."""
-    prose = "Rates rose 0.25 points (https://news.example.com/rates)."
-    for text, answer in ((f'{prose}\n\n<submit_result answer="{prose}" sources="x">', prose),
-                         (f'<submit_result answer="{prose}">', prose)):
-        model = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
-                                  ModelTurn(text=text)])
-        out = run_worker(model, PROFILES["web"], "rates?", ctx)
-        assert out["answer"] == answer and "<submit_result" not in out["answer"]
-
-
 def test_cited_web_sources_reach_the_ui_as_cards(ctx, monkeypatch):
     page = {"url": "https://news.example.com/rates", "title": "Rates", "text": "Up 0.25."}
     card = {"type": "webpage", "url": "https://news.example.com/rates", "title": "Rates", "site": "Daily News",
@@ -374,40 +332,6 @@ def test_cited_web_sources_reach_the_ui_as_cards(ctx, monkeypatch):
     run_worker(model, PROFILES["web"], "rates?", ctx)
     sources = [a for a in ctx.seen if a["type"] == "sources"]
     assert sources and sources[0]["items"][0]["site"] == "Daily News" and sources[0]["items"][0]["image"].endswith("a.jpg")
-
-
-def test_knowledge_plain_text_sources_are_recognised_and_required(ctx):
-    from app.tools.memory import remember_turn
-    remember_turn(ctx.index, "old1", "How far ahead should we forecast?", "We agreed on 6 months.")
-    model = ScriptedProvider([tools_turn(call("recall", query="forecast horizon")),
-                              ModelTurn(text="We agreed on 6 months (conversation old1).")])
-    out = run_worker(model, PROFILES["knowledge"], "forecast horizon?", ctx)
-    assert out["sources"] == ["conversation old1"] and "warnings" not in out
-    # no source named, but the answer is in a passage: that passage is credited
-    model = ScriptedProvider([tools_turn(call("recall", query="forecast horizon")), ModelTurn(text="We agreed on 6 months.")])
-    assert run_worker(model, PROFILES["knowledge"], "forecast horizon?", ctx)["sources"] == ["conversation old1"]
-    # an answer nothing supports, without sources: one retry, then a warning
-    model = ScriptedProvider([tools_turn(call("recall", query="forecast horizon")),
-                              ModelTurn(text="The budget is 12,000 euros."), ModelTurn(text="The budget is 12,000 euros.")])
-    out = run_worker(model, PROFILES["knowledge"], "budget?", ctx)
-    assert "no sources given" in out["warnings"][0]
-
-
-def test_quoted_addresses_are_not_sources(ctx, fake_web):
-    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
-                              ModelTurn(text="The example runs on http://0.0.0.0:9091 (https://news.example.com/rates).")])
-    out = run_worker(model, PROFILES["web"], "q", ctx)
-    assert out["sources"] == ["https://news.example.com/rates"] and "warnings" not in out
-
-
-def test_result_written_as_json_text_counts_and_tool_names_are_not_sources(ctx):
-    from app.tools.memory import remember_turn
-    remember_turn(ctx.index, "old1", "How far ahead should we forecast?", "We agreed to forecast 6 months ahead, by month.")
-    text = '```json\n{"answer": "We agreed to forecast 6 months ahead, by month.", "sources": ["recall"]}\n```'
-    model = ScriptedProvider([tools_turn(call("recall", query="forecast horizon")), ModelTurn(text=text)])
-    out = run_worker(model, PROFILES["knowledge"], "forecast horizon?", ctx)
-    assert out["answer"] == "We agreed to forecast 6 months ahead, by month."
-    assert out["sources"] == ["conversation old1"] and "warnings" not in out
 
 
 def test_a_repeated_call_is_not_run_again_and_says_what_to_do(ctx, monkeypatch):
@@ -548,20 +472,6 @@ def test_a_question_without_an_answer_is_accepted_first_time(ctx):
     assert out["question_for_user"] == "Day first or month first?" and len(model.requests) == 1
 
 
-def test_long_pages_are_focused_on_the_last_search(ctx, monkeypatch):
-    asked = []
-    results = {"results": [{"title": "Docs", "url": "https://docs.example.com/a", "snippet": "..."}]}
-    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(results)))
-    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
-                                                             lambda c, a: asked.append(a.find) or ok({"url": a.url})))
-    model = ScriptedProvider([tools_turn(call("web_search", query="server default port")),
-                              tools_turn(call("read_webpage", url="https://docs.example.com/a")),
-                              tools_turn(call("read_webpage", url="https://docs.example.com/a", find="timeout")),
-                              ModelTurn(text="done")])
-    run_worker(model, PROFILES["web"], "default port?", ctx)
-    assert asked == ["server default port", "timeout"]  # the worker's own find wins
-
-
 def test_a_table_is_inspected_before_anything_is_computed_on_it(ctx):
     ctx.ws.add_table(pd.DataFrame({"pizza": ["a", "b", "Total"], "quantity": [2, 3, 5]}), name="sales.csv")
     model = ScriptedProvider([tools_turn(call("query_data", sql="SELECT count(*) FROM data_1")),
@@ -586,19 +496,6 @@ def test_a_clean_table_is_inspected_and_the_call_still_runs(ctx):
     out = run_worker(model, ENGINEER, "total?", ctx)
     told = model.requests[1]["messages"][-1]["content"]
     assert "inspect_data ran first on data_1: nothing to clean" in told and "350.75" in told and "warnings" not in out
-
-
-def test_a_tool_question_asked_in_prose_is_handed_on_as_a_question(ctx):
-    upload = ctx.ws.root / "sales_q1.csv"  # an upload: add_file types the columns and notes the ambiguous dates
-    upload.write_text("\n".join(["date,amount"] + [f"{d:02d}/{m:02d}/2025,{100 + d}" for m in (1, 2, 3)
-                                                  for d in (1, 3, 5, 7, 9, 11)]), encoding="utf-8")
-    ctx.ws.add_file(upload)
-    model = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
-                              ModelTurn(text="The dates are ambiguous. Which order do they use, day or month first?")])
-    out = run_worker(model, ENGINEER, "February total?", ctx)
-    assert out["question_for_user"].startswith("The dates in date could be read two ways")
-    assert out["options"] == ["Day first (03/04/2025 = 3 April)", "Month first (03/04/2025 = March 4)"]
-    assert "trail" in out and "warnings" not in out
 
 
 def test_a_choice_only_the_user_can_make_is_not_guessed(ctx):
@@ -629,14 +526,6 @@ def test_a_reply_cut_off_by_the_length_limit_gets_another_step(ctx, fake_web):
     assert "cut off by the length limit" in model.requests[2]["messages"][-1]["content"]
 
 
-def test_a_reply_cut_off_at_the_last_step_is_marked(ctx, fake_web):
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(PROFILES["web"].max_steps)]
-                             + [ModelTurn(text="The bank raised rates by", stop="max_tokens")])
-    out = run_worker(model, PROFILES["web"], "rates?", ctx)
-    assert out["note"] == "answered at the step limit; the reply was cut off by the length limit"
-    assert "trail" in out  # flagged, so the main slot gets the briefing too
-
-
 def test_a_page_that_failed_is_not_read_again_with_other_find_words(ctx, monkeypatch):
     reads = []
     refused = ToolResult("failed", {"error": {"message": "The page answered HTTP 403."}})
@@ -647,20 +536,11 @@ def test_a_page_that_failed_is_not_read_again_with_other_find_words(ctx, monkeyp
     model = ScriptedProvider([tools_turn(call("web_search", query="parquet engines")),
                               tools_turn(call("read_webpage", url="https://blog.example.com/p")),
                               tools_turn(call("web_search", query="read_parquet engine docs")),
-                              tools_turn(call("read_webpage", url="https://blog.example.com/p")),  # new find words
-                              ModelTurn(text="I could not read a source.")])
+                              tools_turn(call("read_webpage", url="https://blog.example.com/p", find="engine")),
+                              submit(answer="I could not read a source.")])
     run_worker(model, PROFILES["web"], "parquet engines?", ctx)
-    assert reads == ["parquet engines"]  # the second read of the failed page did not run
+    assert reads == [None]  # the second read of the failed page, with other find words, did not run
     assert "This page already failed" in model.requests[4]["messages"][-1]["content"]
-
-
-def test_a_knowledge_answer_is_credited_by_its_numbers(ctx):
-    from app.tools.memory import remember_turn
-    remember_turn(ctx.index, "old1", "What was the total revenue?", "The total revenue is 817,860.05; Classic led.")
-    model = ScriptedProvider([tools_turn(call("recall", query="revenue")),
-                              submit(answer="**Total revenue:** 817,860.05 (category **Classic** on top).")])
-    out = run_worker(model, PROFILES["knowledge"], "What did we find about revenue?", ctx)
-    assert out["sources"] == ["conversation old1"] and "warnings" not in out
 
 
 def test_no_tool_field_reaches_the_model_untyped():
@@ -672,16 +552,6 @@ def test_no_tool_field_reaches_the_model_untyped():
     assert not any(untyped(s["input_schema"]) for s in every)  # Gemma's template renders 'type', not anyOf
     options = registry.TOOLS["ask_user"].spec()["input_schema"]["properties"]["options"]
     assert options["type"] == "array" and options["items"] == {"type": "string"} and options["nullable"] is True
-
-
-def test_facts_from_two_earlier_turns_credit_both(ctx):
-    from app.tools.memory import remember_turn
-    remember_turn(ctx.index, "old1", "Total revenue?", "The total revenue is 817,860.05.")
-    remember_turn(ctx.index, "old1", "Which category had the most revenue?", "Classic: revenue 220,053.10.")
-    model = ScriptedProvider([tools_turn(call("recall", query="revenue")),
-                              submit(answer="Total revenue 817,860.05; Classic led with 220,053.10.")])
-    out = run_worker(model, PROFILES["knowledge"], "What did we find about revenue?", ctx)
-    assert out["sources"] == ["conversation old1"] and "warnings" not in out and len(model.requests) == 2
 
 
 
@@ -703,32 +573,6 @@ def test_the_web_helper_hands_file_links_to_main_and_never_invents_one(ctx, monk
     assert out["downloads"] == right["downloads"] and "files(mode='download'" in out["download_with"]
     assert "downloads" not in run_worker(ScriptedProvider([tools_turn(call("submit_result", answer="No file found."))]),
                                          PROFILES["web"], "x", ctx)
-
-
-def test_pages_the_web_helper_read_are_credited_when_it_lists_no_sources(ctx, monkeypatch):
-    """3 of the 5 web warnings in the user's chats: an answer from pages read, with no sources given."""
-    page = {"url": "https://example.org/one-piece", "title": "One Piece", "site": "example.org",
-            "text": "One Piece is a manga by Eiichiro Oda, first published in 1997."}
-    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.TOOLS["read_webpage"].input_model,
-                                                             lambda c, a: ToolResult("ok", dict(page))))
-    model = ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
-                              tools_turn(call("submit_result", answer="One Piece is a manga by Eiichiro Oda."))])
-    out = run_worker(model, PROFILES["web"], "Who created One Piece?", ctx)
-    assert out["sources"] == [page["url"]] and not out.get("warnings")
-
-
-def test_a_file_link_written_into_the_answer_is_handed_on_as_a_download(ctx, monkeypatch):
-    """Seen in a real run: the Iris CSV's link was in the answer, not in downloads."""
-    link = "https://huggingface.co/datasets/scikit-learn/iris/resolve/main/Iris.csv?download=true"
-    page = {"url": "https://huggingface.co/datasets/scikit-learn/iris/blob/main/Iris.csv", "title": "Iris.csv",
-            "site": "huggingface.co", "text": "Iris dataset.", "files": [link]}
-    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.TOOLS["read_webpage"].input_model,
-                                                             lambda c, a: ToolResult("ok", dict(page))))
-    answer = f"A direct CSV link: {link}. Another, never seen: https://example.com/iris.csv."
-    model = ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
-                              tools_turn(call("submit_result", answer=answer, sources=[page["url"]]))])
-    out = run_worker(model, PROFILES["web"], "Find the Iris CSV.", ctx)
-    assert out["downloads"] == [link] and "download_with" in out
 
 
 def test_an_answer_that_read_no_page_gets_one_chance_to_read_one(ctx, fake_web):
@@ -758,6 +602,90 @@ def test_a_github_files_raw_link_counts_as_the_page_found(ctx, monkeypatch):
                                                              lambda c, a: ok(dict(page))))
     model = ScriptedProvider([tools_turn(call("web_search", query="movie ratings csv")),
                               tools_turn(call("read_webpage", url=blob)),
-                              submit(answer=f"Columns: Film, Genre, Rating. Download: {raw}", sources=[raw])])
+                              submit(answer=f"Columns: Film, Genre, Rating. Download: {raw}", sources=[raw],
+                                     downloads=[raw])])
     out = run_worker(model, PROFILES["web"], "Find a public movie ratings CSV and describe it.", ctx)
     assert out["downloads"] == [raw] and "warnings" not in out and "download_with" in out
+
+
+# ---------------------------------------------------------------- a helper acts or finishes
+
+def test_every_step_requires_a_call_and_the_last_offers_only_the_finish(ctx, fake_web):
+    """Measured on the 26B: llama-server's tool_choice 'required' holds with Gemma 4, thinking on and off - so a
+    helper can only act or finish, and nothing is ever read out of prose."""
+    steps = PROFILES["web"].max_steps
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
+                             + [submit(answer="I could not finish.")])
+    out = run_worker(model, PROFILES["web"], "loop forever", ctx)
+    assert all(r["require_tool"] for r in model.requests)
+    assert len(model.requests[0]["tools"]) > 1 and [t["name"] for t in model.requests[-1]["tools"]] == ["submit_result"]
+    assert out["answer"] == "I could not finish."
+
+
+def test_a_reply_without_a_call_gets_one_hint_and_nothing_is_read_out_of_it(ctx, fake_web):
+    model = ScriptedProvider([ModelTurn(text="Rates rose by 0.25 points."),
+                              tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                              submit(answer="Rates rose by 0.25 points.", sources=["https://news.example.com/rates"])])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert model.requests[1]["messages"][-1]["content"] == "[Call one of your tools - or submit_result to hand in your result.]"
+    assert out["sources"] == ["https://news.example.com/rates"] and "warnings" not in out
+
+
+def test_a_reply_cut_off_at_the_last_step_ends_without_a_result(ctx, fake_web):
+    steps = PROFILES["web"].max_steps
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
+                             + [ModelTurn(text="", stop="max_tokens")])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert out["warnings"] == ["the helper ran out of steps without finishing"] and "trail" in out
+
+
+def test_a_read_runs_as_the_helper_made_it(ctx, monkeypatch):
+    """Nothing is added to the helper's call (it was given the last search as find): read_webpage itself says when
+    a page was cut, and how to read the rest."""
+    asked = []
+    results = {"results": [{"title": "Docs", "url": "https://docs.example.com/a", "snippet": "..."}]}
+    monkeypatch.setitem(registry.TOOLS, "web_search", Tool("web_search", "s", registry.SearchIn, lambda c, a: ok(results)))
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: asked.append(a.find) or ok({"url": a.url})))
+    model = ScriptedProvider([tools_turn(call("web_search", query="server default port")),
+                              tools_turn(call("read_webpage", url="https://docs.example.com/a")),
+                              tools_turn(call("read_webpage", url="https://docs.example.com/a", find="timeout")),
+                              submit(answer="I could not find it.")])
+    run_worker(model, PROFILES["web"], "default port?", ctx)
+    assert asked == [None, "timeout"]
+
+
+def test_sources_are_asked_for_not_guessed(ctx, monkeypatch):
+    """A result without sources is not credited with pages or passages by the app: the check asks for them."""
+    from app.tools.memory import remember_turn
+    remember_turn(ctx.index, "old1", "How far ahead should we forecast?", "We agreed on 6 months.")
+    model = ScriptedProvider([tools_turn(call("recall", query="forecast horizon")), submit(answer="We agreed on 6 months."),
+                              submit(answer="We agreed on 6 months.", sources=["conversation old1"])])
+    out = run_worker(model, PROFILES["knowledge"], "forecast horizon?", ctx)
+    assert "no sources given" in model.requests[2]["messages"][-1]["content"]
+    assert out["sources"] == ["conversation old1"] and "warnings" not in out
+    page = {"url": "https://example.org/one-piece", "title": "One Piece", "site": "example.org",
+            "text": "One Piece is a manga by Eiichiro Oda, first published in 1997."}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.TOOLS["read_webpage"].input_model,
+                                                             lambda c, a: ToolResult("ok", dict(page))))
+    web = ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
+                            submit(answer="One Piece is a manga by Eiichiro Oda."),
+                            submit(answer="One Piece is a manga by Eiichiro Oda.", sources=[page["url"]])])
+    out = run_worker(web, PROFILES["web"], "Who created One Piece?", ctx)
+    assert "no sources given" in web.requests[2]["messages"][-1]["content"] and out["sources"] == [page["url"]]
+
+
+def test_a_file_link_written_in_the_answer_is_asked_for_in_downloads(ctx, monkeypatch):
+    """Seen in a real run: the Iris CSV's link was in the answer, not in downloads - main got nothing to download."""
+    link = "https://huggingface.co/datasets/scikit-learn/iris/resolve/main/Iris.csv?download=true"
+    page = {"url": "https://huggingface.co/datasets/scikit-learn/iris/blob/main/Iris.csv", "title": "Iris.csv",
+            "site": "huggingface.co", "text": "Iris dataset.", "files": [link]}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.TOOLS["read_webpage"].input_model,
+                                                             lambda c, a: ToolResult("ok", dict(page))))
+    answer = f"A direct CSV link: {link}."
+    model = ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
+                              submit(answer=answer, sources=[page["url"]]),
+                              submit(answer=answer, sources=[page["url"]], downloads=[link])])
+    out = run_worker(model, PROFILES["web"], "Find the Iris CSV.", ctx)
+    assert "give it in downloads" in model.requests[2]["messages"][-1]["content"]
+    assert out["downloads"] == [link] and "download_with" in out and "warnings" not in out

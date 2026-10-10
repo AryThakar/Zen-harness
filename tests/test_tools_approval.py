@@ -81,7 +81,7 @@ def test_a_half_converted_raw_blob_link_is_repaired():
 
 
 def test_download_file_takes_github_only():
-    with pytest.raises(ToolError, match="only takes files on GitHub"):
+    with pytest.raises(ToolError, match="Only a file on GitHub"):
         approval.download_request("https://example.com/tool.py", http=site({}), resolve=public)
     away = site({f"{RAW}/x.py": ("redirect", "https://evil.example.com/x.py"),
                  "https://evil.example.com/x.py": PY})

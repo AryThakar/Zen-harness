@@ -125,14 +125,16 @@ def test_only_the_newest_pictures_stay_in_view():
     assert view[0]["content"] == "[a] [1 of its pictures no longer shown]" and messages[0]["images"] == [pic, pic]
 
 
-def test_a_save_named_after_the_picture_keeps_the_script(ctx):
-    """Seen on the real model: the coder called save with the edited image's name ('passengers_modified.png')
-    and the save was refused - the script is what save_code keeps; the picture is kept already."""
+def test_a_script_named_after_its_picture_is_told_to_keep_the_py(ctx):
+    """Seen on the real model: the coder called save with the edited image's name ('passengers_modified.png') - the
+    script is what save_code keeps, as Python; the picture is kept already."""
     ctx.ws.add_image(png(), "passengers.png")
     edit = ("from PIL import Image\nimg = Image.open('image_1')\nimg.resize((80, 20)).save('passengers_modified.png')\n"
             "print(img.size)")
     report = {**SAVE, "name": "passengers_modified.png", "inputs_outputs": "image_1 in, passengers_modified.png out"}
-    model = seeing(turn(call("run_code", code=edit)), turn({**call("save_code"), "input": report}), turn(DONE))
+    model = seeing(turn(call("run_code", code=edit)), turn({**call("save_code"), "input": report}),
+                   turn({**call("save_code"), "input": {**report, "name": "passengers_modified.py"}}), turn(DONE))
     out = run_worker(model, PROFILES["engineer"], "Make the passengers chart twice as wide.", ctx)
+    assert "keep it as 'passengers_modified.py'" in model.requests[2]["messages"][-1]["content"]
     assert out["files"][0]["name"] == "passengers_modified.py" and not out.get("warnings")
     assert ctx.ws.kind(out["files"][0]["id"]) == "file" and ctx.ws.entry("image_2")["meta"]["width"] == 80

@@ -40,8 +40,9 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
         con.execute("SET lock_configuration = true")
         try:
             res = sql_guard.run(con, sql, allowed=tables)
-        except sql_guard.SqlRejected as exc:
-            raise ToolError(f"{exc} Tables: {', '.join(sorted(tables))}.", field="sql") from exc
+        except sql_guard.SqlRejected as exc:  # tables by id, with their names: the model maps 'sales' to its id
+            named = ", ".join(f"{t} ({ws.entry(t)['name']})" for t in sorted(tables))
+            raise ToolError(f"{exc} Name a table by its id - tables: {named}.", field="sql") from exc
         shown = SAVED_ROWS if save else MODEL_ROWS
         result = {"columns": res.columns, "rows": [_tidy(r) for r in res.rows[:shown]], "total_rows": res.total_rows}
         if res.total_rows > shown:

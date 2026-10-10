@@ -94,11 +94,6 @@ CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool di
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only a note keeps it. "
                   "Save it with notes now.]")
-# A reply that was a tool call written out as JSON text (measured with Gemma 4 26B, right after an image was
-# made: the user saw '{"action": "generate_image", "action_input": ...}' as the answer, and nothing ran).
-WRITTEN_NUDGE = ("[App check: your reply was a {name} call written out as text, so nothing ran and the user saw raw "
-                 "JSON. If the call is still needed, make it as a real tool call; otherwise answer the user in plain "
-                 "words.]")
 # Added to the result of main's own tools whose card the user already sees (measured: without it the model
 # wrote the week's forecast out again as a table under the weather card).
 SHOWN = {"weather": "The user sees all of this in a weather card: answer in one or two sentences with what "
@@ -178,11 +173,12 @@ next task on a table starts from its report."""
 # Sent when a helper's reply stopped at the output limit: another step, not a half answer.
 HELPER_CUT_OFF = ("[Your last reply was cut off by the length limit before it finished. Think briefly, then call one "
                   "tool or {finish}.]")
+# A helper's reply with no call (a tool call is required, so only a server that ignored it): act or finish.
+NO_CALL = "[Call one of your tools - or {finish} to hand in your result.]"
 # Said with the tool results near the end, so a helper finishes instead of being cut off.
 STEPS_LEFT = {2: "[2 steps left: finish soon with {finish}.]",
               1: "[Last step: call {finish} now with what you have, and say what is missing.]"}
 # After a result failed its checks: one chance to fix it (the problems follow).
-FIX_ANSWER = "Fix this and answer again: "
 FIX_FINISH = "Fix these and call {finish} again: "
 # Pictures a helper that sees images is shown, as a message with the images (workers/runner.py, _pictures). Measured: in
 # the coder's conversation 9 of 10 known-answer questions right, vs 8 of 10 for a separate vision call; and

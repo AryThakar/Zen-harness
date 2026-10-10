@@ -47,7 +47,7 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import file_ops, sandbox
+from app.tools import file_ops, filetypes, sandbox
 from app.tools import files as files_tool
 from app.tools import notes as notes_tool
 from app.tools import web
@@ -56,7 +56,6 @@ from app.tools.core import ToolError, jsonable
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 log = logging.getLogger(__name__)
 
-IMAGES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
 SAFE = {"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
         "X-Content-Type-Options": "nosniff"}
 ID = re.compile(r"^[0-9a-f]{12}$")
@@ -324,9 +323,9 @@ def item_file(ws_id: str, item_id: str, request: Request) -> FileResponse:
     if "file" not in entry:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This item has no file (a table: use /rows).")
     path = ws.path(item_id)
-    ext = path.suffix.lstrip(".").lower()
-    if ext in IMAGES:
-        return FileResponse(path, media_type=IMAGES[ext], headers=SAFE)
+    mime = filetypes.IMAGE_MIME.get(path.suffix.lower())
+    if mime:
+        return FileResponse(path, media_type=mime, headers=SAFE)
     return FileResponse(path, filename=entry.get("name") or path.name, media_type="application/octet-stream",
                         headers=SAFE)
 
@@ -358,7 +357,7 @@ def save_text(ws_id: str, item_id: str, body: TextBody, request: Request) -> dic
     ws = _item(request, ws_id, item_id)
     _, index = _store(request).open(ws_id)
     e = ws.entry(item_id)
-    if e["kind"] != "file" or e["name"].lower().endswith(".docx"):
+    if e["kind"] != "file" or not filetypes.editable_as_text(e["name"]):  # the same rule as files(update)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only text files can be edited here.")
     try:
         done = file_ops.replace_file(ws, index, item_id, body.text)

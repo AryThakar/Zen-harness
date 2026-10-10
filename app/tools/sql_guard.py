@@ -78,9 +78,7 @@ def check(sql: str, existing: frozenset[str] = frozenset(), *, allowed: frozense
             raise SqlRejected(f"Use table names without a schema: '{table.sql(dialect='duckdb')}'.")
         name = table.name.lower()
         if name not in allowed and name not in cte_names:
-            raise SqlRejected(
-                f"Table '{table.name}' is not available. Tables: {', '.join(sorted(allowed))}."
-            )
+            raise SqlRejected(f"Table '{table.name}' is not available.")
     # Resolve references by scope: 'schema_migrations' inside a CTE defined before
     # a CTE of that name means the real table, whatever the names say.
     try:

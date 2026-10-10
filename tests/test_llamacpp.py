@@ -307,3 +307,25 @@ def test_a_helper_is_shown_pictures_as_image_parts():
     assert out["content"][1]["image_url"]["url"].startswith("data:image/png;base64,iVBORw0KGgo")
     # an image counts as an image, not as 22,000 characters of base64
     assert estimate_tokens("s", [shown], []) < IMAGE_TOKENS + 100
+
+
+def test_a_call_written_as_json_is_made_a_call():
+    """Measured (chat dacb378f2781): main wrote '{"action": "generate_image", "action_input": "..."}' as its reply;
+    the user saw the JSON and nothing ran. The one place calls are read takes every key such a call was seen with."""
+    from app.providers.gemma_calls import heal
+    written = ('{\n  "action": "generate_image",\n  "action_input": "{ \\"prompt\\": \\"A majestic lion\\", '
+               '\\"size\\": \\"wide\\" }"\n}')
+    text, calls = heal(written, {"generate_image", "calculate"})
+    assert text == "" and calls == [("generate_image", {"prompt": "A majestic lion", "size": "wide"})]
+    _, calls = heal('```json\n{"name": "calculate", "arguments": {"expression": "2+2"}}\n```', {"calculate"})
+    assert calls == [("calculate", {"expression": "2+2"})]
+    for other in ('{"total": 12}', 'Here is the call: {"action": "generate_image"}', '{"action": "fly_away"}'):
+        assert heal(other, {"generate_image"})[1] == [], other
+
+
+def test_a_helper_step_requires_a_tool_call(fake):
+    server = fake()
+    LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}],
+                                               [{"name": "finish", "description": "d", "input_schema": {"type": "object"}}],
+                                               require_tool=True)
+    assert server.requests[0]["tool_choice"] == "required"

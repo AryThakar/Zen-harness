@@ -1,5 +1,11 @@
 """One helper task: the opening message, the step loop (guards, tools, pictures, the steps left), save_code and
-the finish call with their checks, and the result main gets - with a kept program and a table's report."""
+the finish call with their checks, and the result main gets - with a kept program and a table's report.
+
+A helper acts or finishes: every step requires a tool call (llama-server's tool_choice 'required', measured with
+Gemma 4 on the 26B, thinking on and off) and the last step offers only its finish. Before 2026-10-10 a helper
+could answer in prose, and the runner read results out of it (JSON in text, finish calls written as markup,
+sources named in passing) and repaired them - each repair added after one failure. Now nothing is read out of
+prose and nothing is repaired: a check that fails names the problem, and the helper fixes it."""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from pydantic import ValidationError
 from app.providers.base import Provider, ProviderError
 from app.tools.approval import carry_out
 from app.tools.core import ToolError, ToolResult, ok
+from app.tools.filetypes import is_code
 from app.tools.notes import pinned, source
 from app.tools.reports import DATA_SECTIONS, assemble
 from app.tools.scratch import SECTIONS, Scratch
@@ -22,13 +29,12 @@ from app.tools.vision import prepare
 from app.tools.workspace import ITEM_REF
 
 from ..context import IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_tool_results
-from ..prompts import FIX_ANSWER, FIX_FINISH, HELPER_CUT_OFF, PICTURES, STEPS_LEFT
+from ..prompts import FIX_FINISH, HELPER_CUT_OFF, NO_CALL, PICTURES, STEPS_LEFT
 from ..registry import ToolContext, execute, split_confirm, typed_optionals
-from .checks import _numbers_problem, save_problems
-from .contracts import (BRIEF, DELEGATE_OF, MAX_ASKS, SAVE_CODE, SAVE_CODE_DESCRIPTION, SUBMIT, Profile, SaveCodeIn,
+from .checks import save_problems
+from .contracts import (BRIEF, DELEGATE_OF, MAX_ASKS, SAVE_CODE, SAVE_CODE_DESCRIPTION, Profile, SaveCodeIn,
                         WorkResult)
 from .evidence import Trace, _guessed, _repeat, _uninspected
-from .repairs import _from_text, _json_in_text, _repair, code_name
 
 
 def _settle_questions(ctx: ToolContext, trace: Trace, table: str, result: ToolResult) -> None:
@@ -74,9 +80,10 @@ def _chosen(options: list, said: str | None) -> dict | None:
 def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext, *,
                progress: Callable[[dict], None] | None = None, file: str | None = None,
                table: str | None = None) -> dict:
-    """Run one task on the worker slot; returns the checked result for the main slot. file: the file to keep or
-    change - an existing one is loaded into the scratch script with its report, a new name is the one to keep it
-    under; table: the table the task is about - its report shown first, the new one kept on it.
+    """Run one task on the worker slot; returns the checked result for the main slot. file: the program to keep
+    or change (checked at main's call: program_problem) - an existing one is loaded into the scratch script with
+    its report, a new name is the one to keep it under; table: the table the task is about - its report shown
+    first, the new one kept on it.
 
     The opening carries main's task, not the user's message: a helper doesn't see the chat (the contract), and
     given the user's words it did the parts main had given to others - measured on the 26B, the web helper asked
@@ -97,10 +104,9 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         shown = _pictures(ctx, named, "task")
         messages[0] = {**messages[0], "content": f"{opening}\n\n{shown['content']}", "images": shown["images"]}
     own = profile.own_tools()
-    tool_specs = ([t.spec() for t in own.values()] + ([_save_code_spec()] if profile.saves_code else [])
-                  + [_submit_spec(profile)])
-    trace = Trace(existing=set(ctx.ws.ids()), scratch=ctx.scratch, table=table,
-                  wanted_file=ctx.scratch.name if file and profile.saves_code else None)
+    finish_spec = _submit_spec(profile)
+    tool_specs = [t.spec() for t in own.values()] + ([_save_code_spec()] if profile.saves_code else []) + [finish_spec]
+    trace = Trace(existing=set(ctx.ws.ids()), scratch=ctx.scratch, table=table, wanted_file=ctx.scratch.name)
     for n in pinned(ctx.ws):  # the pinned notes in its opening are evidence too: citable like search results
         trace.sources.add(source(n))
         trace.passages.append((source(n), n["text"]))
@@ -110,8 +116,8 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     for step in range(profile.max_steps + 1):
         last = step == profile.max_steps
         visible, shortened = shorten_tool_results(fewer_images(messages), limit, count, shortened)
-        try:
-            turn = provider.complete(system, visible, tool_specs, allow_tools=not last)
+        try:  # the last step offers only the finish: the task always ends with a result
+            turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True)
         except ProviderError as exc:
             return {"status": "failed", "worker": profile.name, "error": str(exc)}
         messages.append({"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,
@@ -119,39 +125,14 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         progress({"type": "worker_turn", "worker": profile.name, "step": step, "stop": turn.stop,
                   "calls": [c["name"] for c in turn.tool_calls], "text": turn.text[:300], "usage": turn.usage,
                   "shortened": shortened})
-        cut = turn.stop == "max_tokens"  # stopped by the output limit: thinking or answer unfinished
-        if cut and not last:
-            messages.append({"role": "user", "content": HELPER_CUT_OFF.format(finish=profile.finish)})
-            progress({"type": "worker_hint", "worker": profile.name, "text": HELPER_CUT_OFF.format(finish=profile.finish)})
+        if not turn.tool_calls:  # cut off by the length limit while thinking (a call is required otherwise)
+            if last:
+                return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"],
+                             task=task)
+            hint = (HELPER_CUT_OFF if turn.stop == "max_tokens" else NO_CALL).format(finish=profile.finish)
+            messages.append({"role": "user", "content": hint})
+            progress({"type": "worker_hint", "worker": profile.name, "text": hint})
             continue
-        if not turn.tool_calls:
-            # A plain-text answer (small models often skip their finish call): the same checks apply to it.
-            note = "; ".join(n for n, on in (("answered at the step limit", last),
-                                             ("the reply was cut off by the length limit", cut)) if on) or None
-            if not turn.text.strip():
-                return _done(ctx, profile, {"answer": ""}, trace, ["the worker returned no answer"], note=note, task=task)
-            written = _json_in_text(turn.text)
-            outcome = _submitted(profile, written, trace, opening) if written is not None else None
-            if isinstance(outcome, dict):
-                result, problems = outcome["result"], outcome["problems"]
-            else:
-                result = _repair(profile, _from_text(profile, turn.text, trace), trace)
-                if result.get("question_for_user"):  # asking is the whole result
-                    problems = []
-                elif profile.finish == SUBMIT:
-                    problems = profile.check(profile.result_model.model_validate(result), trace, opening)
-                else:  # its method and caveats come only through finish; the answer's numbers are checked anyway
-                    problems = ([] if retried else [f"finish by calling {profile.finish} with your answer, method "
-                                                    "and caveats"]) + _numbers_problem(result["answer"], trace, opening)
-                    if trace.wanted_file and not trace.saved:
-                        problems.append(f"the task asks for {trace.wanted_file} to be kept: keep it with save_code")
-            progress({"type": "worker_check", "worker": profile.name, "problems": problems,
-                      "retry": bool(problems and not retried and not last)})
-            if problems and not retried and not last:
-                retried = True
-                messages.append({"role": "user", "content": FIX_ANSWER + "; ".join(problems)})
-                continue
-            return _done(ctx, profile, result, trace, problems, note=note, task=task)
         drawn_before, read = len(ctx.scratch.images), []
         for call in turn.tool_calls:
             args, confirmed = split_confirm(call["input"])
@@ -191,9 +172,6 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                 result = repeat
                 trace.not_run += 1
             else:
-                if (call["name"] == "read_webpage" and isinstance(args, dict) and not args.get("find")
-                        and trace.last_query):
-                    args = {**args, "find": trace.last_query}  # only used when the page is too long to show whole
                 result = execute(ctx, call["name"], args, own)
                 if call["name"] == "inspect_data" and isinstance(args, dict):
                     _settle_questions(ctx, trace, ctx.ws.find(str(args.get("data", ""))) or "", result)
@@ -201,8 +179,6 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                     trace.add(call["name"], args, result)
                 else:
                     trace.not_run += 1  # arguments that were not JSON
-                if profile.saves_code and call["name"] == "read_file":
-                    _adopt(ctx, result)
                 if call["name"] == "read_file" and result.result.get("kind") == "image":
                     read.append(result.result["file"])
             content = result.for_model()
@@ -219,7 +195,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             if sees and items:  # after this step's results: the helper sees them on its next step
                 messages.append(_pictures(ctx, items, kind))
                 progress({"type": "worker_hint", "worker": profile.name, "text": messages[-1]["content"]})
-    return _done(ctx, profile, {"answer": ""}, trace, ["the worker ran out of steps without an answer"], task=task)
+    return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"], task=task)
 
 
 def _inspect_first(ctx: ToolContext, trace: Trace, table: str, name: str, args: dict, own: dict) -> ToolResult:
@@ -279,23 +255,6 @@ def _task_images(ctx: ToolContext, task: str) -> list[str]:
     return named[:IMAGES_SHOWN]
 
 
-def _adopt(ctx: ToolContext, result: ToolResult) -> None:
-    """A code file the helper reads while its scratch script is empty becomes the scratch script (measured: it
-    read file_2, then called fix_code on an empty scratch) - unless the task named another file to make. fix_code
-    then changes it by the line numbers read_file showed."""
-    from app.tools.read_file import CODE
-    res = result.result
-    if (result.status != "ok" or ctx.scratch.code or not str(res.get("lines", "")).startswith("1-")
-            or PurePath(res.get("name", "")).suffix.lower() not in CODE
-            or (ctx.scratch.name and ctx.scratch.name != res.get("name"))):
-        return
-    ctx.scratch.code = ctx.ws.path(res["file"]).read_text("utf-8", errors="replace")
-    ctx.scratch.name, ctx.scratch.item = res["name"], res["file"]
-    res["note"] = ((res["note"] + " ") if res.get("note") else "") + (
-        "This file is now your scratch script: change only what the task asks, with fix_code (the line numbers "
-        "above), and keep it under its name with save_code.")
-
-
 def _table_report(ctx: ToolContext, table: str) -> str:
     """The table's latest report - an earlier task's decisions and the cleaned table it made - first."""
     report = ctx.ws.report(table)
@@ -305,15 +264,33 @@ def _table_report(ctx: ToolContext, table: str) -> str:
             f"it names instead of redoing them:\n{report}\n\n")
 
 
+def program_problem(ws, file: str) -> str | None:
+    """Why main's file=... is not a program to keep or change, with the field that takes it - None when it is one.
+    Measured on the 26B: main put the table there ('expenses.csv'), then the memo the script was to write
+    ('memo.docx'); taken as programs to keep, the helper spent 400 s unable to keep either."""
+    name = " ".join(str(file).split())
+    item = ws.find(name)
+    if item is None:
+        return None if not PurePath(name).suffix or is_code(name) else (
+            f"{name} is not a program: name it in the task for the script to write. file is the program to keep, "
+            "e.g. 'make_memo.py'.")
+    e = ws.entry(item)
+    if e["kind"] == "table":
+        return f"{name} is a table ({item}): give it as data, not file."
+    if e["kind"] != "file" or not is_code(e["name"]):
+        return (f"{name} is {item}, not a program: name it in the task for the helper to read or look at. file is "
+                "the program to keep or change.")
+    return None
+
+
 def _given_file(ctx: ToolContext, file: str) -> str:
-    """The file the task is about: an existing one goes into the scratch script with its report; a new name is the
-    one the program is kept under."""
+    """The program the task is about (program_problem has passed it): an existing one goes into the scratch script
+    with its report, to change and keep under its name; a new name is the one to keep it under."""
     item = ctx.ws.find(file, ("file",))
     if item is None:
         name = " ".join(str(file).split())
-        name = name if PurePath(name).suffix else f"{name}.py"
-        ctx.scratch.name = name
-        return f"The file to make: {name} - keep it with save_code once it works.\n\n"
+        ctx.scratch.name = name if PurePath(name).suffix else f"{name}.py"
+        return f"The program to make: {ctx.scratch.name} - keep it with save_code once it works.\n\n"
     e = ctx.ws.entry(item)
     ctx.scratch.code = ctx.ws.path(item).read_text("utf-8", errors="replace")
     ctx.scratch.name, ctx.scratch.item = e["name"], item
@@ -334,8 +311,7 @@ def _submitted(profile: Profile, raw, trace: Trace, context: str) -> dict | str:
     except ValidationError as exc:
         first = exc.errors()[0]
         return f"{profile.finish}: {'.'.join(map(str, first['loc']))}: {first['msg']}"
-    fixed = _repair(profile, result.model_dump(exclude_none=True), trace)
-    return {"result": fixed, "problems": profile.check(profile.result_model.model_validate(fixed), trace, context)}
+    return {"result": result.model_dump(exclude_none=True), "problems": profile.check(result, trace, context)}
 
 
 def _save_code(ctx: ToolContext, profile: Profile, raw, trace: Trace, context: str, confirmed: bool) -> ToolResult:
@@ -349,7 +325,12 @@ def _save_code(ctx: ToolContext, profile: Profile, raw, trace: Trace, context: s
         return ToolResult("invalid_arguments", {"error": {"message": f"{'.'.join(map(str, first['loc']))}: "
                                                                      f"{first['msg']}"}})
     given = bool(fields.code and fields.code.strip())
-    fields = fields.model_copy(update={"name": code_name(fields.name, given)})
+    if not given and PurePath(fields.name.strip()).suffix.lower() not in (".py", ""):
+        # the scratch script is Python; what its run wrote (a picture, a table, a document) is kept already under
+        # its own name - saving the script under that name would have replaced it (seen: 'memo.docx')
+        return ToolResult("invalid_arguments", {"error": {"message": (
+            f"Not kept: your scratch script is Python - keep it as '{PurePath(fields.name.strip()).stem}.py'. What "
+            f"its run wrote ({fields.name.strip()}) is kept already."), "field": "name"}})
     code = fields.code if given else ctx.scratch.code
     problems = save_problems(fields, code, trace, context, ctx.scratch, confirmed)
     if problems:
@@ -393,12 +374,7 @@ def _done(ctx: ToolContext, profile: Profile, result: dict, trace: Trace, proble
     if cited:
         ctx.emit({"tool": f"{profile.name}_worker", "type": "sources", "items": cited})
     asking = bool(result.get("question_for_user"))
-    if profile.saves_code and not asking and trace.wanted_file and not trace.saved \
-            and ctx.scratch.last and ctx.scratch.last["ok"]:
-        problems = _unsaved(ctx, profile, trace, problems)
     if profile.result_model is WorkResult:
-        if not asking and result.get("answer") and not result.get("method") and (trace.table or trace.inspected):
-            note = "; ".join(filter(None, [note, "no report was kept: the helper answered in plain text"]))
         result = _shaped(ctx, profile, result, trace, task, asking)
     out = _finish(profile, result, trace, problems, note)
     saved = [{"id": trace.saved["file"], "name": trace.saved["name"], "kind": "file"}] if trace.saved else []
@@ -418,7 +394,7 @@ def _shaped(ctx: ToolContext, profile: Profile, result: dict, trace: Trace, task
     brief = {k: result[k] for k in BRIEF if result.get(k)}
     out = {"answer": result.get("answer", ""), **({"caveats": result["caveats"]} if result.get("caveats") else {})}
     target = trace.table or next((t for t in trace.inspected if t in trace.existing), None)
-    if target and not asking and result.get("answer") and result.get("method"):  # a finish, not plain text
+    if target and not asking and result.get("answer"):
         out.update(_keep_report(ctx, profile, result, trace, target, task))
     elif trace.saved:
         out["report"] = trace.saved["report"]
@@ -519,26 +495,6 @@ def _keep_report(ctx: ToolContext, profile: Profile, result: dict, trace: Trace,
     ctx.emit({"tool": f"{profile.name}_worker", "type": "report", "table": target, "name": ctx.ws.entry(target)["name"],
               "report": report})
     return {"report": report, "table": target}
-
-
-def _unsaved(ctx: ToolContext, profile: Profile, trace: Trace, problems: list[str]) -> list[str]:
-    """The task asked for a file and the helper ended without save_code although its script ran (measured: the
-    coder wrote the "save" in prose, twice): the app keeps the script that ran under that name - work is never
-    lost - with a report that says the helper didn't write it. Still a warning: the contract was not kept."""
-    missing = "Not written: the helper didn't describe this (the app kept its last working script)."
-    sections = {"purpose": "A script the helper ran but didn't keep itself", "how_it_works": missing,
-                "inputs_outputs": missing, "how_to_run": missing, "limits": missing}
-    ctx.scratch.code = ctx.scratch.last["code"]
-    try:
-        saved = save_file(ctx.ws, ctx.index, ctx.scratch, trace.wanted_file, sections)
-    except ToolError:
-        return problems
-    if saved.status == "ok" and (saved.artifact or {}).get("type") == "file":
-        ctx.emit({"tool": f"{profile.name}_worker", **saved.artifact})
-        trace.saved = {k: saved.result[k] for k in ("file", "name", "report")}
-        return [p for p in problems if "save_code" not in p] + [
-            "the helper didn't keep the file: the app kept its last working script, with a report it didn't write"]
-    return problems
 
 
 def _save_code_spec() -> dict:

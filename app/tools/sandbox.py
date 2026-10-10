@@ -47,7 +47,8 @@ from typing import Protocol
 import pandas as pd
 
 from .core import ToolError, ToolResult, jsonable
-from .workspace import IMAGE_SUFFIXES, Workspace, read_table
+from .filetypes import IMAGE, SCRIPT_TABLES
+from .workspace import Workspace, read_table
 
 DEFAULT_TIMEOUT = 30
 MAX_TIMEOUT = 120
@@ -55,7 +56,7 @@ MAX_OUTPUT = 10_000
 MAX_CODE = 50_000
 MAX_NEW_FILES = 10
 MAX_FILE_BYTES = 20 * 1024 * 1024
-IMAGES = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".svg": "svg", ".webp": "webp"}
+IMAGES = (*IMAGE, ".svg")  # what counts as a figure the script saved itself (then open figures aren't saved again)
 CELL = "_cell.py"  # the set-up that runs the script
 SCRIPT = "script.py"  # the model's code
 
@@ -427,14 +428,14 @@ def _register(ws: Workspace, box: Path, before: dict, reuse: dict[str, str]) -> 
         earlier = reuse.get(rel) if reuse.get(rel) in ws.ids() else None
         made = {"from": "run_python"}  # made by the assistant: it may change it again without asking
         try:
-            if suffix in (".csv", ".parquet"):
+            if suffix in SCRIPT_TABLES:
                 df, read = read_table(p) if suffix == ".csv" else (pd.read_parquet(p), {})
                 if earlier and ws.kind(earlier) == "table":
                     ws.replace_table(earlier, df, {**read, **made})
                     item = earlier
                 else:
                     item = ws.add_table(df, name=rel, meta={**read, **made})
-            elif suffix in IMAGE_SUFFIXES:  # SVG stays a file: it can carry scripts, the UI never shows it inline
+            elif suffix in IMAGE:  # SVG stays a file: it can carry scripts, the UI never shows it inline
                 try:
                     if earlier and ws.kind(earlier) == "image":
                         ws.replace_image(earlier, p.read_bytes(), made)

@@ -619,7 +619,7 @@ def test_a_data_file_link_shows_its_first_rows_and_how_to_bring_it_in():
     r = read_webpage("https://data.example.com/sales.csv", http=http, resolve=resolve).result
     assert r["read"] == "ok" and "Columns (2): region, sales" in r["text"] and "R19,19" in r["text"]
     assert "R20,20" not in r["text"]  # the first rows only
-    assert "data file" in r["note"] and "downloads" in r["note"] and "import_table" in r["note"]
+    assert "data file" in r["note"] and "downloads" in r["note"] and "brings it in as a table" in r["note"] and "import_table" not in r["note"]
 
 
 def test_an_excel_link_shows_its_first_rows():

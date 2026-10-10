@@ -23,8 +23,6 @@ main itself, each from a measured failure in the user's own test chat (found in 
     claimed, not done   a reply claiming an action ("I saved a note", "has been downloaded") in a turn
                         where no tool did anything gets one hidden nudge to do it or correct the reply
                         ("remember X" answered "I saved a note" without saving it, 4 of 6)
-    written, not called a reply that is a tool call written out as JSON text gets one hidden nudge to make
-                        the call or answer in words (the user saw '{"action": "generate_image", ...}')
 
 Each nudge is sent at most once per turn; after it the reply stands. Claims about what a tool that did
 run really did (an image "with the date added") are checked where they happen: the coder's report
@@ -33,10 +31,9 @@ against its run, vision after generate_image.
 
 from __future__ import annotations
 
-import json
 import re
 
-from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE, WRITTEN_NUDGE
+from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE
 from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 
@@ -165,38 +162,12 @@ def announced(text: str) -> bool:
     return any(ANNOUNCED.search(s) and not OFFER.search(s) for s in last)
 
 
-CALL_KEYS = ("action", "tool", "tool_name", "name", "function")
-FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
-
-
-def written_call(text: str, tools) -> str | None:
-    """The tool's name when the whole reply is a call to it written out as JSON text, else None. The
-    measured one wasn't valid JSON (a quoted object inside), so a name key is also read from the text."""
-    body = FENCE.sub("", text.strip())
-    if not (body.startswith("{") and body.endswith("}")):
-        return None
-    try:
-        data = json.loads(body)
-    except ValueError:
-        named = re.search(rf'"(?:{"|".join(CALL_KEYS)})"\s*:\s*"(\w+)"', body)
-        return named.group(1) if named and named.group(1) in tools else None
-    for key in CALL_KEYS if isinstance(data, dict) else ():
-        value = data.get(key)
-        value = value.get("name") if isinstance(value, dict) else value
-        if isinstance(value, str) and value in tools:
-            return value
-    return None
-
-
-def nudge_for(text: str, turn: list[dict], tools=()) -> str | None:
-    """The one nudge a tool-less reply gets, or None: a call written as text first, then asked to remember
-    but nothing saved, then announced-not-done, then claimed-not-done. None once the turn already had a
-    nudge of these kinds."""
+def nudge_for(text: str, turn: list[dict]) -> str | None:
+    """The one nudge a tool-less reply gets, or None: asked to remember but nothing saved, then
+    announced-not-done, then claimed-not-done. None once the turn already had a nudge of these kinds. (A call
+    written out as text is made a real call where calls are read: providers/gemma_calls.py.)"""
     if any(m.get("check") for m in turn if m["role"] == "user"):
         return None
-    name = written_call(text, tools)
-    if name:
-        return WRITTEN_NUDGE.format(name=name)
     said = next((str(m.get("text") or m.get("content") or "") for m in turn if m["role"] == "user"), "")
     kept = any(c["name"] == "files" or (c["name"] == "notes" and isinstance(c.get("input"), dict)
                                         and c["input"].get("mode") == "save")

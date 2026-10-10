@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePath
 
-KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".txt": "txt", ".md": "md", ".markdown": "md"}
+from app.tools.filetypes import DOCUMENT as KINDS  # noqa: E402 - the one definition of a document
 MAX_BYTES = 20 * 1024 * 1024
 
 

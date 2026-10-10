@@ -152,7 +152,7 @@ class LlamaCppProvider:
         return re.split(r"[\\/]", path)[-1].removesuffix(".gguf") or self.model
 
     def _body(self, system: str, messages: list[dict], tools: list[dict], allow_tools: bool,
-              think: bool = True, budget: int | None = None) -> dict:
+              think: bool = True, budget: int | None = None, require_tool: bool = False) -> dict:
         """The request, the same for generating and for counting."""
         thinking = self.thinking and think
         budget = budget or self.thinking_budget
@@ -170,7 +170,7 @@ class LlamaCppProvider:
             body["tools"] = [{"type": "function", "function": {
                 "name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
                 for t in tools]
-            body["tool_choice"] = "auto" if allow_tools else "none"
+            body["tool_choice"] = "required" if require_tool and allow_tools else "auto" if allow_tools else "none"
             if not allow_tools:
                 # tool_choice only stops llama-server parsing calls; the model still sees the
                 # tools, so it has to be told in the conversation.
@@ -247,9 +247,9 @@ class LlamaCppProvider:
         return out["choices"][0]["message"].get("content") or ""
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
-                 allow_tools: bool = True, on_event: EventCallback | None = None, think: bool = True,
-                 budget: int | None = None) -> ModelTurn:
-        body = {**self._body(system, messages, tools, allow_tools, think, budget), "stream": True}
+                 allow_tools: bool = True, require_tool: bool = False, on_event: EventCallback | None = None,
+                 think: bool = True, budget: int | None = None) -> ModelTurn:
+        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool), "stream": True}
         try:
             with self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
                 text, calls, finish, timings, thinking = _read_stream(response, on_event, self.cancel)

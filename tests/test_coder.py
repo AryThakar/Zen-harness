@@ -101,29 +101,11 @@ def test_python_passed_in_save_code_is_run_before_it_is_kept(ctx):
     assert "- It printed: 832040" in out["report"]  # what is kept has run
 
 
-def test_a_plain_text_answer_is_asked_for_the_file_and_the_finish(ctx):
-    model = ScriptedProvider([turn(call("run_code", code=FIB)), ModelTurn(text="It prints 832040."),
-                              turn(save(name="fib.py")), turn(done())])
-    out = run_worker(model, ENGINEER, "fib", ctx, file="fib.py")
-    told = model.requests[2]["messages"][-1]["content"]
-    assert "finish by calling finish" in told and "fib.py to be kept: keep it with save_code" in told
-    assert out["files"][0]["id"] == "file_1" and "warnings" not in out
-
-
 def test_finishing_without_keeping_the_file_the_task_asked_for_gets_one_chance(ctx):
     model = ScriptedProvider([turn(call("run_code", code=FIB)), turn(done()), turn(save(name="fib.py")), turn(done())])
     out = run_worker(model, ENGINEER, "fib", ctx, file="fib.py")
     assert "fib.py to be kept: keep it with save_code, then finish" in model.requests[2]["messages"][-1]["content"]
     assert out["files"][0]["name"] == "fib.py"
-
-
-def test_work_that_ran_is_kept_even_when_the_helper_never_keeps_it(ctx):
-    model = ScriptedProvider([turn(call("run_code", code=FIB)), ModelTurn(text="Saved as fib_numbers.py."),
-                              ModelTurn(text="Here is the save: fib_numbers.py")])
-    out = run_worker(model, ENGINEER, "fib", ctx, file="fib_numbers.py")
-    assert out["files"][0]["name"] == "fib_numbers.py" and ctx.ws.path(out["files"][0]["id"]).read_text() == FIB
-    assert "- It printed: 832040" in out["report"] and "didn't describe this" in out["report"]
-    assert "the helper didn't keep the file" in out["warnings"][-1]  # still flagged: the contract wasn't kept
 
 
 def test_without_a_file_to_keep_a_script_is_only_the_helpers_working(ctx):
@@ -144,21 +126,6 @@ def test_a_given_file_is_loaded_with_its_report_and_kept_under_its_name(ctx):
     assert "The file to work on: fib.py (file_1), 7 lines" in opening and first["report"] in opening
     assert out["files"][0]["id"] == "file_1" and "- It printed: 55" in out["report"]  # the same file, replaced
     assert ctx.ws.ids("file") == ["file_1"] and ctx.ws.report("file_1").startswith("# Prints the 10th")
-
-
-def test_a_code_file_the_helper_reads_becomes_its_scratch_script(ctx):
-    ctx.ws.add_bytes("file", b"total = sum([1, 2, 3])\nprint(total / 0)\n", "py", name="mean.py")
-    model = ScriptedProvider([turn(call("read_file", file="file_1")),
-                              turn(call("fix_code", from_line=2, to_line=2, new_code="print(total / 3)")),
-                              turn(save(name="mean.py", how_it_works="Sums three numbers and prints the mean.")),
-                              turn(save(name="mean_fixed.py", how_it_works="Sums three numbers and prints the mean.")),
-                              turn(done("It prints 2.0."))])
-    out = run_worker(model, ENGINEER, "fix file_1", ctx)
-    assert "now your scratch script" in model.requests[1]["messages"][-1]["content"]
-    # the user's own file, and nobody to ask (no chat here): kept under another name, theirs untouched
-    assert "user's own file" in model.requests[3]["messages"][-1]["content"]
-    assert ctx.ws.path("file_1").read_text() == "total = sum([1, 2, 3])\nprint(total / 0)\n"
-    assert out["files"][0]["name"] == "mean_fixed.py" and "- It printed: 2.0" in out["report"]
 
 
 def test_run_outputs_are_linked_to_the_file(ctx):
@@ -213,3 +180,47 @@ def test_keeping_a_program_over_the_users_own_file_asks_them_in_place(store):
     told = json.loads(main.requests[1]["messages"][-1]["content"])
     assert "code" not in told and told["report"].startswith("# Prints new") and told["files"][0]["id"] == upload
     assert finished[-1]["answer"] == "Updated hello.py."
+
+
+def test_fix_code_on_an_empty_scratch_says_how_to_change_a_stored_script(ctx):
+    ctx.ws.add_bytes("file", b"total = sum([1, 2, 3])\nprint(total / 0)\n", "py", name="mean.py")
+    model = ScriptedProvider([turn(call("read_file", file="file_1")),
+                              turn(call("fix_code", from_line=2, to_line=2, new_code="print(total / 3)")),
+                              turn(done("It needs the file as the task's file."))])
+    run_worker(model, ENGINEER, "fix file_1", ctx)
+    told = model.requests[2]["messages"][-1]["content"]
+    assert "There is no code yet" in told and "comes in as the task's file" in told
+
+
+def test_file_takes_a_program_and_anything_else_is_refused_with_the_field_that_takes_it(ctx):
+    """Measured on the 26B: main put the table there ('expenses.csv'), then the memo the script was to write
+    ('memo.docx'); taken as programs to keep, the helper spent 400 s unable to keep either."""
+    import pandas as pd
+    from app.assistant.registry import execute
+    from app.assistant.workers import main_tools
+    ctx.ws.add_table(pd.DataFrame({"a": [1]}), "expenses.csv")
+    ctx.ws.add_bytes("file", b"the fox", "txt", name="story.txt")
+    tools = main_tools(ScriptedProvider([]), ctx)
+    for file, said in (("expenses.csv", "is a table (data_1): give it as data, not file"),
+                       ("memo.docx", "memo.docx is not a program: name it in the task for the script to write"),
+                       ("story.txt", "is file_1, not a program: name it in the task for the helper to read")):
+        r = execute(ctx, "analyze_or_code", {"task": "x", "file": file}, tools)
+        assert r.status == "invalid_arguments" and said in r.result["error"]["message"], file
+    for file in ("primes.py", "primes", "page.html"):  # programs: a new name, no extension, another language
+        r = execute(ctx, "analyze_or_code", {"task": "x", "file": file}, tools)
+        assert "not a program" not in str(r.result), file
+
+
+def test_a_script_is_kept_as_python_not_under_the_name_of_what_it_wrote(ctx):
+    """Kept as 'memo.docx', the script would have replaced the document it wrote with its own text."""
+    write = ("from docx import Document\nd = Document()\nd.add_paragraph('Q1 memo')\nd.save('memo.docx')\n"
+             "print('written')\n")
+    model = ScriptedProvider([turn(call("run_code", code=write)),
+                              turn(save(name="memo.docx", how_it_works="Writes a Word memo with python-docx.")),
+                              turn(save(name="memo.py", how_it_works="Writes a Word memo with python-docx.")),
+                              turn(done("memo.docx is written."))])
+    out = run_worker(model, ENGINEER, "write the memo", ctx, file="memo.py")
+    assert "keep it as 'memo.py'" in model.requests[2]["messages"][-1]["content"]
+    names = {ctx.ws.entry(i)["name"]: i for i in ctx.ws.ids("file")}
+    assert set(names) == {"memo.docx", "memo.py"} and "warnings" not in out
+    assert ctx.ws.path(names["memo.docx"]).read_bytes()[:2] == b"PK"  # still the real document

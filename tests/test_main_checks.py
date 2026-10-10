@@ -73,19 +73,6 @@ def test_a_claim_is_flagged_only_when_no_tool_did_anything():
     assert nudge_for(claim, nudged) is None  # once per turn
 
 
-def test_a_tool_call_written_as_text_is_nudged():
-    tools = {"generate_image": None, "calculate": None}
-    user = {"role": "user", "content": "a lion flying over the Himalayas"}
-    # as measured (chat dacb378f2781): not valid JSON, an object quoted inside
-    written = ('{\n  "action": "generate_image",\n  "action_input": "{ \\"prompt\\": \\"A majestic lion\\", '
-               '\\"size\\": \\"wide\\" }"\n}')
-    nudge = nudge_for(written, [user], tools)
-    assert nudge and "generate_image call written out as text" in nudge
-    assert "calculate" in nudge_for('```json\n{"name": "calculate", "arguments": {"expression": "2+2"}}\n```', [user], tools)
-    for other in ('{"total": 12}', 'Here is the call: {"action": "generate_image"}', '{"action": "fly_away"}'):
-        assert "written out" not in (nudge_for(other, [user], tools) or ""), other
-
-
 def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():
     for said in ("remember that our fiscal year starts in April", "your name is Zen and my name is Ary, remember that",
                  "note this down: the deadline is Friday", "keep in mind I prefer metric units", "don't forget my PIN rule",

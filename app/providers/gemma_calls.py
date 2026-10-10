@@ -35,8 +35,11 @@ BARE = re.compile(r"[A-Za-z_][\w-]*")
 _JSON = json.JSONDecoder()
 
 
-NAME_KEYS = ("name", "tool_name", "tool")
-ARGUMENT_KEYS = ("arguments", "tool_args", "args", "parameters", "input")
+# Every key a call written as JSON has been seen with (main's '{"action": "generate_image", "action_input": ...}'
+# after an image was made - the user saw the JSON and nothing ran - was answered by a separate nudge until
+# 2026-10-10; this is now the one place that reads such calls).
+NAME_KEYS = ("name", "tool_name", "tool", "action", "function")
+ARGUMENT_KEYS = ("arguments", "tool_args", "args", "parameters", "input", "action_input")
 JSON_START = re.compile(r"(?m)^[ \t]*(?:```(?:json)?[ \t]*\n[ \t]*)?\{")
 
 

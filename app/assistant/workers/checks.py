@@ -1,8 +1,8 @@
-"""The checks a helper's result must pass before main sees it: a web answer read from pages and its sources
-really read, knowledge sources really returned, every number in the engineer's answer from a tool result or a
-run, and a kept program's report true to its code and its last run. What code can set right is repaired first
-(repairs.py); a failed check asks for real work - read a page, compute a number - and gives one chance to fix it.
-save_code's checks answer the call itself, so the helper fixes the report and calls again."""
+"""The checks a helper's result must pass before main sees it: a web answer read from pages, its sources really
+read and its file links in downloads, knowledge sources really returned, every number in the engineer's answer from
+a tool result or a run, and a kept program's report true to its code and its last run. A check verifies; it never
+edits the result: a failed one names the problem and gives one chance to fix it. save_code's checks answer the call
+itself, so the helper fixes the report and calls again."""
 
 from __future__ import annotations
 
@@ -22,9 +22,16 @@ GAVE_UP = re.compile(r"\W*(?:I|we)\s+(?:could not|couldn'?t|cannot|can'?t|was un
                      re.I)
 
 
+URL = re.compile(r"https?://[^\s)\]>\"'`]+")
+
+
 def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
+    from app.tools.web import is_file_link
     problems = [f"{d} is not a link any page you read gave; give only links the tools returned"
                 for d in result.downloads if not given_link(d, trace)]
+    written = [u.rstrip(".,;:") for u in dict.fromkeys(URL.findall(result.answer))]
+    problems += [f"{u} is a file's link: give it in downloads, so main can bring it in" for u in written
+                 if u not in result.downloads and is_file_link(u) and given_link(u, trace)]
     for s in result.sources:
         if s in trace.read_urls:
             continue

@@ -49,7 +49,7 @@ without Playwright MCP, there is no browser and such pages are reported as unrea
 |---|---|
 | `app/api/` | the HTTP API: workspaces, chats, messages (streamed), answers to questions, uploads, items, the file panel's save and run, web icons |
 | `app/assistant/` | main's turn loop (`main.py`), what every call sees (`context.py`), main's honesty checks (`checks.py`), every tool's schema and handler (`registry.py`), the prompts (`prompts.py`), the store (`store.py`) |
-| `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence trace and guards (`evidence.py`), result checks (`checks.py`) and repairs (`repairs.py`) |
+| `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence trace and guards (`evidence.py`), result checks (`checks.py`) |
 | `app/tools/` | the tools - each a plain function returning one result shape (`core.py`), tested without a model |
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
 | `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls repaired in `gemma_calls.py`), Groq for testing, a scripted model for tests |
@@ -103,17 +103,18 @@ crafts has no such seam; documents stay main's (files, written from Markdown wit
 main knows each helper by its contract (contracts.py) - what it is for and what it hands back - never by
 its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools; it starts from
 the time, the workspace, the pinned notes and main's task - not the user's message, so it does its own part
-and not one main gave another helper. The runner
-(runner.py) guards each call the same way main's are guarded: a repeat of a call that worked gets its earlier
-result back (nothing runs); one that failed is stopped with why and runs when confirmed; a table nobody
-inspected is inspected first - the call runs right after when there is nothing to clean; a seventh page of one
-site is not read. The result is checked by code before main sees it - a web answer must come from pages it
-read, knowledge sources must be ones a tool returned, every number in the analyst-programmer's answer must be in
-a tool result or a run, and a program it keeps must have a complete report and code that ran (save_code's checks
-answer that call, so the helper fixes the report and calls again). What code can set right is repaired first
-(repairs.py) - a page only seen in search drops off the sources when one it read is left; a failed check asks
-for real work and gets one chance; after that the result goes back with a warning. Charts, tables and pictures
-go straight to the page, not through the summary. The analyst-programmer sees pictures - what its script drew,
+and not one main gave another helper. **A helper acts or finishes**: every step requires a tool call
+(llama-server's tool_choice 'required') and the last step offers only its finish, so its result always comes
+through the finish call - nothing is read out of prose, nothing is repaired. The runner (runner.py) guards each
+call the same way main's are guarded: a repeat of a call that worked gets its earlier result back (nothing runs);
+one that failed is stopped with why and runs when confirmed; a table nobody inspected is inspected first - the
+call runs right after when there is nothing to clean; a seventh page of one site is not read. The result is
+checked by code before main sees it - a web answer must come from pages it read, with its file links in
+downloads; knowledge sources must be ones a tool returned; every number in the analyst-programmer's answer must
+be in a tool result or a run; a program it keeps must have a complete report and code that ran (save_code's
+checks answer that call, so the helper fixes the report and calls again). A check verifies, it never edits: a
+failed one names the problem and gets one chance; after that the result goes back with a warning. Charts, tables
+and pictures go straight to the page, not through the summary. The analyst-programmer sees pictures - what its script drew,
 an image it reads - in its own conversation.
 
 A **report** is kept on the item a helper worked on (`<item>.report.md`, reports.py): its own sections, then

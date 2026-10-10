@@ -55,7 +55,7 @@ from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit
 
 import httpx
 
-from . import net
+from . import filetypes, net
 from .core import ToolError, ToolResult, ok, tool
 
 log = logging.getLogger(__name__)
@@ -419,8 +419,8 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
     elif kind in TABLE_SUFFIXES:
         title, text = _table_preview(final, kind, body, charset)
         meta["note"] = (f"This link is a data file ({kind.lstrip('.').upper()}), not a page: shown are its first rows. "
-                        "To work with it, give its link in downloads - main brings it in as a table (import_table), "
-                        "with the user's approval.")
+                        "To work with it, give its link in downloads: main brings it in as a table, with the user's "
+                        "approval.")
     elif ctype.startswith("image/"):
         raise ToolError(f"This link is an image ({ctype}), not a page: it has no text to read.", invalid=False,
                         reason="unsupported")
@@ -515,7 +515,7 @@ def _from_github(http: httpx.Client, url: str, resolve) -> tuple[str, str, dict]
 
 # ---------------------------------------------------------------- downloads (import_table, download_file)
 
-TABLE_SUFFIXES = (".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls")
+TABLE_SUFFIXES = filetypes.TABLE  # a .txt is a document (filetypes), not a table
 TABLE_TYPES = {"text/csv": ".csv", "application/csv": ".csv", "text/tab-separated-values": ".tsv",
                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
                "application/vnd.ms-excel": ".xls"}
@@ -539,8 +539,8 @@ def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Cl
         raise ToolError("Give the file's full http(s) link.", field="url")
     url = _raw_link(url)
     if github and not _on_github(url):
-        raise ToolError("download_file only takes files on GitHub (github.com, raw.githubusercontent.com, gists). "
-                        "For a data table from another site use import_table.", field="url")
+        raise ToolError("Only a file on GitHub (github.com, raw.githubusercontent.com, gists) is downloaded as it is; "
+                        "from another site, files(mode='download') brings in a data table (CSV, Excel).", field="url")
     resolve = resolve or socket.getaddrinfo
     with _downloader(http) as client:
         head, ctype, size, final = _peek(client, url, resolve)
@@ -561,15 +561,22 @@ def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Cl
             raise ToolError(f"That link is a web page, not a {what}. A file's own link ends in its name (e.g. "
                             ".csv); ask research_web for it, or ask the user to upload the file.", invalid=False)
     if github and not _on_github(final):
-        raise ToolError("That link leads away from GitHub; download_file only takes files on GitHub.", invalid=False)
+        raise ToolError("That link leads away from GitHub: only a file on GitHub is downloaded as it is.",
+                        invalid=False)
     name = unquote(PurePosixPath(urlsplit(final).path).name) or "download"
     limit = MAX_TABLE_BYTES if tables else MAX_FILE_BYTES
     if size and size > limit:
         raise ToolError(f"The file is {size / 2 ** 20:.1f} MB; at most {limit // 2 ** 20} MB can be downloaded.",
                         invalid=False)
-    if tables and PurePosixPath(name).suffix.lower() not in TABLE_SUFFIXES and not (
-            TABLE_TYPES.get(ctype) or ctype.startswith("text/")):
-        raise ToolError(f"That link is not a CSV, TSV or Excel file (it is {ctype or 'of an unknown type'}).",
+    kind = PurePosixPath(name).suffix.lower()
+    # Data served as plain text counts (raw hosts serve CSV as text/plain) - not a document's own extension.
+    if tables and kind not in TABLE_SUFFIXES and not (
+            TABLE_TYPES.get(ctype) or (ctype.startswith("text/") and kind not in filetypes.DOCUMENT)):
+        if kind in filetypes.DOCUMENT:
+            raise ToolError(f"That link is a document ({kind}), not a data table. From outside GitHub only tables are "
+                            "brought in: research_web reads a document, or the user uploads it.", invalid=False)
+        raise ToolError(f"That link is not a CSV, TSV or Excel file (it is {ctype or 'of an unknown type'}). "
+                        "files(mode='download') brings in a data table from any site, or any file from GitHub.",
                         invalid=False)
     return {"url": final, "name": name, "type": ctype, "bytes": size, "host": urlsplit(final).hostname,
             **({"github": True} if github else {})}
@@ -727,7 +734,7 @@ def offered_files(body: bytes, final: str) -> list[str]:
 def is_file_link(link: str) -> bool:
     """A link files(mode='download') can fetch: a data table from any site, or a file on GitHub."""
     suffix = PurePosixPath(urlsplit(link).path).suffix.lower()
-    if suffix in TABLE_SUFFIXES and suffix != ".txt":
+    if suffix in TABLE_SUFFIXES:
         return True
     return bool(_on_github(link) and suffix and (urlsplit(link).hostname != "github.com" or "/blob/" in link
                                                   or "/raw/" in link))
