@@ -647,6 +647,8 @@ body.fv-full .fv-wide .a { transform: rotate(180deg); }
 .run-out .tags { margin-top: 8px; }
 .run-out .tag { cursor: pointer; }
 .fv-body > .run-out { margin-top: 12px; }
+.versions .version { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 13px; }
+.versions .version .muted { flex: 1; }
 
 /* the editor: a tab, a gutter of line numbers beside the code, the pointer's line lit */
 .fv-tabs { display: flex; height: 36px; flex: none; background: var(--editor); border-bottom: 1px solid var(--line); }

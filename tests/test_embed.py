@@ -347,7 +347,7 @@ def test_pictures_are_found_by_what_they_show(pictured):
     assert index_items(ws, index) == 1
     r = search_files(index, "a lion in the savanna")
     found = r.result["passages"][0]
-    assert found["source"] == "picture 'image.png' (image_1)" and "view_image" in found["text"]
+    assert found["source"] == "picture 'image.png'" and "view_image" in found["text"]
     assert index_items(ws, index) == 0  # nothing changed: nothing embedded again
 
 
@@ -394,7 +394,7 @@ def test_tables_are_found_by_their_columns_and_values(tmp_path):
     assert index_items(ws, index) == 2 and index_items(ws, index) == 0
     r = search_files(index, "sales by region")
     first = r.result["passages"][0]
-    assert first["source"] == f"table 'shop_sales.csv' ({item})"
+    assert first["source"] == "table 'shop_sales.csv'"
     assert "Columns: region, sales" in first["text"] and "North, South" in first["text"]
     assert "analyze_or_code" in first["text"]
     ws.rename(item, "q1_sales.csv")

@@ -62,7 +62,7 @@ from app.tools.core import ToolResult
 from app.tools.diagram import mend_blocks
 from app.tools.memory import remember_turn
 from app.tools.search_index import SearchIndex
-from app.tools.workspace import Workspace
+from app.tools.workspace import Workspace, present
 
 from .checks import SAMPLE_DATA, invented_numbers, nudge_for, repeated_failure, this_turn
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_tool_results, standing_instructions,
@@ -291,7 +291,7 @@ def _tools(state: TurnState, config) -> dict:
             return {"messages": results, "rounds": state["rounds"] + 1, "paused": True}
         if result.status in ("ok", "partial") and (result.artifact or {}).get("type") in SHOWN:
             result.result["shown"] = SHOWN[result.artifact["type"]]
-        content = result.for_model()
+        content = result.for_model(lambda body: present(t.ws, body))
         message = {"role": "tool", "tool_call_id": call["id"], "name": call["name"], "content": content,
                    "is_error": result.status not in ("ok", "partial")}
         t.store.append(t.chat_id, message)
@@ -437,7 +437,7 @@ def reply(store: Store, chat_id: str, answer: str | None, main: Provider, worker
             answered = {**pending.get("helper", {}), "helper_asked": answered["question"],
                         **({"user_skipped": True} if answered.get("skipped") else {"user_answered": answered["answer"]}),
                         **applied, "note": note if not answered.get("skipped") else answered["note"]}
-        content = json.dumps({"status": "ok", **answered}, ensure_ascii=False)
+        content = json.dumps(present(store.open(chat["workspace_id"])[0], {"status": "ok", **answered}), ensure_ascii=False)
         store.append(chat_id, {"role": "tool", "tool_call_id": pending["call_id"],
                                "name": pending.get("via") or pending.get("name", "ask_user"), "content": content,
                                "is_error": answered.get("status") == "failed"})

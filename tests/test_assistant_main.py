@@ -148,7 +148,7 @@ def test_the_workspace_travels_on_the_message(store, chat):
     ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
     main = ScriptedProvider([answer("ok")])
     run(send(store, chat["id"], "hi", main, ScriptedProvider([])))
-    assert "data_1  t.csv" in main.requests[0]["messages"][-1]["content"]  # the workspace, on the message
+    assert "t.csv: table, 2 rows" in main.requests[0]["messages"][-1]["content"]  # the workspace, on the message
 
 
 def test_the_system_prompt_never_changes_and_context_is_appended(store, chat):
@@ -163,7 +163,7 @@ def test_the_system_prompt_never_changes_and_context_is_appended(store, chat):
     assert len({r["system"] for r in main.requests}) == 1 and main.requests[0]["system"] == MAIN
     first, second, third = (r["messages"][-1]["content"] for r in main.requests)
     assert "[Workspace now:\nempty" in first and "Pinned" not in first  # a snapshot opens the chat
-    assert "+ data_1  sales.csv - 2 rows" in second and "fiscal year starts in April" in second  # only the changes
+    assert "+ sales.csv: table, 2 rows" in second and "fiscal year starts in April" in second  # only the changes
     assert third.endswith("third")  # nothing changed: nothing added
     earlier = main.requests[2]["messages"]
     assert [m["content"] for m in earlier if m["role"] == "user"][:2] == [first, second]  # history never rewritten
@@ -322,7 +322,8 @@ def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_go
     assert done[-1]["type"] == "done" and done[-1]["answer"] == "February 2025: 636."
     assert len(main.requests) == 2  # one delegation: the helper kept its work
     seen = worker.requests[1]["messages"][-1]["content"]
-    assert "The user chose 'Day first" in seen and "Use data_2 from now on" in seen
+    assert "The user chose 'Day first" in seen and "Use sales_q1-cleaned.csv from now on" in seen
+    assert "data_" not in seen  # what the helper reads names files by their names
     cleaned = ws.table("data_2")
     assert str(cleaned["date"].dtype).startswith("datetime64") and cleaned["date"].dt.month.tolist()[6] == 2
     stored = [m["artifact"] for m in store.messages(chat["id"]) if m["role"] == "artifact"]

@@ -30,7 +30,7 @@ def keep_chart(ws: Workspace, artifact: dict, parent: str | None = None) -> str 
         return None
     if png is None:
         return None
-    return ws.add_image(png, file_name(str(artifact.get("title") or "chart"), "png"), parent=parent,
+    return ws.add_image(png, "charts/" + file_name(str(artifact.get("title") or "chart"), "png"), parent=parent,
                         meta={"chart": artifact.get("chart")})
 
 

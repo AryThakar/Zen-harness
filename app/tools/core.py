@@ -27,8 +27,10 @@ class ToolResult:
     result: dict
     artifact: dict | None = None
 
-    def for_model(self) -> str:
-        return json.dumps({"status": self.status, **self.result}, ensure_ascii=False)
+    def for_model(self, present=None) -> str:
+        """The JSON the model reads; ``present``: the workspace's way of naming files in it (paths, not keys)."""
+        body = {"status": self.status, **self.result}
+        return json.dumps(present(body) if present else body, ensure_ascii=False)
 
 
 class ToolError(Exception):

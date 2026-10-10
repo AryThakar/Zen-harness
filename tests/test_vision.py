@@ -73,16 +73,16 @@ SAVE = {"name": "plot.py", "purpose": "Draws a line.", "how_it_works": "matplotl
         "how_to_run": "Run it.", "limits": "One line."}
 
 
-def test_a_script_edits_an_image_by_its_id_into_a_new_image(ctx):
+def test_a_script_edits_an_image_by_its_name_into_a_new_image(ctx):
     from app.tools.scratch import Scratch, run_code
     original = ctx.ws.add_image(png((60, 30)), "photo.png")
-    code = ("from PIL import Image, ImageDraw\nimg = Image.open('image_1').convert('RGB')\n"
+    code = ("from PIL import Image, ImageDraw\nimg = Image.open('photo.png').convert('RGB')\n"
             "ImageDraw.Draw(img).text((5, 5), 'Hi', fill='white')\nimg.resize((120, 60)).save('photo_hi.png')\n"
             "print(img.size)")
     scratch = Scratch()
     r = run_code(ctx.ws, scratch, code)
     assert r.status == "ok", r.result
-    new = r.result["files"][0]["id"]
+    new = r.artifact["files"][0]["id"]
     assert ctx.ws.kind(new) == "image" and ctx.ws.entry(new)["meta"]["width"] == 120 and new != original
     assert scratch.images == [new] and "next" not in r.result  # the runner shows it; no tool to call
 
@@ -93,19 +93,19 @@ def test_the_helper_is_shown_what_its_script_drew(ctx):
     out = run_worker(model, PROFILES["engineer"], "Draw a line titled Sales.", ctx)
     assert "view_image" not in {t["name"] for t in model.requests[0]["tools"]}
     shown = model.requests[1]["messages"][-1]  # after the run's result, before the next step
-    assert shown["role"] == "user" and shown["content"].startswith("[The picture your script made: image_1 (line.png, ")
+    assert shown["role"] == "user" and shown["content"].startswith("[The picture your script made: line.png (")
     assert len(shown["images"]) == 1 and shown["images"][0]["mime"] == "image/png"
     assert out["files"] and not out.get("warnings") and not ctx.look.seen  # no separate vision call
 
 
 def test_an_image_the_task_names_or_the_helper_reads_is_shown(ctx):
     ctx.ws.add_image(png(), "passengers.png")
-    model = seeing(turn(call("read_file", file="image_1")), turn({**call("save_code"), "input": SAVE}), turn(DONE))
+    model = seeing(turn(call("read_file", file="passengers.png")), turn({**call("save_code"), "input": SAVE}), turn(DONE))
     run_worker(model, PROFILES["engineer"], "Add the caption 'Q3' to the passengers chart.", ctx)
     opening = model.requests[0]["messages"][0]
-    assert "[The picture the task names: image_1 (passengers.png, 40x20).]" in opening["content"]
+    assert "[The picture the task names: passengers.png (40x20).]" in opening["content"]
     assert len(opening["images"]) == 1  # on the opening itself: one user turn
-    assert model.requests[1]["messages"][-1]["content"] == "[The picture you read: image_1 (passengers.png, 40x20).]"
+    assert model.requests[1]["messages"][-1]["content"] == "[The picture you read: passengers.png (40x20).]"
 
 
 def test_without_vision_on_the_server_nothing_is_shown(ctx):

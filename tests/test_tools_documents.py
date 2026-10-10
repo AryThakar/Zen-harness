@@ -86,7 +86,7 @@ def test_a_document_naming_a_picture_that_is_not_there_is_not_written(ws, index,
     before = set(ws.ids())
     r = files(ws, index, "write", name="deck.pptx", content=f"# Sales\n![Sales]({chart})\n# More\n![Trend](image_99)\n")
     message = r.result["error"]["message"]
-    assert r.status == "invalid_arguments" and "image_99" in message and chart in message
+    assert r.status == "invalid_arguments" and "image_99" in message and ws.label(chart) in message
     assert set(ws.ids()) == before  # nothing written
     kept = files(ws, index, "write", name="notes.docx", content="# Notes\n- one\n").result["file"]
     assert files(ws, index, "update", name=kept, content="# Notes\n![x](chart_9.png)\n").status == "invalid_arguments"

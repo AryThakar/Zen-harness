@@ -46,7 +46,6 @@ class Scratch:
     last: dict | None = None  # the last run: code, ok, seconds, output, errors, files
     made: list[str] = field(default_factory=list)
     images: list[str] = field(default_factory=list)  # images the runs made (a helper that sees images is shown them)
-    outputs: dict[str, str] = field(default_factory=dict)  # path a run wrote -> its item, updated when written again
     input: str | None = None  # the typed input of the last run (fix_code runs again with it unless given another)
 
     @property
@@ -90,13 +89,12 @@ def _run(ws: Workspace, scratch: Scratch, timeout: int = DEFAULT_TIMEOUT) -> Too
     if not scratch.runs:
         return ok({"lines": len(scratch.code.splitlines()),
                    "note": f"{scratch.name} isn't Python: kept in your scratch file, not run (only Python runs here)."})
-    result = sandbox.ENGINE.run(ws, scratch.code, timeout, reuse=scratch.outputs, stdin=scratch.input)
+    result = sandbox.ENGINE.run(ws, scratch.code, timeout, stdin=scratch.input)
     res = result.result
     scratch.last = {"code": scratch.code, "ok": result.status == "ok", "seconds": res.get("seconds"), "input": scratch.input,
                     "output": res.get("output", ""), "errors": res.get("errors", ""),
-                    "files": [f["id"] for f in res.get("files", []) if f.get("id")]}
+                    "files": [f["id"] for f in (result.artifact or {}).get("files", []) if f.get("id")]}
     scratch.made += [i for i in scratch.last["files"] if i not in scratch.made]
-    scratch.outputs.update({f["path"]: f["id"] for f in res.get("files", []) if f.get("id")})
     res["lines"] = len(scratch.code.splitlines())
     scratch.images += [i for i in scratch.last["files"] if ws.kind(i) == "image"]  # the runner shows them
     found = ERROR_LINE.findall(res.get("errors", "")) if result.status != "ok" else []
@@ -169,15 +167,13 @@ def save(ws: Workspace, index: SearchIndex | None, scratch: Scratch, name: str, 
     if existing and ws.kind(existing) != "file":
         return _invalid(f"{name} is a {ws.kind(existing)}: save the code under another name.", "name")
     outputs = list(scratch.last["files"]) if scratch.runs and scratch.last else []
-    item = existing or "(new)"
-    report = assemble(SECTIONS, sections, facts(ws, scratch, name, item, outputs))
+    report = assemble(SECTIONS, sections, facts(ws, scratch, name, outputs))
     if existing and not file_ops.made_by_assistant(ws.entry(existing)):
         return approval.replace_request(ws, existing, scratch.code, report=report, outputs=outputs)
     if existing:
         file_ops.replace_file(ws, index, existing, scratch.code)
     else:
         existing = file_ops._store_new(ws, index, name, scratch.code).result["file"]
-        report = report.replace(f"({item})", f"({existing})", 1)
     return keep(ws, index, existing, report, outputs)
 
 
@@ -196,9 +192,9 @@ def keep(ws: Workspace, index: SearchIndex | None, item: str, report: str, outpu
                "action": "saved", "report": report, "outputs": [o for o in outputs if o in ws.ids()]})
 
 
-def facts(ws: Workspace, scratch: Scratch, name: str, item: str, outputs: list[str]) -> list[str]:
+def facts(ws: Workspace, scratch: Scratch, name: str, outputs: list[str]) -> list[str]:
     """What the app knows about the saved file - written by code, so the report can't claim otherwise."""
-    lines = [f"File: {name} ({item}), saved {datetime.now():%Y-%m-%d %H:%M}"]
+    lines = [f"File: {name}, saved {datetime.now():%Y-%m-%d %H:%M}"]
     last = scratch.last if scratch.runs else None
     if not scratch.runs:
         lines.append("Last run: not run (only Python runs here)")
@@ -214,7 +210,7 @@ def facts(ws: Workspace, scratch: Scratch, name: str, item: str, outputs: list[s
     if printed:
         lines.append("It printed: " + (printed if len(printed) <= PRINTED else printed[:PRINTED] + " ..."))
     if outputs:
-        lines.append("It made: " + ", ".join(f"{o} ({ws.entry(o)['name']})" for o in outputs if o in ws.ids()))
+        lines.append("It made: " + ", ".join(ws.label(o) for o in outputs if o in ws.ids()))
     return lines
 
 

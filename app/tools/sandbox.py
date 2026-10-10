@@ -1,28 +1,27 @@
 """run_python: run a short Python script for what no other tool covers.
 
 The script runs in a separate Python process (the app's own interpreter, so the libraries in
-INSTALLED are there: the project's "sandbox" extra) inside the workspace's sandbox folder, with:
+INSTALLED are there: the project's "sandbox" extra) **in the workspace's own folder**, so it opens the
+workspace's files by their paths - pd.read_csv('sales.csv'), Image.open('panda.jpg') - with:
 - a time limit (default 30 s, at most 120 s); on timeout the whole process tree is killed
 - a minimal environment: no API keys or other secrets from the app's environment; TEMP, TMP and
-  HOME point into the sandbox; matplotlib draws off-screen and open figures are saved as images
+  HOME point into the workspace's .zen/run; matplotlib draws off-screen and open figures are saved as images
 - output cut to 10,000 characters (start and end kept)
 - typed input (stdin), when given: what a person would type, one line per input() call - so a program
   that asks (a game, a menu) can be run and tested; without it, input() ends the run with EOFError
-- table("data_1") to read a workspace table (a copy - the original can't be changed) and path("file_1")
-  for where a stored file is; open("file_1") and open("story.txt") (a stored file's original name)
-  work too, because small models write that
-Files the script writes are registered: .csv / .parquet become workspace tables, PNG / JPEG / WebP /
-GIF become image items (with their size; one that isn't a readable image is kept as a file), anything
-else a file. A script never changes a stored file (writing to a stored item's id is refused): stored
-files change through files(update) or a helper's save_code.
+- table('sales.csv') for a table's typed copy (dates and numbers already read), path('x') for where a file is
+Files the script writes are registered through the workspace's one write path (Workspace.adopt): a new
+file becomes a workspace file (.csv / .parquet a table, PNG / JPEG / WebP / GIF an image, anything else a
+file); a file the assistant made that the script writes again is that file's new content, its version
+before kept.
 
 The workspace is the boundary (the user's rule): an audit hook in the script refuses reading outside
-the workspace and Python's own installation, listing other folders, writing, deleting or renaming
-anywhere but the sandbox folder, starting programs or listing drives, and the network - DNS lookups
-and connections, except a loopback connection to a temporary port (a socket pair inside the process,
-e.g. an event loop on Windows); the model server and the app listen on low ports and stay out of
-reach. Files come in only through files(download) with the user's approval, or an upload.
-Deleting or renaming the workspace's stored items is refused too: deleting needs the user's approval.
+the workspace and Python's own installation, listing other folders, writing anywhere but the workspace's
+files, changing a file the user brought (that is files(update), which asks them), deleting or moving a
+workspace file (files(delete) asks; files(rename) moves), starting programs or listing drives, and the
+network - DNS lookups and connections, except a loopback connection to a temporary port (a socket pair
+inside the process, e.g. an event loop on Windows); the model server and the app listen on low ports and
+stay out of reach. Files come in only through files(download) with the user's approval, or an upload.
 
 This is NOT a security boundary: it is a separate process with limits, for a single user running
 their own assistant locally. The hook sees what Python itself does - a native library that opens
@@ -44,11 +43,9 @@ import time
 from pathlib import Path
 from typing import Protocol
 
-import pandas as pd
-
 from .core import ToolError, ToolResult, jsonable
-from .filetypes import IMAGE, SCRIPT_TABLES
-from .workspace import Workspace, read_table
+from .filetypes import IMAGE
+from .workspace import Workspace, kind_of, prune_versions
 
 DEFAULT_TIMEOUT = 30
 MAX_TIMEOUT = 120
@@ -58,23 +55,30 @@ MAX_NEW_FILES = 10
 MAX_FILE_BYTES = 20 * 1024 * 1024
 IMAGES = (*IMAGE, ".svg")  # what counts as a figure the script saved itself (then open figures aren't saved again)
 CELL = "_cell.py"  # the set-up that runs the script
-SCRIPT = "script.py"  # the model's code
+SCRIPT = "script.py"  # the model's code (its tracebacks name this file)
 
 PRELUDE = '''# --- added by run_python ---
-import json as _json, os as _os, sys as _sys
+import json as _json, os as _os, sys as _sys, shutil as _shutil, datetime as _dt
 _WS = {ws!r}
+_ZEN = _os.path.join(_WS, ".zen")
 
 # Files on this computer outside the workspace are off limits (the user's rule): an audit hook
-# refuses reading them, listing their folders, writing anywhere but here, starting programs - and the
-# network: data enters and leaves the workspace only through cards the user clicks (files' download).
+# refuses reading them, listing their folders, writing anywhere but the workspace's files, changing the
+# user's own files, deleting or moving workspace files, starting programs - and the network: data enters
+# and leaves the workspace only through cards the user clicks (files' download).
 def _norm(p):
     return _os.path.normcase(_os.path.realpath(p))
 _HERE = _norm(_os.getcwd())
+_WRITABLE = [_HERE, _norm(_os.environ.get("TEMP") or _os.getcwd())]  # the files, and the run's own temporary folder
 _READ = [_norm(p) for p in {{_WS, _os.getcwd(), _sys.prefix, _sys.base_prefix, _sys.exec_prefix,
                              _os.path.join(_os.environ.get("SystemRoot", r"C:\\Windows"), "Fonts")}}]
+_TRACKED = {{_norm(_os.path.join(_WS, f)): k for k, f in {tracked!r}.items()}}
+_PROTECTED = {{_norm(_os.path.join(_WS, f)) for f in {protected!r}}}
+_kept = set()
 _WRITE_FLAGS = _os.O_WRONLY | _os.O_RDWR | _os.O_APPEND | _os.O_CREAT | _os.O_TRUNC
 _CHANGE = {{"os.remove", "os.rmdir", "os.mkdir", "os.rename", "os.chmod", "os.truncate", "os.utime", "os.link",
            "os.symlink", "shutil.rmtree"}}
+_GONE = {{"os.remove", "os.rmdir", "os.link", "os.symlink", "shutil.rmtree"}}
 _PROGRAMS = {{"subprocess.Popen", "os.system", "os.startfile", "os.exec", "os.spawn", "os.posix_spawn",
              "_winapi.CreateProcess", "os.listdrives", "os.listvolumes", "os.listmounts"}}
 _NET = {{"socket.connect", "socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyname_ex", "socket.sendto",
@@ -92,27 +96,41 @@ def _local_pair(event, args):
     return (isinstance(address, tuple) and len(address) >= 2 and str(address[0]) in _LOOPBACK
             and isinstance(address[1], int) and address[1] >= 49152)
 
-def _inside(p, roots):
+def _path(p):
     if isinstance(p, int) or p is None:
-        return True  # an open file descriptor, or the current folder
+        return None  # an open file descriptor, or the current folder
     try:
-        p = _norm(_os.fsdecode(_os.fspath(p)))
+        return _norm(_os.fsdecode(_os.fspath(p)))
     except (TypeError, ValueError, OSError):
-        return True  # not a path
-    return any(p == r or p.startswith(r.rstrip(_os.sep) + _os.sep) for r in roots)
+        return None  # not a path
 
-_STORE = _norm(_WS)
+def _inside(p, roots):
+    p = _path(p)
+    return p is None or any(p == r or p.startswith(r.rstrip(_os.sep) + _os.sep) for r in roots)
 
-def _refuse(what, path=None):
+def _refuse(what):
     # Also said on stderr: os.walk and glob swallow the error and would just find nothing.
-    if path is not None and _inside(path, [_STORE]):  # the workspace's own store, not the computer's files
-        _sys.stderr.write(f"[not allowed] {{what}}\\n")
-        raise PermissionError(f"{{what}}: a script never changes stored items - write a new file instead. Stored "
-                              "files change through files(update) or save_code; deleting needs the "
-                              "user's approval.")
     _sys.stderr.write(f"[refused] {{what}}\\n")
-    raise PermissionError(f"{{what}}: files on the user's computer are off limits. Use the workspace "
-                          "(table('data_1'), path('file_1')) and files this script writes here.")
+    raise PermissionError(f"{{what}}: files on the user's computer are off limits. Use the workspace's files by "
+                          "their names (pd.read_csv('sales.csv'), open('notes.md')) and files this script writes.")
+
+def _not_here(p, why):
+    _sys.stderr.write(f"[not allowed] {{why}}\\n")
+    raise PermissionError(why)
+
+def _keep(p):
+    # A file the assistant made, about to change: its version before is kept (once per run).
+    if p in _kept or not _os.path.exists(p):
+        return
+    _kept.add(p)
+    folder = _os.path.join(_ZEN, "versions", _TRACKED[p])
+    _os.makedirs(folder, exist_ok=True)
+    stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    _shutil.copy2(p, _os.path.join(folder, stamp + _os.path.splitext(p)[1]))
+
+def _own(p):
+    return _not_here(p, f"{{_os.path.basename(p)}} is the user's own file: a script never changes it - write the "
+                        "result to a new file. Changing the user's file goes through files(update), which asks them.")
 
 def _guard(event, args):
     global _checking
@@ -130,15 +148,31 @@ def _guard(event, args):
         if event == "open":
             path, mode, flags = (tuple(args) + (None, None))[:3]
             writes = bool(mode and any(c in str(mode) for c in "wax+")) or bool((flags or 0) & _WRITE_FLAGS)
-            if not _inside(path, [_HERE] if writes else _READ):
-                _refuse(f"{{'Writing' if writes else 'Reading'}} {{path}}", path)
+            if not _inside(path, _WRITABLE if writes else _READ):
+                _refuse(f"{{'Writing' if writes else 'Reading'}} {{path}}")
+            p = _path(path)
+            if writes and p in _PROTECTED:
+                _own(p)
+            if writes and p in _TRACKED:
+                _keep(p)
         elif event in ("os.listdir", "os.scandir"):
             if args and not _inside(args[0], _READ):
                 _refuse(f"Listing {{args[0]}}")
         else:
-            for a in args:
-                if isinstance(a, (str, bytes, _os.PathLike)) and not _inside(a, [_HERE]):
-                    _refuse(f"Changing {{a}}", a)
+            paths = [a for a in args if isinstance(a, (str, bytes, _os.PathLike))]
+            for a in paths:
+                if not _inside(a, _WRITABLE):
+                    _refuse(f"Changing {{a}}")
+            norm = [_path(a) for a in paths]
+            if any(p in _PROTECTED for p in norm):
+                _own(next(p for p in norm if p in _PROTECTED))
+            if event in _GONE or (event == "os.rename" and norm and norm[0] in _TRACKED):
+                if any(p in _TRACKED for p in norm):
+                    _not_here(norm[0], "Deleting or moving a workspace file is not done by a script: files(delete) "
+                                       "asks the user, files(rename) moves one.")
+            for p in norm:
+                if p in _TRACKED:
+                    _keep(p)
     finally:
         _checking = False
 _sys.addaudithook(_guard)
@@ -148,52 +182,50 @@ _open = _builtins.open
 _registry = None
 
 def _items():
-    """The workspace's items, read once (a script can't change them); none yet in a new workspace."""
+    """The workspace's files, read once (a script can't change the registry); none yet in a new workspace."""
     global _registry
     if _registry is None:
         try:
-            with _open(_os.path.join(_WS, "registry.json"), encoding="utf-8") as f:
+            with _open(_os.path.join(_ZEN, "registry.json"), encoding="utf-8") as f:
                 _registry = _json.load(f)["items"]
         except FileNotFoundError:
             _registry = {{}}
     return _registry
 
-def table(item_id):
-    """A copy of a workspace table as a pandas DataFrame (e.g. table("data_1"))."""
+def _key(name):
+    items = _items()
+    text = str(name).replace("\\\\", "/").strip().strip("/")
+    if text in items:
+        return text
+    low = text.casefold()
+    for k, e in items.items():
+        if e["kind"] != "note" and e["name"].casefold() == low:
+            return k
+    base = [k for k, e in items.items() if e["kind"] != "note" and e["name"].rsplit("/", 1)[-1].casefold() == low]
+    return base[0] if len(base) == 1 else None
+
+def table(name):
+    """A workspace table as a pandas DataFrame, its dates and numbers already read (e.g. table('sales.csv'))."""
     import pandas as _pd
-    items = _items()
-    if items.get(item_id, {{}}).get("kind") != "table":
-        raise KeyError(f"No table {{item_id!r}}. Tables: {{', '.join(i for i, e in items.items() if e['kind'] == 'table')}}")
-    return _pd.read_parquet(_os.path.join(_WS, item_id + ".parquet"))
+    items, k = _items(), _key(name)
+    if k is None or items[k]["kind"] != "table":
+        raise KeyError(f"No table {{name!r}}. Tables: {{', '.join(e['name'] for e in items.values() if e['kind'] == 'table')}}")
+    cache = _os.path.join(_ZEN, "cache", k + ".parquet")
+    if _os.path.exists(cache):
+        return _pd.read_parquet(cache)
+    return _pd.read_csv(_os.path.join(_WS, items[k]["file"]))
 
-def path(item_id):
-    """Where a stored file, note or image is (e.g. open(path("file_1"))). Read it; write new files here instead."""
-    items = _items()
-    if "file" not in items.get(item_id, {{}}):
-        raise KeyError(f"No stored file {{item_id!r}}. Files: {{', '.join(i for i, e in items.items() if 'file' in e)}}")
-    return _os.path.join(_WS, items[item_id]["file"])
-
-def _resolve(name):
-    """'file_1' -> the stored file (always); a stored file's original name -> its path when no such
-    file is here."""
-    if not isinstance(name, str):
-        return name
-    items = _items()
-    if "file" in items.get(name, {{}}):
-        return _os.path.join(_WS, items[name]["file"])
-    if _os.path.exists(name):
-        return name
-    for e in items.values():
-        if e.get("name") == _os.path.basename(name) and "file" in e:
-            return _os.path.join(_WS, e["file"])
-    return name
+def path(name):
+    """Where a workspace file is (e.g. open(path('notes.md'))) - its name works as it is, too."""
+    items, k = _items(), _key(name)
+    if k is None or items[k]["kind"] == "note":
+        raise KeyError(f"No file {{name!r}}. Files: {{', '.join(e['name'] for e in items.values() if e['kind'] != 'note')}}")
+    return _os.path.join(_WS, items[k]["file"])
 
 def _open_resolving(file, mode="r", *args, **kwargs):
-    if not any(c in mode for c in "wax+"):
-        return _open(_resolve(file), mode, *args, **kwargs)
-    if isinstance(file, str) and file in _items():
-        # A script makes new files; it never changes a stored one (that is the files tool's update).
-        raise PermissionError(f"{{file}} is a stored item's id: write the result under a new file name.")
+    # A first-design key ('file_1') in a script saved back then: opened as the file it names.
+    if isinstance(file, str) and file in _items() and not _os.path.exists(file):
+        file = path(file)
     return _open(file, mode, *args, **kwargs)
 _builtins.open = _open_resolving
 
@@ -212,10 +244,17 @@ def _save_figures():
 
 import warnings as _warnings
 _warnings.filterwarnings("ignore", message=".*non-interactive, and thus cannot be shown")
+try:
+    import pandas as _pd_display  # printed tables in full: a cut "..." column hid the numbers a helper needed
+    _pd_display.set_option("display.width", 250)
+    _pd_display.set_option("display.max_columns", 50)
+    _pd_display.set_option("display.max_colwidth", 80)
+except ImportError:
+    pass
 # The script runs as its own file, so its errors give its own line numbers.
 try:
     with _open({script!r}, encoding="utf-8") as _f:
-        _code = compile(_f.read(), {script!r}, "exec")
+        _code = compile(_f.read(), {name!r}, "exec")
     exec(_code, globals())
 finally:
     _save_figures()
@@ -224,21 +263,19 @@ finally:
 
 class Engine(Protocol):
     """Where a helper's script runs: one call, the same result for every engine (printed output, errors, the
-    files it made as workspace items, a code card). Today's is LocalPython; a real sandbox (a container, a VM)
+    files it made as workspace files, a code card). Today's is LocalPython; a real sandbox (a container, a VM)
     would be another class with this run(), and nothing else in the app would change."""
     name: str
 
-    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
-            stdin: str | None = None) -> ToolResult: ...
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult: ...
 
 
 class LocalPython:
     """A separate Python process on this computer, with the limits and the audit hook above."""
     name = "local Python"
 
-    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
-            stdin: str | None = None) -> ToolResult:
-        return run_python(ws, code, timeout, reuse, stdin)
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult:
+        return run_python(ws, code, timeout, stdin)
 
 
 ENGINE: Engine = LocalPython()  # scratch.py runs every script through it
@@ -248,35 +285,37 @@ _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
 
-def _lock(box: Path) -> threading.Lock:
+def _lock(folder: Path) -> threading.Lock:
     with _locks_guard:
-        return _locks.setdefault(str(box.resolve()), threading.Lock())
+        return _locks.setdefault(str(folder.resolve()), threading.Lock())
 
 
-def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: dict[str, str] | None = None,
-               stdin: str | None = None) -> ToolResult:
-    """Run a Python script; returns its printed output, errors and the files it made. reuse: the items an
-    earlier run of the same task made, by the path it wrote - written again, each is updated in place
-    instead of becoming another item (measured: 3 runs of one script left 3 copies of its chart and table)."""
+def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult:
+    """Run a Python script in the workspace's folder; returns its printed output, errors and the files it wrote
+    or changed (by path; a file written again in a later run is the same file, updated)."""
     code = str(code)
     if not code.strip():
         return _invalid("code is empty.", "code")
     if len(code) > MAX_CODE:
         return _invalid(f"code is longer than {MAX_CODE:,} characters.", "code")
     timeout = max(1, min(int(timeout), MAX_TIMEOUT))
-    box = ws.root / "sandbox"
-    with _lock(box):  # one run at a time in this sandbox: each writes script.py and registers what changed
-        tmp = box / ".tmp"
+    run_dir = ws.zen / "run"
+    with _lock(ws.root):  # one run at a time in a workspace: each writes the script and registers what changed
+        tmp = run_dir / "tmp"
         tmp.mkdir(parents=True, exist_ok=True)
-        (box / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=SCRIPT, images=tuple(IMAGES)),
-                                encoding="utf-8")
-        (box / SCRIPT).write_text(code, encoding="utf-8")
-        before = _snapshot(box)
+        tracked = {k: ws.entry(k)["file"] for k in ws.ids() if ws.kind(k) != "note"}
+        protected = [ws.entry(k)["file"] for k in ws.ids() if ws.kind(k) != "note" and ws.by_user(k)]
+        script = str((run_dir / SCRIPT).resolve())
+        (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script,
+                                                   name=script, images=tuple(IMAGES), tracked=tracked,
+                                                   protected=protected), encoding="utf-8")
+        (run_dir / SCRIPT).write_text(code, encoding="utf-8")
+        before = _snapshot(ws.files)
 
         started = time.perf_counter()
         typed = stdin is not None and stdin != ""
-        proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", CELL], cwd=box, env=_env(box, tmp),
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", str((run_dir / CELL).resolve())], cwd=ws.files,
+                                env=_env(run_dir, tmp), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 stdin=subprocess.PIPE if typed else subprocess.DEVNULL, **_new_group())
         timed_out = False
         try:
@@ -288,10 +327,11 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: 
             out, err = proc.communicate()
         seconds = round(time.perf_counter() - started, 2)
 
-        files = _register(ws, box, before, reuse or {})
+        files, made = _register(ws, before)
     result = {"exit_code": proc.returncode, "seconds": seconds,
               "output": _cut(out.decode("utf-8", "replace"))}
-    errors = OWN_FRAME.sub("", _cut(err.decode("utf-8", "replace")).replace(str(box), "."))
+    errors = OWN_FRAME.sub("", _cut(err.decode("utf-8", "replace")))
+    errors = errors.replace(str(ws.files.resolve()) + os.sep, "").replace(str(run_dir.resolve()) + os.sep, "")
     if errors.strip():
         result["errors"] = errors
     if files:
@@ -306,12 +346,12 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, reuse: 
         status = "failed"
     elif proc.returncode != 0:
         result["error"] = {"message": "The script raised an error (see errors); fix the code and run it again."
-                                      + _hint(errors)}
+                                      + _hint(errors, ws)}
         status = "invalid_arguments"
     else:
         status = "ok"
     artifact = {"type": "code", "code": code, "output": result["output"], "errors": result.get("errors", ""),
-                "files": files}
+                "files": made}
     return ToolResult(status, jsonable(result), jsonable(artifact))
 
 
@@ -319,11 +359,12 @@ def _invalid(message: str, field: str) -> ToolResult:
     return ToolResult("invalid_arguments", {"error": {"message": message, "field": field}})
 
 
-def _env(box: Path, tmp: Path) -> dict:
+def _env(home: Path, tmp: Path) -> dict:
     """Only what Python needs - nothing from the app's environment (API keys, tokens) leaks in."""
     env = {"PATH": os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("SystemRoot", r"C:\Windows")]),
-           "HOME": str(box), "USERPROFILE": str(box), "TEMP": str(tmp), "TMP": str(tmp), "TMPDIR": str(tmp),
+           "HOME": str(home), "USERPROFILE": str(home), "TEMP": str(tmp), "TMP": str(tmp), "TMPDIR": str(tmp),
            "MPLBACKEND": "Agg", "MPLCONFIGDIR": str(tmp), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
+           "PYTHONDONTWRITEBYTECODE": "1",  # no __pycache__ folders among the user's files
            # n_jobs=-1 (scikit-learn, joblib) runs in this process instead of starting worker programs.
            "JOBLIB_MULTIPROCESSING": "0"}
     if sys.platform == "win32":
@@ -363,16 +404,15 @@ INSTALLED = tuple(name for name in LIBRARIES if importlib.util.find_spec(name))
 # download the same CSV again another way, until the user stopped the turn).
 NO_INTERNET = ("Scripts here have no internet: nothing can be downloaded or fetched, in any way. A file from the "
                "web comes into the workspace through main's files(mode='download'), with the user's approval, and "
-               "a script then reads it by its id. Don't try again: say so in your answer.")
-ID_AS_VARIABLE = re.compile(r"NameError: name '((?:data|file|image|note)_\d+\w*)' is not defined")
-ID_AS_SQL_TABLE = re.compile(r"Table with name ((?:data)_\d+\w*) does not exist")
-ID_AS_PATH = re.compile(r"(?:FileNotFoundError|No such file).*?'((?:data|file|image|note)_\d+\w*)'")
+               "a script then reads it by its name. Don't try again: say so in your answer.")
+NO_SUCH_FILE = re.compile(r"(?:FileNotFoundError|No such file or directory)[^\n]*?'([^'\n]+)'")
+SQL_TABLE = re.compile(r"Table with name (\S+) does not exist")
 
 
-def _hint(errors: str) -> str:
-    """The fix for mistakes small models repeat run after run: a workspace id used as a variable,
-    or given to a library that opens files itself (pandas does not go through open()); and what to
-    do when the script reached for the computer's files."""
+def _hint(errors: str, ws: Workspace) -> str:
+    """The fix for mistakes small models repeat run after run: a file name that isn't in the workspace (the
+    closest ones said), a table given to duckdb by name, a module that isn't installed; and what to do when
+    the script reached for the computer's files."""
     if "EOFError" in errors and "input(" in errors:  # the program asked for typed input and had none
         return (" The program waits for typed input (input()): run it again with input = what a person would type, "
                 "one line per input() call, e.g. input='w\\nw\\nq'.")
@@ -380,24 +420,21 @@ def _hint(errors: str) -> str:
         return " " + NO_INTERNET
     if "files on the user's computer are off limits" in errors:
         return (" Scripts can't read or change files on the user's computer, start programs or list drives - "
-                "only workspace items and files written here. Tell the user that instead of trying again.")
+                "only the workspace's files and files written here. Tell the user that instead of trying again.")
     m = MISSING_MODULE.search(errors)
     if m and m[1] not in INSTALLED:  # measured: the coder retried the same import four times
         return (f" {m[1]} is not installed here and nothing can be installed: don't import it again. Use the "
                 f"standard library or {', '.join(INSTALLED)}.")
-    m = ID_AS_SQL_TABLE.search(errors)
+    m = SQL_TABLE.search(errors)
     if m:  # duckdb inside a script doesn't see the workspace (query_data does)
-        return (f" In a script, read a table with df = table('{m[1]}') and query the DataFrame "
-                f"(duckdb.sql('SELECT ... FROM df')).")
-    m = ID_AS_VARIABLE.search(errors)
-    if m:
-        return (f" Workspace items are not Python variables: use df = table('{m[1]}') for a table, path('{m[1]}') "
-                "for a file. To keep a new table, write it to a file (df.to_parquet('name.parquet')); it becomes "
-                "a workspace table.")
-    m = ID_AS_PATH.search(errors)
-    if m:
-        return (f" '{m[1]}' is an id, not a file name: use path('{m[1]}') for its location (e.g. "
-                f"pd.read_csv(path('{m[1]}'))), or table('{m[1]}') if it is a table.")
+        return (" In a script, read a table with df = pd.read_csv('its name') or table('its name') and query the "
+                "DataFrame (duckdb.sql('SELECT ... FROM df')).")
+    m = NO_SUCH_FILE.search(errors)
+    if m and not os.path.isabs(m[1]):  # measured: a picture opened as 'image_27.jpg' instead of its name
+        try:
+            ws.resolve(m[1], ("table", "image", "file"))
+        except ToolError as missing:
+            return f" {missing.message} Open a workspace file by its name, as the workspace lists it."
     return ""
 
 
@@ -408,53 +445,46 @@ def _cut(text: str) -> str:
     return f"{text[:half]}\n... ({len(text) - MAX_OUTPUT:,} characters cut) ...\n{text[-half:]}"
 
 
-def _snapshot(box: Path) -> dict[Path, tuple[int, float]]:
-    return {p: (p.stat().st_size, p.stat().st_mtime) for p in box.rglob("*")
-            if p.is_file() and ".tmp" not in p.relative_to(box).parts}
-
-
-def _register(ws: Workspace, box: Path, before: dict, reuse: dict[str, str]) -> list[dict]:
-    """Workspace ids for the files the script created or changed - new items, or the same task's earlier
-    output under that path, updated (reuse); a script never changes a stored one."""
-    after = _snapshot(box)
-    new = [p for p, sig in after.items() if p.name not in (CELL, SCRIPT) and before.get(p) != sig]
-    out = []
-    for p in sorted(new)[:MAX_NEW_FILES]:
-        rel = p.relative_to(box).as_posix()
-        if p.stat().st_size > MAX_FILE_BYTES:
-            out.append({"path": rel, "note": "larger than 20 MB; not registered"})
-            continue
-        suffix = p.suffix.lower()
-        earlier = reuse.get(rel) if reuse.get(rel) in ws.ids() else None
-        made = {"from": "run_python"}  # made by the assistant: it may change it again without asking
-        try:
-            if suffix in SCRIPT_TABLES:
-                df, read = read_table(p) if suffix == ".csv" else (pd.read_parquet(p), {})
-                if earlier and ws.kind(earlier) == "table":
-                    ws.replace_table(earlier, df, {**read, **made})
-                    item = earlier
-                else:
-                    item = ws.add_table(df, name=rel, meta={**read, **made})
-            elif suffix in IMAGE:  # SVG stays a file: it can carry scripts, the UI never shows it inline
-                try:
-                    if earlier and ws.kind(earlier) == "image":
-                        ws.replace_image(earlier, p.read_bytes(), made)
-                        item = earlier
-                    else:
-                        item = ws.add_image(p.read_bytes(), rel, meta=made)
-                except ToolError:
-                    item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip("."), name=rel, meta=made)
-                    out.append({"path": rel, "id": item, "note": "not a readable image; kept as a file"})
-                    continue
-            elif earlier and ws.kind(earlier) == "file" and ws.entry(earlier)["file"].endswith(suffix or ".bin"):
-                ws.replace_bytes(earlier, p.read_bytes(), made)
-                item = earlier
-            else:
-                item = ws.add_bytes("file", p.read_bytes(), suffix.lstrip(".") or "bin", name=rel, meta=made)
-        except (ToolError, ValueError, OSError) as exc:
-            out.append({"path": rel, "note": f"not registered: {exc}"})
-            continue
-        out.append({"path": rel, "id": item, **({"updated": True} if item == earlier else {})})
-    if len(new) > MAX_NEW_FILES:
-        out.append({"note": f"{len(new) - MAX_NEW_FILES} more files were written but not registered"})
+def _snapshot(folder: Path) -> dict[Path, tuple[int, int]]:
+    """Every file in the workspace's folder, by size and change time (hidden and temporary files left out)."""
+    out = {}
+    for p in folder.rglob("*"):
+        rel = p.relative_to(folder).parts
+        if p.is_file() and not any(part.startswith(".") or part == "__pycache__" for part in rel):
+            st = p.stat()
+            out[p] = (st.st_size, st.st_mtime_ns)
     return out
+
+
+def _register(ws: Workspace, before: dict) -> tuple[list[dict], list[dict]]:
+    """(what the model is told: each file the script wrote, by path; what the UI gets: the same with keys).
+    New files become workspace files and changed ones their new content, through the one write path; a new
+    file over the size limit, or past the count, is not kept."""
+    after = _snapshot(ws.files)
+    changed = sorted(p for p, sig in after.items() if before.get(p) != sig)
+    told, made = [], []
+    for n, p in enumerate(changed):
+        rel = p.relative_to(ws.files).as_posix()
+        known = ws.find_path(rel)
+        big = p.stat().st_size > MAX_FILE_BYTES
+        if known is None and (n >= MAX_NEW_FILES or big):
+            p.unlink(missing_ok=True)  # the script's own new file: nothing of the user's
+            told.append({"path": rel, "note": "not kept: larger than 20 MB" if big
+                         else f"not kept: at most {MAX_NEW_FILES} new files a run"})
+            continue
+        try:
+            put = ws.adopt(rel, by="assistant", meta={"from": "run_python"})
+        except (ToolError, ValueError, OSError) as exc:
+            told.append({"path": rel, "note": f"not kept: {exc}"})
+            continue
+        kind = ws.kind(put.key)
+        entry = {"path": put.path, "kind": kind, **({"updated": True} if known else {})}
+        if kind != kind_of(rel):
+            entry["note"] = f"not a readable {kind_of(rel)}; kept as a file"
+        told.append(entry)
+        made.append({"path": put.path, "id": put.key, **({"updated": True} if known else {})})
+        if known:
+            folder = ws.zen / "versions" / known
+            if folder.exists():
+                prune_versions(folder)
+    return told, made

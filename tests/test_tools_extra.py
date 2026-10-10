@@ -59,13 +59,15 @@ def test_a_whole_number_too_big_for_a_float_is_still_an_answer():
     assert calculate("200! * 0.5").status == "invalid_arguments"  # a float that large can't exist: said so
 
 
-def test_a_derived_table_is_named_after_its_source_and_step(ws):
-    """'sales.csv (cleaned)' looked like a CSV file of its own, and cleaning twice gave '(cleaned) (cleaned)'."""
+def test_a_derived_table_is_a_csv_file_named_after_its_source_and_step(ws):
+    """Cleaning twice once gave '(cleaned) (cleaned)'; a derived table is now a CSV file of its own, beside its source."""
     t = ws.add_table(pd.DataFrame({"a": [1]}), "sales.csv")
     cleaned = ws.add_table(pd.DataFrame({"a": [1]}), ws.derived_name(t, "cleaned"), parent=t)
-    assert ws.entry(cleaned)["name"] == "sales - cleaned" and ws.derived_name(cleaned, "cleaned") == "sales - cleaned"
-    assert ws.derived_name(cleaned, "predicted churn") == "sales - cleaned - predicted churn"
-    assert ws.derived_name(ws.add_table(pd.DataFrame({"a": [1]}), "Q4 v1.2 report"), "query") == "Q4 v1.2 report - query"
+    assert ws.entry(cleaned)["name"] == "sales-cleaned.csv" and ws.derived_name(cleaned, "cleaned") == "sales-cleaned.csv"
+    assert ws.add_table(pd.DataFrame({"a": [2]}), ws.derived_name(cleaned, "cleaned")) != cleaned
+    assert ws.label(ws.ids("table")[-1]) == "sales-cleaned (2).csv"  # the path is taken: the next one free
+    assert ws.derived_name(cleaned, "predicted churn") == "sales-cleaned-predicted-churn.csv"
+    assert (ws.files / "sales-cleaned.csv").read_text().splitlines() == ["a", "1"]
 
 
 def test_read_code_with_line_numbers_from_a_line_on(ws):
@@ -100,41 +102,37 @@ def test_reading_what_isnt_text_says_which_tool_reads_it(ws):
     from PIL import Image
     t = ws.add_table(pd.DataFrame({"a": [1]}), "t")
     said = read_file(ws, t).result  # what it is, and what reads it instead
-    assert said["kind"] == "table" and "table('data_1')" in said["note"]
+    assert said["kind"] == "table" and "table('t.csv')" in said["note"]
     buf = io.BytesIO()
     Image.new("RGB", (40, 20), "red").save(buf, format="PNG")
     img = ws.add_image(buf.getvalue(), "red.png")
     note = read_file(ws, img).result["note"]
     assert note == "An image (40x20): it has no text to read."  # a helper that sees images is shown it instead
     from app.tools.file_ops import files
-    assert f"view_image(image='{img}'" in files(ws, None, "read", name=img, start=1).result["note"]  # main looks
+    assert "view_image(image='red.png'" in files(ws, None, "read", name=img, start=1).result["note"]  # main looks
     b = ws.add_bytes("file", b"\x00\x01\x02binary", "bin", name="blob.bin")
     assert read_file(ws, b).status == "failed"
 
 
-def test_listing_shows_ids_not_content(ws):
-    assert ws.listing() == "Workspace: empty (no files attached yet)."
+def test_listing_shows_paths_not_content(ws):
+    assert ws.listing() == "Workspace: empty (no files yet)."
     t = ws.add_table(pd.DataFrame({c: [1, 2] for c in "abcdefghij"}), "sales.csv")
-    ws.add_table(pd.DataFrame({"a": [1]}), "sales.csv (cleaned)", parent=t)
+    ws.add_table(pd.DataFrame({"a": [1]}), ws.derived_name(t, "cleaned"), parent=t)
     ws.add_bytes("file", b"print(1)", "py", name="convert.py")
     listing = ws.listing()
-    assert "data_1  sales.csv - 2 rows, 10 columns (a, b, c, d, e, f, g, h ...)" in listing
-    assert "data_2  sales.csv (cleaned) - 1 rows, 1 columns (a), from data_1" in listing
-    assert "file_1  convert.py - 8 bytes" in listing
-    assert "older items not shown" in ws.listing(limit=1)
+    assert "sales.csv: table, 2 rows, 10 columns (a, b, c, d, e, f, g, h ...)" in listing
+    assert "sales-cleaned.csv: table, 1 rows, 1 columns (a), from sales.csv" in listing
+    assert "convert.py: 8 bytes" in listing and "data_" not in listing
+    assert "older files not shown" in ws.listing(limit=1)
 
 
-def test_sandbox_reads_stored_files_by_id(ws):
+def test_sandbox_finds_files_by_name_and_old_scripts_keys(ws):
     fid = ws.add_bytes("file", b"alpha,beta\n1,2\n", "csv", name="raw.csv")
-    r = run_python(ws, f"print(open(path('{fid}')).read().splitlines()[0])")
-    assert r.result["output"].strip() == "alpha,beta"
-    assert "No stored file" in run_python(ws, "path('file_9')").result["errors"]
-
-
-def test_sandbox_open_understands_ids_and_original_names(ws):
-    ws.add_bytes("file", b"alpha beta\n", "txt", name="story.txt")
-    r = run_python(ws, "print(open('file_1').read().strip(), '|', open('story.txt').read().strip())")
-    assert r.result["output"].strip() == "alpha beta | alpha beta"
+    r = run_python(ws, "print(open('raw.csv').read().splitlines()[0], open(path('raw.csv')).read().splitlines()[1])")
+    assert r.result["output"].split() == ["alpha,beta", "1,2"]
+    old = run_python(ws, f"print(open('{fid}').read().splitlines()[0])")  # a script saved in the first design
+    assert old.result["output"].strip() == "alpha,beta"
+    assert "No file 'nope.txt'. Files: raw.csv" in run_python(ws, "path('nope.txt')").result["errors"]
 
 
 def test_data_files_are_read_without_line_numbers(ws):
@@ -148,41 +146,30 @@ def test_known_table_problems_travel_with_results(ws, tmp_path):
     path = tmp_path / "t.csv"
     path.write_text("id,qty\n" + "\n".join(f"{i},1" for i in range(30)) + "\nTotal,30\n", encoding="utf-8")
     data = ws.add_file(path)
-    assert "data_warning" not in query_data(ws, f"SELECT sum(qty) FROM {data}").result  # not inspected yet
+    assert "data_warning" not in query_data(ws, 'SELECT sum(qty) FROM "t.csv"').result  # not inspected yet
     inspect_data(ws, data)
-    warned = query_data(ws, f"SELECT sum(qty) FROM {data}").result
+    warned = query_data(ws, 'SELECT sum(qty) FROM "t.csv"').result
     assert "summary rows" in warned["data_warning"] and "clean_data" in warned["data_warning"]
 
 
-def test_a_workspace_id_used_as_a_variable_gets_the_fix(ws):
+def test_a_table_queried_with_duckdb_in_a_script_gets_the_fix(ws):
     ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
-    message = run_python(ws, "df = data_1.copy()").result["error"]["message"]
-    assert "table('data_1')" in message and "to_parquet" in message
-    assert "Workspace items" not in run_python(ws, "1 / 0").result["error"]["message"]
+    message = run_python(ws, "import duckdb\nduckdb.query('SELECT * FROM t').df()").result["error"]["message"]
+    assert "pd.read_csv('its name') or table('its name')" in message
+    assert "In a script" not in run_python(ws, "1 / 0").result["error"]["message"]
 
 
-def test_a_workspace_id_queried_with_duckdb_in_a_script_gets_the_fix(ws):
-    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
-    message = run_python(ws, "import duckdb\nduckdb.query('SELECT * FROM data_1').df()").result["error"]["message"]
-    assert "df = table('data_1')" in message
-
-
-def test_an_id_given_to_a_library_that_opens_files_itself_gets_the_fix(ws):
-    ws.add_table(pd.DataFrame({"a": [1, 2]}), name="t.csv")
-    message = run_python(ws, "import pandas as pd; pd.read_parquet('data_1')").result["error"]["message"]
-    assert "table('data_1')" in message  # pyarrow opens files itself, so the id is not resolved
-
-
-def test_a_script_never_changes_a_stored_file(ws):
+def test_a_script_changes_the_assistants_files_with_versions_and_never_the_users(ws, tmp_path):
     fid = ws.add_bytes("file", b"ORIGINAL", "py", name="average.py")
     note = save_note(ws, "Plan", "Forecast by month.").result["note"]
-    table = ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    for item in (fid, note, table):  # by id: refused, with what to do instead
-        r = run_python(ws, f"open('{item}', 'w').write('x')")
-        assert r.status == "invalid_arguments" and "write the result under a new file name" in r.result["errors"]
-    by_name = run_python(ws, "print(open('average.py').read())\nopen('average.py', 'w').write('CHANGED')")
-    assert by_name.result["output"].strip() == "ORIGINAL"
-    assert ws.path(fid).read_bytes() == b"ORIGINAL" and by_name.result["files"][0]["id"] != fid  # a new file
+    upload = tmp_path / "t.csv"
+    upload.write_text("a\n1\n")
+    table = ws.add_file(upload)  # the user's own
+    changed = run_python(ws, "print(open('average.py').read())\nopen('average.py', 'w').write('CHANGED')")
+    assert changed.result["output"].strip() == "ORIGINAL" and ws.path(fid).read_bytes() == b"CHANGED"
+    assert changed.result["files"] == [{"path": "average.py", "kind": "file", "updated": True}] and len(ws.versions(fid)) == 1
+    refused = run_python(ws, "open('t.csv', 'w').write('a\\n2\\n')")
+    assert refused.status == "invalid_arguments" and "the user's own file" in refused.result["errors"]
     assert "Forecast by month" in read_file(ws, note).result["text"] and ws.table(table)["a"].tolist() == [1]
 
 

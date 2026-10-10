@@ -495,7 +495,7 @@ def test_a_clean_table_is_inspected_and_the_call_still_runs(ctx):
                               report(answer="The total is 350.75.")])
     out = run_worker(model, ENGINEER, "total?", ctx)
     told = model.requests[1]["messages"][-1]["content"]
-    assert "inspect_data ran first on data_1: nothing to clean" in told and "350.75" in told and "warnings" not in out
+    assert "inspect_data ran first on sales.csv: nothing to clean" in told and "350.75" in told and "warnings" not in out
 
 
 def test_a_choice_only_the_user_can_make_is_not_guessed(ctx):

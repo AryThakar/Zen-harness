@@ -35,7 +35,7 @@ def test_list_pages_newest_first_without_notes(ws, index):
         ws.add_bytes("file", b"x", "txt", name=f"f{n}.txt")
     save_note(ws, "Plan", "A note is not a file.")
     first = run(ws, index, "list").result
-    assert first["total"] == PAGE + 2 and first["page"] == "1 of 2" and first["items"][0].startswith(f"file_{PAGE + 2}")
+    assert first["total"] == PAGE + 2 and first["page"] == "1 of 2" and first["items"][0].startswith(f"f{PAGE + 1}.txt: ")
     assert first["next"] == "more: files(mode='list', page=2)"
     last = run(ws, index, "list", page=2).result
     assert len(last["items"]) == 2 and last["next"] == "end of list"
@@ -46,12 +46,12 @@ def test_list_pages_newest_first_without_notes(ws, index):
 def test_find_by_name_or_id_and_close_names_for_a_wrong_one(ws, index):
     ws.add_bytes("file", b"print(1)", "py", name="parabola.py")
     assert run(ws, index, "find", name="Parabola.PY").result["found"] is True
-    assert run(ws, index, "find", name="file_1").result["item"].startswith("file_1  parabola.py")
+    assert run(ws, index, "find", name="parabola.py").result["item"].startswith("parabola.py: ")
     near = run(ws, index, "find", name="parabol.py").result
-    assert near["found"] is False and "Did you mean: file_1 (parabola.py)?" in near["note"]
-    assert "Here: file_1 (parabola.py)." in run(ws, index, "find", name="zzz.doc").result["note"]
-    wrong = run(ws, index, "read", name="parabol.py")  # bare 'id (name)', never a listing line to copy back
-    assert wrong.status == "invalid_arguments" and "Did you mean: file_1 (parabola.py)?" in wrong.result["error"]["message"]
+    assert near["found"] is False and "Did you mean: parabola.py?" in near["note"]
+    assert "Here: parabola.py." in run(ws, index, "find", name="zzz.doc").result["note"]
+    wrong = run(ws, index, "read", name="parabol.py")  # the closest names, never a listing line to copy back
+    assert wrong.status == "invalid_arguments" and "Did you mean: parabola.py?" in wrong.result["error"]["message"]
 
 
 def test_a_copied_listing_line_or_id_and_name_still_names_the_item(ws, index):
@@ -94,7 +94,7 @@ def test_write_new_files_by_kind(ws, index):
     assert code.result["kind"] == "file" and code.artifact == {"type": "file", "id": code.result["file"],
                                                                 "name": "hello.rs", "kind": "file", "bytes": 29,
                                                                 "action": "written"}
-    assert ws.entry(code.result["file"])["meta"]["by"] == "assistant"
+    assert ws.entry(code.result["file"])["by"] == "assistant"
     assert run(ws, index, "write", name="../x.txt", content="x").status == "invalid_arguments"
 
 
@@ -132,13 +132,13 @@ def test_update_changes_lines(ws, index):
 
 
 def test_updating_the_users_own_file_asks_first(ws, index):
-    upload = ws.add_bytes("file", b"original", "txt", name="upload.txt")
+    upload = ws.add_bytes("file", b"original", "txt", name="upload.txt", by="user")
     ask = run(ws, index, "update", name="upload.txt", content="changed").artifact
     assert ask["options"] == ["Update", "Cancel"] and ws.path(upload).read_bytes() == b"original"
     approval.carry_out(ws, index, ask["approval"], ask["options"], "Cancel")
     assert ws.path(upload).read_bytes() == b"original"
     approval.carry_out(ws, index, ask["approval"], ask["options"], "Update")
-    assert ws.path(upload).read_bytes() == b"changed"
+    assert ws.path(upload).read_bytes() == b"changed" and len(ws.versions(upload)) == 1  # the original kept
 
 
 def test_rename_keeps_the_suffix_and_refuses_a_taken_name(ws, index):
@@ -148,7 +148,7 @@ def test_rename_keeps_the_suffix_and_refuses_a_taken_name(ws, index):
     assert done.result["renamed"] == "draft.md -> final.md" and ws.entry("file_1")["name"] == "final.md"
     assert search_files(index, "ship in may").result["passages"][0]["source"].startswith("final.md")
     taken = run(ws, index, "rename", name="final.md", new_name="other.txt")
-    assert taken.status == "invalid_arguments" and "already taken" in taken.result["error"]["message"]
+    assert taken.status == "invalid_arguments" and "already a file here" in taken.result["error"]["message"]
     assert run(ws, index, "rename", name="final.md").result["error"]["field"] == "new_name"
 
 
@@ -162,7 +162,7 @@ def test_reports_are_read_first_listed_and_searchable(ws, index):
     assert "np.pi" in run(ws, index, "read", name="pi.py", start=1).result["text"]  # the content, on request
     assert run(ws, index, "list").result["items"][0].endswith("| Prints pi with numpy")
     hit = search_files(index, "how it works np.pi").result["passages"][0]
-    assert hit["source"] == "the report on pi.py (file_1)"
+    assert hit["source"] == "the report on pi.py"
     ws.set_report("file_1", "# Prints pi to 3 places")  # the latest only
     assert ws.report("file_1") == "# Prints pi to 3 places" and ws.lines()["file_1"].endswith("| Prints pi to 3 places")
     report_file = ws.root / ws.entry("file_1")["report"]["file"]

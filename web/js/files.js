@@ -41,7 +41,7 @@ const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" conten
   `font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'">`;
 
 /* ═══ The file panel ════════════════════════════════════════════════════ */
-const fv = { item: null, mode: "preview", text: null, table: null, blob: null, editing: false, draft: "", input: "", output: null };
+const fv = { item: null, mode: "preview", text: null, table: null, blob: null, editing: false, draft: "", input: "", output: null, versions: [] };
 export const fileOpen = () => document.body.classList.contains("viewing");
 // The sandbox: a text file the user can change and save, and a Python file they can run
 const editable = item => item?.kind === "file" && ["code", "text", "md", "html"].includes(shape(item));
@@ -59,7 +59,7 @@ export async function openItem(item, from) {
   }
   if (!kind) { location.href = itemUrl(item.id); return; }
   closeDrawer();
-  fv.item = item; fv.mode = "preview"; fv.text = fv.table = null; fv.editing = false; fv.output = null;
+  fv.item = item; fv.mode = "preview"; fv.text = fv.table = null; fv.editing = false; fv.output = null; fv.versions = [];
   if (fv.blob) { URL.revokeObjectURL(fv.blob); fv.blob = null; }
   const name = item.name || item.title || item.id;
   const icon = item.kind === "note" ? noteTile() : fileTile(item.kind === "table" ? `${name}.csv`.replace(/\.csv\.csv$/, ".csv") : name);
@@ -87,15 +87,17 @@ export async function openItem(item, from) {
     }
   } catch (e) {
     $("#fvBody").replaceChildren(h("p", { class: "muted", style: "padding:20px" }, e.message));
-    $("#fvMeta").textContent = item.id;
+    $("#fvMeta").textContent = whose(item);
     return;
   }
   if (fv.item !== item) return;  // another file was opened meanwhile
   const bytes = fv.text != null ? new Blob([fv.text]).size : item.bytes;
-  $("#fvMeta").textContent = [item.id, kind === "table" ? `${count(fv.table.total_rows)} rows × ${fv.table.columns.length} columns` : fileSize(bytes), editable(item) ? "editable" : "view only"].filter(Boolean).join(" · ");
+  $("#fvMeta").textContent = [whose(item), kind === "table" ? `${count(fv.table.total_rows)} rows × ${fv.table.columns.length} columns` : fileSize(bytes), editable(item) ? "editable" : "view only"].filter(Boolean).join(" · ");
   const link = $("#fvDownload");
-  link.href = kind === "table" ? URL.createObjectURL(new Blob([toCsv(fv.table)], { type: "text/csv" })) : itemUrl(item.id);
-  link.download = kind === "table" ? `${name.replace(/\.(csv|xlsx?|tsv)$/i, "")}.csv` : name;
+  link.href = itemUrl(item.id);  // the file itself - a table too: its CSV or Excel file, every row
+  link.download = (item.name || "").split("/").pop() || item.id;
+  if (item.versions) fv.versions = await api(`/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/versions`).catch(() => []);
+  if (fv.item !== item) return;
   $("#fvActions").hidden = !editable(item);
   show();
 }
@@ -142,8 +144,29 @@ function show() {
     status = ["HTML", "runs here", "no network"];
   }
   if (fv.output && !fv.editing && runnable(item)) body.append(fv.output);  // the last run stays in view
+  if (fv.versions.length && !fv.editing) body.append(versionsView(item));
   const mode = fv.editing ? "Editing" : editable(item) ? "Edit to change it" : "View only";
   $("#fvStatus").innerHTML = status.filter(Boolean).map(s => `<span>${escapeHtml(s)}</span>`).join("") + `<span>${mode}</span>`;
+}
+
+// Who brought the file, as its meta line says it (keys stay inside the app)
+const whose = item => item.kind === "note" ? "note" : item.by === "user" ? "yours" : "made by Zen";
+
+// Earlier versions, newest first: each kept before a change (the last 10); restoring one keeps the current one too
+function versionsView(item) {
+  const when = s => { const d = new Date(s); return Number.isNaN(d.getTime()) ? s : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+  return h("div", { class: "run-out versions" }, h("div", { class: "run-out-head" }, `Earlier versions (${fv.versions.length})`),
+    fv.versions.map(v => h("div", { class: "version" }, h("span", {}, when(v.saved)), h("span", { class: "muted" }, fileSize(v.bytes)),
+      h("button", { class: "btn-s", type: "button", onclick: () => restore(item, v) }, "Restore"))));
+}
+
+async function restore(item, v) {
+  if (!await confirmDialog(`Restore this version of ${item.name}?`, "The current version is kept as well, so you can come back to it.", "Restore")) return;
+  try { await send("POST", `/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/restore`, { version: v.version }); }
+  catch (e) { toast(`Couldn't restore: ${e.message}`, true); return; }
+  toast(`Restored ${item.name}`);
+  await hooks.loadItems();
+  openItem(state.items.find(i => i.id === item.id) || item);
 }
 
 // Editing: the file's text in a plain editor (Tab indents, Ctrl+S saves); a Python file gets a box for what a
@@ -181,7 +204,7 @@ async function saveEdit() {
   catch (e) { toast(`Couldn't save: ${e.message}`, true); return false; }
   if (fv.item !== item) return true;
   fv.text = text;
-  $("#fvMeta").textContent = [item.id, fileSize(new Blob([text]).size), "editable"].join(" · ");
+  $("#fvMeta").textContent = [whose(item), fileSize(new Blob([text]).size), "editable"].join(" · ");
   show();
   toast(`Saved ${item.name}`);
   hooks.loadItems();
@@ -315,18 +338,20 @@ export function fillDrawer() {
   }
   const act = (label, onclick, title) => h("button", { class: "act", type: "button", title, onclick }, label);
   const row = (icon, name, meta, ...actions) => h("div", { class: "item" }, icon, h("div", {}, h("div", { class: "nm", title: name }, name), h("div", { class: "mt", title: meta }, meta)), ...actions);
-  const from = i => i.parent ? ` · from ${i.parent}` : "";
+  const named = id => state.items.find(i => i.id === id)?.name;  // a file's source, by its name
+  const from = i => i.parent && named(i.parent) ? ` · from ${named(i.parent)}` : "";
+  const kept = i => i.versions ? ` · ${plural(i.versions, "earlier version")}` : "";
   const sections = [
-    ["Tables", itemsOf("table"), i => row(fileTile(/\.(csv|tsv|xlsx?|xlsm)$/i.test(i.name || "") ? i.name : "table.csv"), i.name, `${i.id} · ${count(i.rows)} rows × ${i.columns} columns${from(i)}`,
+    ["Tables", itemsOf("table"), i => row(fileTile(/\.(csv|tsv|xlsx?|xlsm)$/i.test(i.name || "") ? i.name : "table.csv"), i.name, `${count(i.rows)} rows × ${i.columns} columns${from(i)}${kept(i)}`,
       act("View", () => openItem(i)))],
     ["Documents & files", itemsOf("file"), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
-      `${i.id} · ${i.passages != null ? `${i.pages ? plural(i.pages, "page") : plural(i.words || 0, "word")} · searchable` : fileSize(i.bytes)}${i.report ? ` · ${i.report}` : ""}`,
+      `${i.passages != null ? `${i.pages ? plural(i.pages, "page") : plural(i.words || 0, "word")} · searchable` : fileSize(i.bytes)}${kept(i)}${i.report ? ` · ${i.report}` : ""}`,
       canView(i) ? act("View", () => openItem(i)) : h("a", { class: "act", href: itemUrl(i.id), download: i.name || "" }, "Download"))],
     ["Pinned notes", itemsOf("note"), i => row(noteTile(), i.title || i.name, `saved ${i.saved || ""} · kept in view`,
       act("View", () => openItem(i)))],
     ["Images", itemsOf("image"), i => {
       const thumb = h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name || i.id, loading: "lazy" });
-      return row(thumb, i.name || i.id, `${i.id}${i.width ? ` · ${i.width}×${i.height}` : ""}${from(i)}`, act("View", () => openViewer(thumb, "image")));
+      return row(thumb, i.name || i.id, `${i.width ? `${i.width}×${i.height}` : "image"}${from(i)}${kept(i)}`, act("View", () => openViewer(thumb, "image")));
     }],
   ];
   body.replaceChildren(...sections.filter(([, list]) => list.length).flatMap(([title, list, make]) => [
@@ -416,8 +441,8 @@ export async function sendFiles(bubble) {
       const id = r.id ?? r.file;  // a document answers with its id as "file"
       sent.push(id);
       opens(c, { id, kind: r.kind === "document" ? "file" : r.kind, name: r.name });
-      c.title = r.kind === "table" ? `${entry.file.name}: ${count(r.rows)} rows, saved as ${r.id}`
-        : r.kind === "document" ? `${entry.file.name}: ${plural(r.passages, "passage")} searchable` : `${entry.file.name}: saved as ${r.id}`;
+      c.title = r.kind === "table" ? `${r.name}: ${count(r.rows)} rows`
+        : r.kind === "document" ? `${r.name}: ${plural(r.passages, "passage")} searchable` : r.name;
       if (r.kind === "table") follow.push(`Give me an overview of ${r.name}`);
       else if (r.kind === "document") follow.push(`Summarise ${r.name}`);
       if (r.note) bubble.after(h("div", { class: "user-note" }, r.note));

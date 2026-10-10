@@ -123,7 +123,7 @@ def test_a_given_file_is_loaded_with_its_report_and_kept_under_its_name(ctx):
                               turn(done("It prints 55."))])
     out = run_worker(model, ENGINEER, "make it the 10th", ctx, file="fib.py")
     opening = model.requests[0]["messages"][0]["content"]
-    assert "The file to work on: fib.py (file_1), 7 lines" in opening and first["report"] in opening
+    assert "The file to work on: fib.py, 7 lines" in opening and first["report"] in opening
     assert out["files"][0]["id"] == "file_1" and "- It printed: 55" in out["report"]  # the same file, replaced
     assert ctx.ws.ids("file") == ["file_1"] and ctx.ws.report("file_1").startswith("# Prints the 10th")
 
@@ -135,7 +135,7 @@ def test_run_outputs_are_linked_to_the_file(ctx):
                               turn(done("It draws a line."))])
     out = run_worker(model, ENGINEER, "plot", ctx, file="plot.py")
     image = next(i for i in ctx.ws.ids("image"))
-    assert ctx.ws.entry(image)["parent"] == out["files"][0]["id"] and f"- It made: {image} (line.png)" in out["report"]
+    assert ctx.ws.entry(image)["parent"] == out["files"][0]["id"] and "- It made: line.png" in out["report"]
     assert next(a for a in ctx.seen if a["type"] == "file")["outputs"] == [image]
 
 
@@ -165,7 +165,7 @@ def test_keeping_a_program_over_the_users_own_file_asks_them_in_place(store):
     ws_id = store.create_workspace("Code")["id"]
     chat = store.create_chat(ws_id)["id"]
     ws, _ = store.open(ws_id)
-    upload = ws.add_bytes("file", b"print('old')\n", "py", name="hello.py")  # the user's own file
+    upload = ws.add_bytes("file", b"print('old')\n", "py", name="hello.py", by="user")  # the user's own file
     main = ScriptedProvider([turn(call("analyze_or_code", task="make it print new", file="hello.py")),
                              ModelTurn(text="Updated hello.py.", stop="end")])
     worker = ScriptedProvider([turn(call("fix_code", from_line=1, to_line=1, new_code="print('new')")),
@@ -178,7 +178,7 @@ def test_keeping_a_program_over_the_users_own_file_asks_them_in_place(store):
     ws, _ = store.open(ws_id)
     assert ws.path(upload).read_text() == "print('new')\n" and ws.report(upload).startswith("# Prints new")
     told = json.loads(main.requests[1]["messages"][-1]["content"])
-    assert "code" not in told and told["report"].startswith("# Prints new") and told["files"][0]["id"] == upload
+    assert "code" not in told and told["report"].startswith("# Prints new") and told["files"][0]["id"] == "hello.py"  # main reads paths
     assert finished[-1]["answer"] == "Updated hello.py."
 
 
@@ -201,9 +201,9 @@ def test_file_takes_a_program_and_anything_else_is_refused_with_the_field_that_t
     ctx.ws.add_table(pd.DataFrame({"a": [1]}), "expenses.csv")
     ctx.ws.add_bytes("file", b"the fox", "txt", name="story.txt")
     tools = main_tools(ScriptedProvider([]), ctx)
-    for file, said in (("expenses.csv", "is a table (data_1): give it as data, not file"),
+    for file, said in (("expenses.csv", "expenses.csv is a table: give it as data, not file"),
                        ("memo.docx", "memo.docx is not a program: name it in the task for the script to write"),
-                       ("story.txt", "is file_1, not a program: name it in the task for the helper to read")):
+                       ("story.txt", "story.txt is not code, not a program: name it in the task for the helper to read")):
         r = execute(ctx, "analyze_or_code", {"task": "x", "file": file}, tools)
         assert r.status == "invalid_arguments" and said in r.result["error"]["message"], file
     for file in ("primes.py", "primes", "page.html"):  # programs: a new name, no extension, another language

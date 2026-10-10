@@ -35,13 +35,12 @@ def download_request(url: str, *, http=None, resolve=None) -> ToolResult:
 def delete_request(ws: Workspace, items: list[str]) -> ToolResult:
     items = list(dict.fromkeys(str(i).strip() for i in items if str(i).strip()))
     if not items:
-        raise ToolError("Name the items to delete by id, e.g. ['file_2'].", field="items")
+        raise ToolError("Name the files to delete, e.g. ['old_report.md'].", field="items")
     if len(items) > MAX_DELETE:
         raise ToolError(f"At most {MAX_DELETE} items at a time.", field="items")
     missing = [i for i in items if i not in ws.ids()]
     if missing:
-        raise ToolError(f"No item {', '.join(missing)} in this workspace. Items: {', '.join(ws.ids()) or 'none'}.",
-                        field="items")
+        raise ToolError(f"No file {', '.join(missing)} in this workspace.", field="items")
     named = [ws.describe(i) for i in items]
     return _ask("delete_files", {"items": items, "named": named},
                 f"Delete {', '.join(named)} from this workspace? This can't be undone.", "Delete")
@@ -49,13 +48,13 @@ def delete_request(ws: Workspace, items: list[str]) -> ToolResult:
 
 def replace_request(ws: Workspace, item: str, content: str, report: str | None = None,
                     outputs: list[str] | None = None) -> ToolResult:
-    """Updating a file the user brought (an upload or a download): with no versions, the current text
-    would be gone - so the user decides. From save_code: with its report and run outputs."""
+    """Updating a file the user brought (an upload or a download): it is theirs, so they decide (the version
+    before is kept). From save_code: with its report and run outputs."""
     e = ws.entry(item)
     details = {"item": item, "name": e["name"], "content": content,
                **({"report": report, "outputs": outputs or []} if report else {})}
     return _ask("replace_file", details,
-                f"Update your file {e['name']} ({item})? Its current text can't be brought back.", "Update")
+                f"Update your file {e['name']}? Its current version is kept and can be restored.", "Update")
 
 
 def carry_out(ws: Workspace, index: SearchIndex | None, approval: dict, options: list[str], answer: str | None, *,

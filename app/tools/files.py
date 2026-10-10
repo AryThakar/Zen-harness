@@ -1,12 +1,13 @@
 """search_files: answer from the user's documents and saved notes, with the source of every passage.
 
-Documents enter through add_document (from store_file: an upload, or a file downloaded from GitHub
-with the user's approval - never by the model directly): the text is
-extracted (PDF, Word, PowerPoint, .txt, .md - claude-cloud's tested extractor), split into ~250-word passages
-that never cross a page or heading, and indexed. Notes are indexed when they are saved (notes.py). Scanned PDFs
-(images of pages) have no text and are refused with that reason. Pictures are found too - by their name and
-prompt, and by what they show when the embedding model takes pictures; tables by their name, columns
-and a few values (index_items).
+The index is the workspace's files seen for search - never a second copy. One sync (index_items) brings it
+in step with the folder however a file arrived (an upload, a download, files' write, a script's output, a
+table a tool made) or changed: a document's text is extracted (PDF, Word, PowerPoint, .txt, .md -
+claude-cloud's tested extractor), split into ~250-word passages that never cross a page or heading, and
+indexed; a picture by its name and prompt, and by what it shows when the embedding model takes pictures; a
+table by its name, columns and a few values. It runs after every turn, upload and run, and before every
+search. Notes are indexed when they are saved (notes.py). Scanned PDFs (images of pages) have no text and
+are refused with that reason.
 """
 
 from __future__ import annotations
@@ -35,19 +36,23 @@ WEB_NOTE = ("web_pages are pages read in earlier research, as they were on the d
 LATER_SUPERSEDES = "oldest first: where they differ, a later one supersedes an earlier one"
 
 
-def reindex(ws: Workspace, index: SearchIndex, item_id: str) -> None:
-    """A stored document changed in place (by a script): its passages again - none if it no longer reads."""
-    name = ws.entry(item_id)["name"]
+def reindex(ws: Workspace, index: SearchIndex, item_id: str) -> bool:
+    """A document's passages, from its file as it is now - none if it doesn't read (then False). The file's stamp
+    goes with them, so the next sync knows they are current."""
+    name, path = ws.entry(item_id)["name"], ws.path(item_id)
+    stamp = item_stamp(path.stat())
     try:
-        doc = extract(name, ws.path(item_id).read_bytes())
+        doc = extract(name, path.read_bytes())
     except DocumentError:
         index.remove("document", item_id)
         ws.set_meta(item_id, "passages", 0)
-        return
+        ws.set_meta(item_id, "unreadable", stamp)
+        return False
     passages = [Passage(c.text, c.page, c.section) for c in chunk(doc.blocks)]
-    index.replace("document", item_id, name, passages)
+    embedded = index.replace("document", item_id, name, passages, meta=stamp)
     for key, value in (("title", doc.title), ("pages", doc.pages), ("words", doc.words), ("passages", len(passages))):
         ws.set_meta(item_id, key, value)
+    return embedded
 
 
 def index_report(ws: Workspace, index: SearchIndex | None, item_id: str) -> None:
@@ -63,18 +68,19 @@ def index_report(ws: Workspace, index: SearchIndex | None, item_id: str) -> None
 
 
 def index_items(ws: Workspace, index: SearchIndex) -> int:
-    """Keep the index's pictures and tables the same as the workspace's: a new or changed one indexed, a
-    renamed one's name updated, a deleted one removed - one sync for every way an item arrives (an upload,
-    a generated picture, a chart's picture, a script's output, a cleaned or queried table), run by the
-    store after every turn, upload and run. A picture: its name and prompt for keywords, the picture itself
-    for meaning when the model takes pictures. A table: its name, size, columns and a few example values.
-    Pages read more than WEB_DAYS days ago are dropped on the way. Returns how many were (re)indexed."""
+    """Keep the index the same as the workspace's files: a new or changed one indexed, a moved one's path
+    updated, a deleted one removed - one sync for every way a file arrives or changes, run after every turn,
+    upload and run, and before a search. A document: its passages. A picture: its name and prompt for
+    keywords, the picture itself for meaning when the model takes pictures. A table: its name, size, columns
+    and a few example values. Pages read more than WEB_DAYS days ago are dropped on the way. Returns how
+    many were (re)indexed."""
     expire_webpages(index)
     model = index.embedder.name if getattr(index.embedder, "images", False) else None
     done = 0
-    for kind, source in (("image", PICTURE), ("table", TABLE)):
+    documents = [k for k in ws.ids("file") if filetypes.is_document(ws.entry(k)["name"])]
+    for source, items in ((PICTURE, ws.ids("image")), (TABLE, ws.ids("table")), ("document", documents)):
         have = index.stamps(source)
-        items = set(ws.ids(kind))
+        items = set(items)
         for ref in set(have) - items:
             index.remove(source, ref)
         for item in sorted(items):
@@ -85,15 +91,20 @@ def index_items(ws: Workspace, index: SearchIndex) -> int:
                 continue
             stamp, title = item_stamp(stat), entry["name"]
             old = have.get(item)
-            if old and old[0] == stamp and old[2] == title and (source == TABLE or model is None or old[1] == model):
-                continue  # a table's vector follows the model through reindex(), like any text
+            if old and old[0] == stamp and old[2] == title and (source != PICTURE or model is None or old[1] == model):
+                continue  # a text's vector follows the model through reindex(), like any text
+            if source == "document":
+                if (entry.get("meta") or {}).get("unreadable") != stamp:
+                    reindex(ws, index, item)
+                    done += 1
+                continue
             if source == PICTURE:
                 meta = entry.get("meta") or {}
                 text = ". ".join(str(x) for x in (title, meta.get("prompt"),
                                                   meta.get("chart") and f"a {meta['chart']} chart") if x)
                 index.add_picture(item, title, text, _picture_bytes(path), stamp)
             else:
-                index.replace(TABLE, item, title, [Passage(_table_text(entry, path))], meta=stamp)
+                index.replace(TABLE, item, title, [Passage(_table_text(ws, item))], meta=stamp)
             done += 1
     return done
 
@@ -107,16 +118,17 @@ TABLE_EXAMPLES = 3  # values shown for each text column
 TABLE_TEXT_COLUMNS = 8
 
 
-def _table_text(entry: dict, path: Path) -> str:
+def _table_text(ws: Workspace, item: str) -> str:
     """What a table is, in words a question would use: its name, size, columns, a few values of its text
     columns (read from its first rows only) and the query that made it."""
+    from .query_data import by_path
+    entry = ws.entry(item)
     cols = [str(c) for c in entry.get("columns", [])]
     meta = entry.get("meta") or {}
     lines = [f"{entry['name']}: a table of {entry.get('rows', 0):,} rows and {len(cols)} columns.",
              "Columns: " + ", ".join(cols[:80]) + (" ..." if len(cols) > 80 else "") + "."]
     try:
-        import pyarrow.parquet as pq
-        head = next(pq.ParquetFile(path).iter_batches(batch_size=200)).to_pandas()
+        head = ws.table(item).head(200)
         shown = []
         for c in head.columns:
             if len(shown) == TABLE_TEXT_COLUMNS:
@@ -127,10 +139,10 @@ def _table_text(entry: dict, path: Path) -> str:
                     shown.append(f"{c}: {', '.join(values)}")
         if shown:
             lines.append("Examples - " + "; ".join(shown) + ".")
-    except (OSError, ValueError, StopIteration, ImportError):
+    except (OSError, ValueError, ToolError):
         pass
     if meta.get("sql"):
-        lines.append(f"Made by: {str(meta['sql'])[:300]}")
+        lines.append(f"Made by: {by_path(ws, str(meta['sql']))[:300]}")
     return "\n".join(lines)
 
 
@@ -149,39 +161,39 @@ def _picture_bytes(path: Path) -> bytes:
         return path.read_bytes()
 
 
-def store_file(ws: Workspace, index: SearchIndex, path: str | Path) -> dict:
-    """An uploaded or downloaded file, kept by what it is: a table (CSV, Excel) for the data tools,
-    a document (PDF, Word, PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything
-    else as a file a script can open.
-    Raises ToolError if a table or document can't be read."""
+def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user") -> dict:
+    """A file brought in (``by`` the user: an upload, a download) or written (by the assistant), kept by what it
+    is through the workspace's one write path: a table (CSV, Excel) for the data tools, a document (PDF, Word,
+    PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything else a file a
+    script can open. What the user brings and is already here, byte for byte, is that file ('same').
+    Raises ToolError if a table, image or document can't be read."""
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix in filetypes.TABLE:
-        item = ws.add_file(path)
-        return {"id": item, "kind": "table", "name": path.name, "rows": len(ws.table(item))}
+    dedupe = by == "user"
     if suffix in filetypes.DOCUMENT:
-        return {"kind": "document", **add_document(ws, index, path)}
-    if suffix in filetypes.IMAGE:  # an image item, like generated and script images: vision can look at it
-        item = ws.add_image(path.read_bytes(), path.name)
-        return {"id": item, "kind": "image", "name": path.name}
-    item = ws.add_bytes("file", path.read_bytes(), suffix.lstrip(".") or "bin", name=path.name)
-    return {"id": item, "kind": "file", "name": path.name}
+        return {"kind": "document", **add_document(ws, index, path, by=by)}
+    kind = "table" if suffix in filetypes.TABLE else "image" if suffix in filetypes.IMAGE else "file"
+    put = ws.put(path.name, path.read_bytes(), kind=kind, by=by, dedupe=dedupe)
+    out = {"id": put.key, "kind": kind, "name": put.path, **({"same": True} if put.existed else {})}
+    if kind == "table":
+        out["rows"] = ws.entry(put.key)["rows"]
+    return out
 
 
-def add_document(ws: Workspace, index: SearchIndex, path: str | Path) -> dict:
-    """Store and index an uploaded document; returns its id and size. Raises ToolError if unusable."""
+def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user") -> dict:
+    """Keep and index a document; returns its key, path and size. Raises ToolError if it doesn't read."""
     path = Path(path)
     data = path.read_bytes()
     try:
         doc = extract(path.name, data)
     except DocumentError as exc:
         raise ToolError(str(exc), invalid=False) from exc
-    passages = [Passage(c.text, c.page, c.section) for c in chunk(doc.blocks)]
-    doc_id = ws.add_bytes("file", data, path.suffix.lstrip(".") or "bin", name=path.name,
-                          meta={"title": doc.title, "kind": doc.kind, "pages": doc.pages, "words": doc.words,
-                                "passages": len(passages)})
-    embedded = index.add("document", doc_id, path.name, passages)
-    return {"file": doc_id, "name": path.name, "pages": doc.pages, "passages": len(passages),
+    put = ws.put(path.name, data, kind="file", by=by, dedupe=by == "user",
+                 meta={"title": doc.title, "kind": doc.kind, "pages": doc.pages, "words": doc.words})
+    embedded = reindex(ws, index, put.key) if index is not None else True
+    passages = ws.entry(put.key).get("meta", {}).get("passages", 0)
+    return {"file": put.key, "name": put.path, "pages": doc.pages, "passages": passages,
+            **({"same": True} if put.existed else {}),
             **({} if embedded else {"note": "Indexed for keyword search only (the embedding model is unavailable)."})}
 
 
@@ -264,13 +276,13 @@ def _source(h) -> str:
     if h.source == WEB:
         return f"web page '{h.title}' ({_page(h).get('url', h.ref)}), read {h.created[:10]}"
     if h.source == PICTURE:
-        return f"picture '{h.title}' ({h.ref})"
+        return f"picture '{h.title}'"
     if h.source == TABLE:
-        return f"table '{h.title}' ({h.ref})"
+        return f"table '{h.title}'"
     if h.source == "note":
         return f"note '{h.title}' ({h.ref})"
     if h.source == "report":
-        return f"the report on {h.title} ({h.ref})"
+        return f"the report on {h.title}"
     where = f", page {h.page}" if h.page else ""
     section = f' - "{h.section}"' if h.section else ""
     return f"{h.title}{where}{section}"

@@ -50,7 +50,7 @@ class _In(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-TABLE_ID = "the table's id or name, e.g. 'data_1'"
+TABLE_ID = "the table's file name, e.g. 'sales.csv'"
 TIME_UNIT = "the period each point covers, for dates: auto picks one from the span"
 TIMEOUT = "seconds the run may take (at most 120)"
 
@@ -140,6 +140,13 @@ def _read_page(c: ToolContext, a) -> ToolResult:
         files.index_webpage(c.index, r.result)
     return r
 
+def _search_files(c: ToolContext, query: str) -> ToolResult:
+    """search_files over an index in step with the files as they are now (a file a script just wrote, too)."""
+    if c.index is not None:
+        files.index_items(c.ws, c.index)
+    return files.search_files(c.index, query)
+
+
 def show_plan(steps: list[PlanStep]) -> ToolResult:
     """The plan as a card; the page ticks a step off when its tool's call ends."""
     from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
@@ -158,7 +165,7 @@ class TaskIn(_In):
 
 
 class WorkTaskIn(TaskIn):
-    data: str | None = Field(None, description="the table the task is about, e.g. 'data_1'")
+    data: str | None = Field(None, description="the table the task is about, e.g. 'sales.csv'")
     file: str | None = Field(None, description="the program to keep or change, e.g. 'primes.py': a new name makes "
                                                "it, an existing one is changed (omit when no program is wanted; a "
                                                "table goes in data)")
@@ -178,7 +185,7 @@ class SearchIn(_In):
 class FilesIn(_In):
     mode: Literal["list", "find", "read", "write", "update", "rename", "delete", "download"] = Field(
         description="what to do: each mode is described with the tool")
-    name: str | None = Field(None, description="the file's name or id, e.g. 'report.md' (all modes but list and "
+    name: str | None = Field(None, description="the file's name, e.g. 'report.md' or 'charts/sales.png' (all modes but list and "
                                                "download)")
     page: int = Field(1, ge=1, description="list: which page")
     start: int | None = Field(None, ge=0, description="read: the line to read from (the result's next says where "
@@ -199,7 +206,7 @@ class FilesQueryIn(_In):
 
 
 class ReadFileIn(_In):
-    file: str = Field(description="a file or note: its id or name, e.g. 'file_1'")
+    file: str = Field(description="a file or note by its name, e.g. 'report.md'")
     start: int = Field(1, ge=0, description="the line to read from; the result's next says where to go on")
 
 
@@ -219,8 +226,9 @@ class CleanIn(_In):
 
 
 class SqlIn(_In):
-    sql: str = Field(description="one DuckDB SELECT; tables are named by id, e.g. SELECT region, sum(amount) FROM "
-                     "data_2 GROUP BY 1. For weekday or month names use dayname(date) / monthname(date), not numbers")
+    sql: str = Field(description="one DuckDB SELECT; a table is named by its file name in double quotes, e.g. SELECT "
+                     "region, sum(amount) FROM \"sales.csv\" GROUP BY 1. For weekday or month names use dayname(date) / "
+                     "monthname(date), not numbers")
     save: bool = Field(False, description="save the full result as a new table (to chart, test or model it)")
 
 
@@ -291,7 +299,7 @@ class PatternsIn(_In):
 
 
 class ViewImageIn(_In):
-    image: str = Field(description="the image's id or name, e.g. 'image_3'")
+    image: str = Field(description="the image's name, e.g. 'panda.jpg'")
     question: str = Field(description="what to look for, e.g. 'Is the title readable and does it say 2025?' or "
                                       "'Describe this image'")
 
@@ -387,7 +395,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "exists; read: a file's report (what a helper did with it), or its text from line start on (an image or a "
        "table says which tool reads it); write: a new file the user asked for - text, Markdown, CSV, JSON, code, "
        "and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading starts a "
-       "slide; a line that is only ![caption](image_7) puts in that picture or chart); update: change an "
+       "slide; a line that is only ![caption](charts/sales.png) puts in that picture or chart); update: change an "
        "existing file - its whole text, or lines start-end; rename; delete: one file; download: one file from "
        "GitHub, or a data table (CSV, Excel) from any public link - a repository's or folder's page lists the "
        "files it has, to pick one. Not for running code (analyze_or_code) or finding where something is on the web "
@@ -404,7 +412,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("search_files", "Find what matches a query in the user's documents and file reports, their pictures (by what they show) "
        "and tables (by their columns and values) - then, apart, their saved notes and pages read in earlier "
        "research (dated).", FilesQueryIn,
-       lambda c, a: files.search_files(c.index, a.query),
+       lambda c, a: _search_files(c, a.query),
        labels=("Searching your documents and notes", "Searched your documents and notes")),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
        FilesQueryIn,
@@ -425,8 +433,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100.",
        SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save),
        labels=("Querying the data", "Queried the data")),
-    Tool("make_chart", "Draw a chart of a table, computed from all its rows (also kept as a picture - its id "
-       "comes back as picture - for documents and slides): line (over time; by = one line per "
+    Tool("make_chart", "Draw a chart of a table, computed from all its rows (also kept as a picture in charts/ - "
+       "its name comes back as picture - for documents and slides): line (over time; by = one line per "
        "group), bar (by category; by = grouped or stacked), scatter (two numbers, with a trend line), histogram "
        "(how one number spreads), box (a number's spread per group), heatmap (two categories, e.g. weekday x hour) "
        "or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with query_data "
@@ -466,12 +474,14 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        ViewImageIn,
        lambda c, a: vision.view_image(c.ws, a.image, a.question, c.look),
        labels=("Looking at the image", "Looked at the image")),
-    Tool("run_code", "Write your scratch Python script (the whole of it) and run it. In the script, "
-       "table('data_1') gives a table as a DataFrame, open('file_3') opens a stored item by its id "
-       "(Image.open('image_3') an image), and path('file_3') gives its location for libraries that open files "
-       "themselves (pandas, openpyxl). Files the script writes are kept as new items (.csv / .parquet become tables, "
-       "images are shown); a stored item is never changed - write under a new name. No internet: a file from the web "
-       "must be in the workspace first. "
+    Tool("run_code", "Write your scratch Python script (the whole of it) and run it. It runs in the workspace's "
+       "folder, so its files open by their names: pd.read_csv('sales.csv'), Image.open('panda.jpg'), "
+       "open('notes.md'); table('sales.csv') gives a table with its dates and numbers already read. Files the script "
+       "writes are kept in the workspace (.csv / .parquet become tables, images are shown); writing again a file the "
+       "assistant made changes it (its version before is kept); the user's own files are never changed - write "
+       "under a new name. It runs on Windows: fonts by file name, e.g. ImageFont.truetype('segoeui.ttf', 96) "
+       "(arial, georgia, segoeui, times, verdana ...). No internet: a file from the web must be in the workspace "
+       "first. "
        "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunCodeIn,
        lambda c, a: scratch.run_code(c.ws, c.scratch, a.code, a.timeout, a.input),
        labels=("Running code", "Ran code")),
@@ -530,13 +540,13 @@ def execute(ctx: ToolContext, name: str, raw_input, tools: dict[str, Tool] | Non
 
 
 # Inputs that name a workspace item, and the kinds each may be: resolved by one resolver before any tool
-# runs, so every tool takes an id, a name or a copied listing line alike (Workspace.resolve).
+# runs, so every tool takes a file's name (any case), a copied listing line or a key alike (Workspace.resolve).
 ITEM_FIELDS = {"data": ("table",), "new_data": ("table",), "image": ("image",)}
 ITEM_FIELDS_BY_INPUT = {ReadFileIn: {"file": read_file.KINDS}}
 
 
 def _resolve_items(ctx: ToolContext, args: _In) -> None:
-    """Every item named in a call, as its id (in place); a ToolError the model can act on when it isn't there."""
+    """Every file named in a call, as its key (in place); a ToolError the model can act on when it isn't there."""
     fields = {**ITEM_FIELDS, **ITEM_FIELDS_BY_INPUT.get(type(args), {})}
     for name, kinds in fields.items():
         value = getattr(args, name, None)

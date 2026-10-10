@@ -1,6 +1,6 @@
 """What every model call gets without having to ask, and how long histories fit a slot.
 
-What the workspace holds (ids, names, sizes - never content) and the pinned notes are built by
+What the workspace holds (each file's path and size - never content) and the pinned notes are built by
 code, so a small model never has to remember to pass them on. None of it is in main's system
 prompt: llama.cpp reuses a prompt only up to its first changed token, and a minute that changed
 early in the prompt made it reprocess 5,673 of 5,878 tokens (measured; the same prompt again: 1).
@@ -41,7 +41,7 @@ from datetime import datetime
 
 from app.providers.base import estimate_tokens
 from app.tools.notes import pinned, pinned_text
-from app.tools.workspace import Workspace
+from app.tools.workspace import ITEM_REF, Workspace
 
 SLOT_TOKENS = 16_384  # context of each llama-server slot (main = 0, worker = 1)
 OUTPUT_RESERVE = 4_096  # reply room when a provider does not say (its max_tokens)
@@ -77,6 +77,8 @@ def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
     """(the note for the user's newest message, '' when nothing changed; the state it reflects).
     before: the state the previous message reflected, None for a snapshot (first message, or a cut)."""
     now = seen_state(ws)
+    if before is not None and any(ITEM_REF.match(line) for line in before.get("items", {}).values()):
+        before = None  # told in the first layout's words ('data_1  sales.csv - ...'): a fresh snapshot instead
     if before is None:
         lines = list(now["items"].values())
         shown = "\n".join(lines[-SNAPSHOT_ITEMS:]) or "empty (no files attached yet)"
@@ -94,7 +96,7 @@ def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
     old = before.get("items", {})
     changes = [f"+ {line}" for i, line in now["items"].items() if i not in old]
     changes += [f"~ {line}" for i, line in now["items"].items() if i in old and old[i] != line]
-    changes += [f"- {i} (removed)" for i in old if i not in now["items"]]
+    changes += [f"- {old[i].split(': ', 1)[0]} (removed)" for i in old if i not in now["items"]]
     parts = ["[Workspace changes since the last message:\n" + "\n".join(changes) + "]"] if changes else []
     if now["pinned"] != before.get("pinned"):
         parts.append(f"[{pinned_text(ws)}]" if now["pinned"] else "[Pinned notes: none now.]")

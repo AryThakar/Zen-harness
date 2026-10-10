@@ -63,7 +63,7 @@ notes are your memory between chats: when the user asks you to remember or note 
 every chat ("from now on ..."), save it with notes - saying you will remember keeps nothing.
 
 Helpers - research_web, ask_knowledge and analyze_or_code - don't see this chat: give each a task that is \
-complete on its own (names, numbers, ids of files or tables, what the user wants). The app checks their results:
+complete on its own (names, numbers, the files and tables by their names, what the user wants). The app checks their results:
 - use the answer and give its links;
 - warnings mean the answer may be wrong: say so;
 - a trail or a suggestion says what the helper tried and what failed.
@@ -99,7 +99,7 @@ REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing 
 SHOWN = {"weather": "The user sees all of this in a weather card: answer in one or two sentences with what "
                     "matters for their question; don't list the numbers again.",
          "diagram": "The user sees the drawn diagram: say in one sentence what it shows; don't walk through it.",
-         "image": "The user sees the image above your reply: don't write its id, a link or a placeholder for it.",
+         "image": "The user sees the image above your reply: don't write its name, a link or a placeholder for it.",
          "plan": "The user sees the plan as a checklist: start on its first step now, without repeating it."}
 
 # ---------------------------------------------------------------- helpers
@@ -154,7 +154,7 @@ again', 'amount > 100') is made first with query_data: CASE WHEN ... THEN 'yes' 
 - groups of similar customers, unusual days or rows, items bought together: find_patterns
 - what texts are about: analyze_text
 - what none of these does (a custom reshape, a simulation, a program): run_code
-A tool that saves a table gives its id: use it next (chart the segments, query the predictions).
+A tool that saves a table gives its name: use it next (chart the segments, query the predictions).
 4. Programs. Write the whole script with run_code - small functions with clear names, and code at the bottom that \
 calls them and prints the result with labels. 'It ran' is not 'it is right': check a value against a known answer \
 (assert) and the edges the task implies (empty input, one item). A program that asks the user (a game, a menu) is \
@@ -162,7 +162,7 @@ tested by running it with input - what a person would type. When a run fails, re
 the lines it shows with fix_code; fix the cause, never hide it with try/except; after 3 failed fixes, rewrite it. \
 Other languages (Rust, HTML, JavaScript ...) don't run here: give the file's whole content in save_code.
 5. Keep what the task wants kept: a program with save_code. Charts, tables and pictures you make are kept and shown \
-to the user by themselves: name their ids, don't repeat them.
+to the user by themselves: name them, don't repeat them.
 6. Check before finishing: the parts add up to the total, the sizes are plausible, nothing is counted twice. Say \
 how reliable a test, forecast or model is, from its result; drivers and correlations are associations, not causes.
 

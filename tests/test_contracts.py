@@ -31,11 +31,11 @@ def test_every_data_tool_takes_an_id_a_name_or_a_copied_line(ctx, ref):
 
 def test_a_wrong_name_gets_the_closest_items_and_a_wrong_kind_says_what_reads_it(ctx):
     near = execute(ctx, "inspect_data", {"data": "shop_sale.csv"}).result["error"]["message"]
-    assert near == "No table 'shop_sale.csv'. Did you mean: data_1 (shop_sales.csv)?"
+    assert near == "No table 'shop_sale.csv'. Did you mean: shop_sales.csv?"
     wrong = execute(ctx, "inspect_data", {"data": "squares.py"}).result["error"]["message"]
-    assert wrong.startswith("'squares.py' is file_1 (squares.py), a file, not a table.") and "files(read)" in wrong
+    assert wrong.startswith("squares.py is a file, not a table.") and "files(read)" in wrong
     table = execute(ctx, "read_file", {"file": "shop_sales.csv"}).result  # not text: says what reads it
-    assert table["kind"] == "table" and "table('data_1')" in table["note"]
+    assert table["kind"] == "table" and "table('shop_sales.csv')" in table["note"]
     assert execute(ctx, "read_file", {"file": "squares.py"}).result["file"] == "file_1"
 
 
@@ -62,7 +62,7 @@ def test_every_image_is_an_image_item_with_its_size(ctx, tmp_path):
     photo = tmp_path / "earth.jpg"
     Image.new("RGB", (64, 48), "navy").save(photo)
     kept = store_file(ctx.ws, ctx.index, photo)
-    assert kept["kind"] == "image" and ctx.ws.lines()[kept["id"]].endswith("earth.jpg - image 64x48")
+    assert kept["kind"] == "image" and ctx.ws.lines()[kept["id"]] == "earth.jpg: image 64x48"
     fake = tmp_path / "fake.png"
     fake.write_bytes(b"not an image")
     with pytest.raises(ToolError, match="not a readable image"):

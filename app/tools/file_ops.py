@@ -29,7 +29,7 @@ from . import approval, read_file
 from .core import ToolError, ToolResult, ok, tool
 from .filetypes import BINARY, FROM_MARKDOWN, is_code, suffix
 from .search_index import SearchIndex
-from .workspace import Workspace
+from .workspace import Workspace, clean_path
 
 PAGE = 15  # items per list page
 KINDS = ("table", "image", "file")  # everything but notes
@@ -105,8 +105,8 @@ def _write(ws: Workspace, index: SearchIndex | None, name: str, content: str) ->
         name = _file_name(name)
         existing = _exact(ws, name)
     if existing is not None:
-        raise ToolError(f"A file called {ws.entry(existing)['name']} exists ({existing}): change it with "
-                        "mode='update', or write under another name.", field="name")
+        raise ToolError(f"A file called {ws.entry(existing)['name']} exists: change it with mode='update', or write "
+                        "under another name.", field="name")
     _writable(name)
     _pictures_there(ws, name, content)
     return _store_new(ws, index, name, content)
@@ -151,7 +151,7 @@ def _rename(ws: Workspace, index: SearchIndex | None, item: str, new_name: str) 
         _writable(new_name)  # notes.md renamed notes.pdf would still be text: a broken PDF
     taken = _exact(ws, new_name)
     if taken and taken != item:
-        raise ToolError(f"{new_name} is already taken ({taken}): pick another name.", field="new_name")
+        raise ToolError(f"{new_name} is already a file here: pick another name.", field="new_name")
     ws.rename(item, new_name)
     if index is not None and "passages" in e.get("meta", {}):
         reindex(ws, index, item)  # its passages carry its name
@@ -170,10 +170,9 @@ def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / name
         path.write_bytes(data)
-        kept = store_file(ws, index, path)
+        kept = store_file(ws, index, path, by="assistant")
     item = kept.get("id") or kept.get("file")
-    ws.set_meta(item, "by", "assistant")
-    return ok({"file": item, "name": name, "kind": kept["kind"], "bytes": len(data),
+    return ok({"file": item, "name": kept["name"], "kind": kept["kind"], "bytes": len(data),
                "note": "Saved; the user sees it in the chat.", **written_code(name, content)}, _card(ws, item, "written"))
 
 
@@ -207,8 +206,7 @@ def written_code(name: str, content: str) -> dict:
 
 
 def made_by_assistant(entry: dict) -> bool:
-    meta = entry.get("meta", {})
-    return meta.get("by") == "assistant" or meta.get("from") == "run_python"
+    return entry.get("by") == "assistant"
 
 
 def _card(ws: Workspace, item: str, action: str) -> dict:
@@ -218,9 +216,9 @@ def _card(ws: Workspace, item: str, action: str) -> dict:
 
 
 def _file_name(name: str) -> str:
-    name = " ".join(str(name).split())
-    if not name or "/" in name or "\\" in name or name.startswith(".") or len(name) > 120:
-        raise ToolError("name must be a plain file name (no folders), e.g. 'report.md'.", field="name")
+    """A path for a new file, from the model: refused when it isn't one (workspace.clean_path); Markdown when it
+    has no extension."""
+    name = clean_path(name, strict=True)
     return name if PurePath(name).suffix else name + ".md"
 
 
@@ -269,10 +267,10 @@ def _pictures_there(ws: Workspace, name: str, content: str) -> None:
     if not missing:
         return
     images = ws.ids("image")[-10:]
-    have = (", ".join(f"{i} ({ws.entry(i)['name']})" for i in images) if images
+    have = (", ".join(ws.label(i) for i in images) if images
             else "none - a chart from analyze_or_code or a picture from generate_image is kept as one")
     raise ToolError(f"No picture {', '.join(missing)} in the workspace, so nothing was written. Pictures: {have}. "
-                    "Name one of them in ![caption](id), or leave the picture out.", field="content")
+                    "Name one of them in ![caption](its name), or leave the picture out.", field="content")
 
 
 # ---------------------------------------------------------------- download

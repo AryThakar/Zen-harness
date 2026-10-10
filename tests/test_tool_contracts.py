@@ -61,7 +61,7 @@ def _filled(schema: dict) -> dict:
 
 
 def _tool_names_in(text: str) -> set[str]:
-    return set(re.findall(r"\b([a-z]+_[a-z_]+)\(", text))
+    return set(re.findall(r"(?<![\w.])([a-z]+_[a-z_]+)\(", text))  # pd.read_csv( is a library's call
 
 
 @pytest.mark.parametrize("name", sorted(TOOLS))

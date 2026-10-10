@@ -82,13 +82,40 @@ def test_written_files_are_registered(ws):
             "open('broken.png', 'wb').write(bytes.fromhex('89504e470d0a1a0a'))\n"
             "open('notes.txt', 'w').write('hello')")
     r = run_python(ws, code)
-    files = {f["path"]: f.get("id") for f in r.result["files"]}
-    assert files == {"broken.png": "file_1", "notes.txt": "file_2", "plot.png": "image_1", "result.csv": "data_2"}
-    assert ws.lines()["image_1"].startswith("image_1  plot.png - image 40x30")  # an image item with its size
+    told = {f["path"]: f["kind"] for f in r.result["files"]}  # the model is told paths, never keys
+    assert told == {"broken.png": "file", "notes.txt": "file", "plot.png": "image", "result.csv": "table"}
+    assert "_1" not in str(r.result["files"])
+    keys = {f["path"]: f["id"] for f in r.artifact["files"]}  # the UI gets the keys
+    assert ws.lines()[keys["plot.png"]] == "plot.png: image 40x30"  # an image with its size
     assert [f["note"] for f in r.result["files"] if f["path"] == "broken.png"] == ["not a readable image; kept as a file"]
-    assert ws.table("data_2")["a"].tolist() == [1, 2]
+    assert ws.table(keys["result.csv"])["a"].tolist() == [1, 2]
+    assert (ws.files / "result.csv").exists()  # where the script wrote it: the file is the workspace's
     again = run_python(ws, "print('nothing new')")
     assert "files" not in again.result  # unchanged files are not registered twice
+
+
+def test_a_script_opens_files_by_their_names(ws):
+    r = run_python(ws, "import pandas as pd\nprint(pd.read_csv('small.csv')['y'].sum(), table('small.csv')['x'].sum())")
+    assert r.status == "ok" and r.result["output"].split() == ["60.0", "6"]
+    missing = run_python(ws, "open('smal.csv').read()")
+    assert "Did you mean: small.csv" in missing.result["error"]["message"]  # measured: 'image_27.jpg' for a picture
+
+
+def test_a_file_the_assistant_made_changes_with_a_version_kept(ws):
+    key = ws.add_bytes("file", b"v1", "txt", name="draft.txt")
+    r = run_python(ws, "open('draft.txt', 'w').write('v2')")
+    assert r.status == "ok" and r.result["files"] == [{"path": "draft.txt", "kind": "file", "updated": True}]
+    assert ws.path(key).read_bytes() == b"v2" and ws.ids("file") == [key]  # the same file, not a copy
+    assert [(ws.zen / "versions" / key / v["version"]).read_bytes() for v in ws.versions(key)] == [b"v1"]
+
+
+def test_the_users_own_file_is_never_changed_by_a_script(ws, tmp_path):
+    upload = tmp_path / "mine.csv"
+    upload.write_text("a\n1\n")
+    key = ws.add_file(upload)
+    r = run_python(ws, "open('mine.csv', 'w').write('a,2')")
+    assert r.status == "invalid_arguments" and "the user's own file" in r.result["errors"]
+    assert ws.path(key).read_text() == "a\n1\n" and ws.versions(key) == []
 
 
 def test_long_output_is_cut_and_bad_input_refused(ws):
@@ -113,7 +140,7 @@ def test_files_on_the_computer_are_off_limits(ws):
 CHANGES = ["open(P, 'w').write('x')", "open(P, 'a').write('x')", "import os; os.remove(P)", "import os; os.unlink(P)",
            "import os; os.rename(P, P + '.moved')", "import os; os.replace(P, 'here.txt')",
            "import pathlib; pathlib.Path(P).unlink()", "import pathlib; pathlib.Path(P).write_text('x')",
-           "import shutil; shutil.move(P, 'here.txt')", "import shutil; shutil.copy('script.py', P)",
+           "import shutil; shutil.move(P, 'here.txt')", "open('x.txt', 'w').write('x'); import shutil; shutil.copy('x.txt', P)",
            "import shutil; shutil.rmtree(D)", "import os; os.chmod(P, 0o444)", "import os; os.truncate(P, 0)",
            "import os; os.mkdir(D + '/new')", "import os; os.utime(P)",
            "import os; os.close(os.open(P, os.O_WRONLY | os.O_TRUNC))"]
@@ -130,12 +157,13 @@ def test_files_outside_the_workspace_cannot_be_changed_or_deleted(ws, tmp_path, 
     assert keep.read_text() == "mine" and [p.name for p in outside.iterdir()] == ["keep.txt"]
 
 
-@pytest.mark.parametrize("change", ["os.remove(path('file_1'))", "os.rename(path('file_1'), 'mine.txt')",
-                                    "open('../registry.json', 'w').write('{}')"])
-def test_stored_items_are_not_deleted_by_scripts(ws, change):
+@pytest.mark.parametrize("change, said", [("os.remove('stored.txt')", "files(delete) asks the user"),
+                                          ("os.rename('stored.txt', 'mine.txt')", "files(rename) moves one"),
+                                          ("open('../.zen/registry.json', 'w').write('{}')", "off limits")])
+def test_stored_files_are_not_deleted_by_scripts(ws, change, said):
     fid = ws.add_bytes("file", b"stored", "txt", name="stored.txt")
     r = run_python(ws, f"import os\n{change}")
-    assert r.status == "invalid_arguments" and "deleting needs the user's approval" in r.result["errors"]
+    assert r.status == "invalid_arguments" and said in r.result["errors"]
     assert ws.path(fid).read_bytes() == b"stored" and fid in ws.ids()
 
 

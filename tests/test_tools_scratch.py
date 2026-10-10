@@ -37,19 +37,20 @@ def test_fix_code_changes_only_those_lines_and_runs_again(ws):
 
 
 def test_running_again_updates_what_the_task_made_instead_of_adding_copies(ws):
-    """Measured: 3 runs of one script left 3 copies of its chart and its table in the workspace."""
+    """Measured: 3 runs of one script left 3 copies of its chart and its table in the workspace. A path is one
+    file: written again - in this task or a later one - it is that file's new version."""
     scratch = Scratch()
     draws = ("from PIL import Image\nImage.new('RGB', ({w}, 20)).save('chart.png')\n"
              "open('out.csv', 'w').write('a,b\\n{w},2\\n')\n")
     first = run_code(ws, scratch, draws.format(w=10))
     again = run_code(ws, scratch, draws.format(w=30))
-    assert [f["id"] for f in again.result["files"]] == [f["id"] for f in first.result["files"]]
+    assert [f["id"] for f in again.artifact["files"]] == [f["id"] for f in first.artifact["files"]]
     assert all(f.get("updated") for f in again.result["files"])
-    image, table = (f["id"] for f in again.result["files"])
+    image, table = (f["id"] for f in again.artifact["files"])
     assert ws.ids() == [image, table] and ws.entry(image)["meta"]["width"] == 30
     assert ws.table(table)["a"].tolist() == [30] and ws.entry(table)["meta"]["from"] == "run_python"
-    other = run_code(ws, Scratch(), draws.format(w=40))  # another task: its own new items
-    assert {f["id"] for f in other.result["files"]}.isdisjoint({image, table})
+    later = run_code(ws, Scratch(), draws.format(w=40))  # another task: the same files, their next versions
+    assert [f["id"] for f in later.artifact["files"]] == [image, table] and len(ws.versions(image)) == 2
 
 
 def test_a_program_that_asks_is_run_with_typed_input(ws):
@@ -65,7 +66,7 @@ def test_a_program_that_asks_is_run_with_typed_input(ws):
     again = fix_code(ws, scratch, 5, 5, "        print('Got it!')")  # the same typed input again
     assert again.status == "ok" and "Got it!" in again.result["output"]
     from app.tools.scratch import facts
-    assert "Run with typed input: 3 line(s) (3, 9, 7)" in facts(ws, scratch, "game.py", "file_1", [])
+    assert "Run with typed input: 3 line(s) (3, 9, 7)" in facts(ws, scratch, "game.py", [])
 
 
 def test_fix_code_says_what_lines_exist(ws):

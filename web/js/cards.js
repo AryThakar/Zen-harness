@@ -290,7 +290,7 @@ export function codeCard(a) {
       const item = { id: f.id, kind: f.id.startsWith("data_") ? "table" : "file", name: f.path };
       return canView(item) ? h("button", { class: "tag", type: "button", onclick: () => openItem(item) }, f.path)
         : f.id.startsWith("file_") ? h("a", { class: "tag", href: itemUrl(f.id), download: f.path }, `${f.path} ↓`)
-        : h("span", { class: "tag" }, `${f.path} → ${f.id}`);
+        : h("span", { class: "tag" }, f.path);
     })));
   }
   return el;

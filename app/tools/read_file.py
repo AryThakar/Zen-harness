@@ -84,7 +84,7 @@ def _not_text(ws: Workspace, item: str, e: dict, tool: str = "files") -> dict:
     meta = e.get("meta", {})
     if e["kind"] == "image":
         size = f" ({meta['width']}x{meta['height']})" if meta.get("width") else ""
-        look = (f" view_image(image='{item}', question=...) looks at it and answers what it shows or says."
+        look = (f" view_image(image='{e['name']}', question=...) looks at it and answers what it shows or says."
                 if tool == "files" else "")
         return {"kind": "image", "note": f"An image{size}: it has no text to read.{look}"}
     if e["kind"] == "table":
@@ -92,7 +92,7 @@ def _not_text(ws: Workspace, item: str, e: dict, tool: str = "files") -> dict:
         return {"kind": "table", "rows": e["rows"], "columns": list(map(str, head.columns)),
                 "first_rows": head.astype(object).where(head.notna(), None).values.tolist(),
                 "note": f"A table: numbers, charts and models come from the data tools (main: analyze_or_code); a "
-                        f"script reads it with table('{item}')."}
+                        f"script reads it with table('{e['name']}')."}
     return {"kind": e["kind"], **{k: v for k, v in meta.items() if isinstance(v, (str, int, float))}}
 
 

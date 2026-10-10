@@ -26,7 +26,7 @@ from app.tools.reports import DATA_SECTIONS, assemble
 from app.tools.scratch import SECTIONS, Scratch
 from app.tools.scratch import save as save_file
 from app.tools.vision import prepare
-from app.tools.workspace import ITEM_REF
+from app.tools.workspace import ITEM_REF, present
 
 from ..context import IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_tool_results
 from ..prompts import FIX_FINISH, HELPER_CUT_OFF, NO_CALL, PICTURES, STEPS_LEFT
@@ -97,7 +97,8 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     table = table if table and table in ctx.ws.ids("table") else None
     given = ((_given_file(ctx, file) if file and profile.saves_code else "")
              + (_table_report(ctx, table) if table else ""))
-    opening = f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given + f"Your task: {task}"
+    # A report or a task written in the first design's words may name files by key: by path, as everywhere.
+    opening = present(ctx.ws, f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + given + f"Your task: {task}")
     messages: list[dict] = [{"role": "user", "content": opening}]
     named = _task_images(ctx, task) if sees else []
     if named:  # on the opening itself: one user turn, not two in a row
@@ -181,7 +182,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                     trace.not_run += 1  # arguments that were not JSON
                 if call["name"] == "read_file" and result.result.get("kind") == "image":
                     read.append(result.result["file"])
-            content = result.for_model()
+            content = result.for_model(lambda body: present(ctx.ws, body))
             messages.append({"role": "tool", "tool_call_id": call["id"], "name": call["name"],
                              "content": content, "is_error": result.status not in ("ok", "partial")})
             progress({"type": "worker_result", "worker": profile.name, "name": call["name"],
@@ -232,12 +233,13 @@ def _pictures(ctx: ToolContext, items: list[str], kind: str) -> dict:
             try:
                 data, mime = prepare(ctx.ws.path(item).read_bytes())
             except ToolError:
-                names.append(f"{item} ({e['name']}{size}, not a readable image)")
+                names.append(f"{e['name']} ({size.lstrip(', ')}, not a readable image)" if size
+                             else f"{e['name']} (not a readable image)")
                 continue
             images.append({"mime": mime, "data": base64.b64encode(data).decode()})
-            names.append(f"{item} ({e['name']}{size})")
+            names.append(f"{e['name']} ({size.lstrip(', ')})" if size else e["name"])
         else:
-            names.append(f"{item} ({e['name']}{size}, not shown)")
+            names.append(f"{e['name']} (not shown)")
     return {"role": "user", "content": PICTURES[kind].format(names=", ".join(names)), "images": images}
 
 
@@ -260,7 +262,7 @@ def _table_report(ctx: ToolContext, table: str) -> str:
     report = ctx.ws.report(table)
     if not report:
         return ""
-    return (f"The table's latest report (from an earlier task on {table}) - use its decisions and the cleaned table "
+    return (f"The table's latest report (from an earlier task on {ctx.ws.label(table)}) - use its decisions and the cleaned table "
             f"it names instead of redoing them:\n{report}\n\n")
 
 
@@ -276,10 +278,10 @@ def program_problem(ws, file: str) -> str | None:
             "e.g. 'make_memo.py'.")
     e = ws.entry(item)
     if e["kind"] == "table":
-        return f"{name} is a table ({item}): give it as data, not file."
+        return f"{e['name']} is a table: give it as data, not file."
     if e["kind"] != "file" or not is_code(e["name"]):
-        return (f"{name} is {item}, not a program: name it in the task for the helper to read or look at. file is "
-                "the program to keep or change.")
+        return (f"{e['name']} is {'an image' if e['kind'] == 'image' else 'not code'}, not a program: name it in the "
+                "task for the helper to read or look at. file is the program to keep or change.")
     return None
 
 
@@ -295,7 +297,7 @@ def _given_file(ctx: ToolContext, file: str) -> str:
     ctx.scratch.code = ctx.ws.path(item).read_text("utf-8", errors="replace")
     ctx.scratch.name, ctx.scratch.item = e["name"], item
     report = ctx.ws.report(item)
-    return (f"The file to work on: {e['name']} ({item}), {len(ctx.scratch.code.splitlines())} lines, already in "
+    return (f"The file to work on: {e['name']}, {len(ctx.scratch.code.splitlines())} lines, already in "
             "your scratch script: change only what the task asks, with fix_code, and keep it under the same name "
             "with save_code.\n" + (f"Its latest report:\n{report}\n\n" if report else "It has no report yet.\n\n"))
 
@@ -476,15 +478,13 @@ def _keep_report(ctx: ToolContext, profile: Profile, result: dict, trace: Trace,
     from app.tools.files import index_report
     first = (task.strip().splitlines() or ["A task on " + target])[0]
     made = [i for i in ctx.ws.ids("table") if i not in trace.existing]
-    facts = [f"Table: {ctx.ws.entry(target)['name']} ({target}), report saved {datetime.now():%Y-%m-%d %H:%M}"]
+    facts = [f"Table: {ctx.ws.label(target)}, report saved {datetime.now():%Y-%m-%d %H:%M}"]
     if made:
-        facts.append("Tables made: " + ", ".join(
-            f"{i} ({ctx.ws.entry(i)['name']}" + (f", from {ctx.ws.entry(i)['parent']})" if ctx.ws.entry(i).get("parent")
-                                                  else ")") for i in made))
+        facts.append("Tables made: " + ", ".join(ctx.ws.describe(i) for i in made))
     if trace.charts:
         facts.append(f"Charts shown: {trace.charts}")
     if trace.saved:
-        facts.append(f"Program kept: {trace.saved['name']} ({trace.saved['file']})")
+        facts.append(f"Program kept: {trace.saved['name']}")
     facts.append(_trail(trace))
     sections = {"question": first if len(first) <= TITLE_CHARS else first[:TITLE_CHARS].rsplit(" ", 1)[0] + " ...",
                 "data_used": result.get("data_used") or "As in the facts below.", "method": result.get("method", ""),

@@ -589,15 +589,15 @@ def fetch_table(ws, looked: dict, *, http: httpx.Client | None = None, resolve=N
     if suffix not in TABLE_SUFFIXES:
         suffix = TABLE_TYPES.get(ctype) or ".csv"
     name = looked["name"]
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / (name if name.lower().endswith(suffix) else name + suffix)
-        path.write_bytes(body)
-        data = ws.add_file(path)
+    name = name if name.lower().endswith(suffix) else name + suffix
+    put = ws.put(name, body, kind="table", by="user", dedupe=True)  # the user approved it: their file
+    data = put.key
     df = ws.table(data)
     preview = df.head(8).astype(object).where(df.head(8).notna(), None)
-    return ok({"data": data, "name": name, "rows": len(df), "columns": list(map(str, df.columns)),
-               "source": final, "note": f"Saved as {data}: give analyze_or_code a task on {data}."},
-              {"type": "table", "title": f"{data}: {name}", "columns": list(map(str, df.columns)),
+    saved = f"Already in the workspace as {data} (the same file)" if put.existed else f"Saved as {data}"
+    return ok({"data": data, "rows": len(df), "columns": list(map(str, df.columns)),
+               "source": final, "note": f"{saved}: give analyze_or_code a task on {data}."},
+              {"type": "table", "title": put.path, "columns": list(map(str, df.columns)),
                "rows": preview.values.tolist(), "note": f"{len(df):,} rows from {urlsplit(final).hostname}"})
 
 
@@ -612,8 +612,9 @@ def fetch_file(ws, index, looked: dict, *, http: httpx.Client | None = None, res
         kept = store_file(ws, index, path)
     item = kept.get("id") or kept.get("file")
     use = {"table": f"give analyze_or_code a task on {item}", "document": "ask_knowledge can search it",
-           "file": f"analyze_or_code's scripts can open it as '{item}'"}[kept["kind"]]
-    return ok({**kept, "bytes": len(body), "source": final, "note": f"Saved as {item}: {use}."})
+           "image": "view_image can look at it", "file": f"analyze_or_code's scripts can open it as '{item}'"}[kept["kind"]]
+    saved = f"Already in the workspace as {item} (the same file)" if kept.get("same") else f"Saved as {item}"
+    return ok({**kept, "bytes": len(body), "source": final, "note": f"{saved}: {use}."})
 
 
 def _download(looked: dict, limit: int, http, resolve) -> tuple[bytes, str, str]:

@@ -276,8 +276,9 @@ def list_items(ws_id: str, request: Request) -> list[dict]:
         meta = {k: v for k, v in e.get("meta", {}).items() if k in meta_keys and not isinstance(v, (dict, list))}
         size = {"rows": e["rows"], "columns": len(e.get("columns", []))} if "rows" in e else {"bytes": e.get("bytes")}
         report = {"report": e["report"]["line"]} if e.get("report") else {}  # what a worker did with it
-        out.append({"id": i, "kind": e["kind"], "name": e.get("name"), "parent": e.get("parent"), **size, **meta,
-                    **report})
+        kept = {"versions": len(ws.versions(i))} if e["kind"] != "note" else {}
+        out.append({"id": i, "kind": e["kind"], "name": e.get("name"), "parent": e.get("parent"), "by": e.get("by"),
+                    "bytes": e.get("bytes"), **size, **meta, **report, **kept})
     return out
 
 
@@ -300,11 +301,12 @@ def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
                                         f"The file is larger than {limit // (1 << 20)} MB.")
                 out.write(chunk)
         try:
-            kept = files_tool.store_file(ws, index, path)
+            kept = files_tool.store_file(ws, index, path, by="user")
         except ToolError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
-    if kept.get("kind") in ("image", "table"):
-        _store(request).sync_items(ws_id)  # searchable by what it shows or holds
+    if kept.get("same"):  # the same bytes are here already: that file, not a copy
+        kept["note"] = f"Already in this workspace as {kept['name']}."
+    _store(request).sync_items(ws_id)  # searchable by what it shows, holds or says
     return kept
 
 
@@ -318,16 +320,39 @@ def _item(request: Request, ws_id: str, item_id: str):
 
 @router.get("/workspaces/{ws_id}/items/{item_id}/file")
 def item_file(ws_id: str, item_id: str, request: Request) -> FileResponse:
+    """The file itself (a table: its CSV or Excel file)."""
     ws = _item(request, ws_id, item_id)
     entry = ws.entry(item_id)
-    if "file" not in entry:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "This item has no file (a table: use /rows).")
     path = ws.path(item_id)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This file is missing.")
     mime = filetypes.IMAGE_MIME.get(path.suffix.lower())
     if mime:
         return FileResponse(path, media_type=mime, headers=SAFE)
-    return FileResponse(path, filename=entry.get("name") or path.name, media_type="application/octet-stream",
-                        headers=SAFE)
+    return FileResponse(path, filename=Path(entry.get("name") or path.name).name,
+                        media_type="application/octet-stream", headers=SAFE)
+
+
+@router.get("/workspaces/{ws_id}/items/{item_id}/versions")
+def item_versions(ws_id: str, item_id: str, request: Request) -> list[dict]:
+    """The file's earlier versions, newest first (kept before each change, the last 10)."""
+    return _item(request, ws_id, item_id).versions(item_id)
+
+
+class RestoreBody(BaseModel):
+    version: str = Field(max_length=80, description="a version from /versions")
+
+
+@router.post("/workspaces/{ws_id}/items/{item_id}/restore")
+def restore_version(ws_id: str, item_id: str, body: RestoreBody, request: Request) -> dict:
+    """An earlier version made the current one; the current one is kept as a version (so a restore can be undone)."""
+    ws = _item(request, ws_id, item_id)
+    try:
+        put = ws.restore(item_id, body.version)
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, exc.message) from exc
+    _store(request).sync_items(ws_id)  # its search passages follow its content
+    return {"id": put.key, "name": put.path, "versions": len(ws.versions(item_id))}
 
 
 @router.get("/workspaces/{ws_id}/items/{item_id}/rows")
@@ -380,15 +405,14 @@ def run_file(ws_id: str, item_id: str, body: RunBody, request: Request) -> dict:
     if e["kind"] != "file" or not e["name"].lower().endswith(".py"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only Python files run here.")
     code = ws.path(item_id).read_text("utf-8", errors="replace")
-    earlier = e.get("meta", {}).get("run_outputs") or {}
-    result = sandbox.ENGINE.run(ws, code, body.timeout, reuse=earlier, stdin=body.input)
-    made = {f["path"]: f["id"] for f in result.result.get("files", []) if f.get("id")}
-    for item in made.values():
-        ws.set_parent(item, item_id)
+    result = sandbox.ENGINE.run(ws, code, body.timeout, stdin=body.input)
+    made = (result.artifact or {}).get("files", [])
+    for f in made:
+        if not f.get("updated"):
+            ws.set_parent(f["id"], item_id)
     if made:
-        ws.set_meta(item_id, "run_outputs", {**earlier, **made})
         _store(request).sync_items(ws_id)  # pictures it drew, tables it wrote: searchable now
-    return jsonable({"status": result.status, **result.result})
+    return jsonable({"status": result.status, **result.result, "files": made})
 
 
 # ---------------------------------------------------------------- web cards

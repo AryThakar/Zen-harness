@@ -1,6 +1,7 @@
 """query_data: exact numbers from the workspace tables with one read-only DuckDB query.
 
-Tables are queried by id (SELECT region, sum(amount) FROM data_2 GROUP BY region); a SELECT without
+Tables are queried by their file names (SELECT region, sum(amount) FROM "sales.csv" GROUP BY region - the
+quotes may be left off after FROM and JOIN); a SELECT without
 a table is the data helper's arithmetic (SELECT (1410 - 1250) / 1250 * 100 AS growth). The query is
 checked by app.tools.sql_guard (one SELECT, only workspace tables, no file or system functions)
 and runs on a connection with external access switched off, with a time limit. With save=true
@@ -18,6 +19,8 @@ from sqlglot import exp
 
 from app.tools import sql_guard
 
+import re
+
 from .core import ToolError, ToolResult, ok, tool
 from .workspace import Workspace
 
@@ -27,10 +30,11 @@ SAVED_ROWS = 5  # with save=true the model works with the new table's id; a few 
 
 @tool
 def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
-    """Run one SELECT over the workspace tables (named by id: data_1, data_2 ...)."""
+    """Run one SELECT over the workspace tables, named by their file names."""
     tables = set(ws.ids("table"))
     if not tables:
         raise ToolError("There are no tables yet; attach a file first.", invalid=False)
+    sql = by_key(ws, sql)
     con = duckdb.connect()
     try:
         used = sorted(_referenced(sql) & tables)
@@ -40,9 +44,10 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
         con.execute("SET lock_configuration = true")
         try:
             res = sql_guard.run(con, sql, allowed=tables)
-        except sql_guard.SqlRejected as exc:  # tables by id, with their names: the model maps 'sales' to its id
-            named = ", ".join(f"{t} ({ws.entry(t)['name']})" for t in sorted(tables))
-            raise ToolError(f"{exc} Name a table by its id - tables: {named}.", field="sql") from exc
+        except sql_guard.SqlRejected as exc:
+            named = ", ".join(f'"{ws.label(t)}"' for t in sorted(tables))
+            raise ToolError(f"{exc} Name a table by its file name, in double quotes - tables: {named}.",
+                            field="sql") from exc
         shown = SAVED_ROWS if save else MODEL_ROWS
         result = {"columns": res.columns, "rows": [_tidy(r) for r in res.rows[:shown]], "total_rows": res.total_rows}
         if res.total_rows > shown:
@@ -66,7 +71,7 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
     finally:
         con.close()
     artifact = {"type": "table", "title": "Query result", "columns": res.columns, "rows": [_tidy(r) for r in res.rows],
-                "sql": res.sql, **({"note": f"First {len(res.rows)} of {res.total_rows:,} rows"} if res.truncated else {})}
+                "sql": by_path(ws, res.sql), **({"note": f"First {len(res.rows)} of {res.total_rows:,} rows"} if res.truncated else {})}
     return ok(result, artifact)
 
 
@@ -82,6 +87,22 @@ def _significant(v: float, digits: int = 12) -> float:
     if v == 0 or not math.isfinite(v):
         return v
     return round(v, max(0, digits - 1 - math.floor(math.log10(abs(v)))))
+
+
+def by_key(ws: Workspace, sql: str) -> str:
+    """The query with each table's file name as the name DuckDB knows it by: "sales.csv" (or `sales.csv`, [sales.csv])
+    anywhere, and 'sales.csv' or a bare sales.csv right after FROM or JOIN."""
+    for key in sorted(ws.ids("table"), key=lambda k: -len(ws.label(k))):
+        name = re.escape(ws.label(key))
+        sql = re.sub(rf'"{name}"|`{name}`|\[{name}\]', key, sql, flags=re.I)
+        sql = re.sub(rf"(\b(?:FROM|JOIN)\s+)(?:'{name}'|{name}(?![\w./-]))", rf"\g<1>{key}", sql, flags=re.I)
+    return sql
+
+
+def by_path(ws: Workspace, sql: str) -> str:
+    """The query as the user and the model write it: each table by its file name, quoted."""
+    tables = {k: ws.label(k) for k in ws.ids("table")}
+    return re.sub(r"\b(data_\d+)\b", lambda m: f'"{tables[m[1]]}"' if m[1] in tables else m[0], sql)
 
 
 def _referenced(sql: str) -> set[str]:

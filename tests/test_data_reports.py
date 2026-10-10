@@ -50,11 +50,11 @@ def test_the_report_is_kept_on_the_table_and_main_gets_the_results(ctx):
     kept = ctx.ws.report("data_1")
     assert kept == out["report"] and kept.startswith("# Which region sells most?\n")
     assert "## Data used and cleaning decisions\ndata_1 as it is" in kept and "## Results\nSouth sells most" in kept
-    assert "- Table: sales.csv (data_1), report saved" in kept and "inspect_data" in kept.split("## Facts")[1]
+    assert "- Table: sales.csv, report saved" in kept and "inspect_data" in kept.split("## Facts")[1]
     card = next(a for a in ctx.seen if a["type"] == "report")
     assert card["table"] == "data_1" and card["name"] == "sales.csv" and card["report"] == kept
     assert ctx.ws.lines()["data_1"].endswith("| Which region sells most?")
-    assert search_files(ctx.index, "region sells most").result["passages"][0]["source"] == "the report on sales.csv (data_1)"
+    assert search_files(ctx.index, "region sells most").result["passages"][0]["source"] == "the report on sales.csv"
 
 
 def test_the_next_task_on_the_table_starts_from_its_report(ctx):
@@ -64,7 +64,7 @@ def test_the_next_task_on_the_table_starts_from_its_report(ctx):
     model = ScriptedProvider([report(answer="2 regions.", method="Read the report.")])
     run_worker(model, ENGINEER, "How many regions?", ctx, table="data_1")
     opening = model.requests[0]["messages"][0]["content"]
-    assert "The table's latest report (from an earlier task on data_1)" in opening and "Total row was already removed" in opening
+    assert "The table's latest report (from an earlier task on sales.csv)" in opening and "Total row was already removed" in opening
     assert ctx.ws.report("data_1").startswith("# How many regions?")  # the latest only
 
 
@@ -88,7 +88,7 @@ def test_tables_made_in_the_task_are_named_in_the_facts(ctx):
                               turn(call("query_data", sql="SELECT * FROM data_1 WHERE amount > 160", save=True)),
                               report(data_used="Use data_2: the rows over 160.", answer="1 row is over 160.")])
     out = run_worker(model, ENGINEER, "rows over 160", ctx, table="data_1")
-    assert "- Tables made: data_2 (" in out["report"] and "from data_1)" in out["report"]
+    assert "- Tables made: sales-query.csv (1 rows, from sales.csv)" in out["report"]
 
 
 def test_a_task_that_touches_no_table_keeps_no_report(ctx):

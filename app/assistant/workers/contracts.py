@@ -75,7 +75,7 @@ class WorkResult(_Out):
     method: str = Field(description="what you did, in order, in plain words: the tools, queries and scripts")
     caveats: str = Field(description="limits of the data or the method, and what to look at next")
     data_used: str | None = Field(None, description="when you used tables: which, and the cleaning decisions, e.g. "
-                                                    "'data_4: data_1 with the Total row removed, dates day-first'")
+                                                    "'sales-cleaned.csv: sales.csv with the Total row removed, dates day-first'")
 
 
 class SaveCodeIn(BaseModel):
@@ -186,7 +186,7 @@ DELEGATES = {
                      "a column, customer segments, unusual days, items bought together, themes in text - and for "
                      "programs: a script it runs and tests, a simulation, a game, a conversion, editing a picture, a "
                      "plot of a formula, a file in another language. Not for numbers typed in the chat (calculate), "
-                     "documents - Word, slides, Markdown (files, mode='write', with the picture ids of its charts) - or "
+                     "documents - Word, slides, Markdown (files, mode='write', with its charts' pictures by name) - or "
                      "anything on the web: it has no internet, so a web file is brought in first (files, "
                      "mode='download').",
                              "Analyst & coder", ("Working on it", "Worked on it")),

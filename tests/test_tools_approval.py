@@ -160,14 +160,15 @@ def test_an_allowed_download_is_kept_by_what_it_is(ws, index):
 def test_delete_asks_then_removes_items_and_their_passages(ws, index):
     note = save_note(ws, "Plan", "Forecast six months ahead.", index=index).result["note"]
     table = ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    with pytest.raises(ToolError, match="No item file_9"):
+    with pytest.raises(ToolError, match="No file file_9"):
         approval.delete_request(ws, ["file_9"])
     ask = approval.delete_request(ws, [note, table, note]).artifact
     assert ask["options"] == ["Delete", "Cancel"] and ask["approval"]["items"] == [note, table]
     assert "can't be undone" in ask["question"] and ws.ids() == [note, table]  # nothing deleted yet
     result, _ = approval.carry_out(ws, index, ask["approval"], ask["options"], "Delete")
     assert result["deleted"] == [note, table] and ws.ids() == []
-    assert not (ws.root / f"{table}.parquet").exists() and not search_files(index, "forecast").result.get("passages")
+    assert not (ws.files / "t.csv").exists() and not (ws.zen / "cache" / f"{table}.parquet").exists()
+    assert not search_files(index, "forecast").result.get("passages")
 
 
 # ---------------------------------------------------------------- the turn pauses for it

@@ -271,3 +271,18 @@ Each phase ends with its tests and its acceptance, and is committed before the n
 Several users or accounts, cloud sync, voice, a phone app, a container sandbox (run's engine interface is
 ready for one), new helper roles, editing pictures with the image model, fine-tuning, and a library door
 to the analysis tools from scripts (only if phase 5 shows the tools are still skipped).
+
+## 8. Progress
+
+- **Phase 1 - files: done (2026-10-10).** One folder per workspace (files/ by path, .zen/ for the registry,
+  typed table copies, versions, reports, notes); one write path (Workspace.put / adopt) with unique paths,
+  identical uploads recognised, atomic writes and the last 10 versions; tables are their CSV or Excel files;
+  scripts run in the folder and open files by name, change the assistant's files (version kept) and never
+  the user's; every result a model reads names files by path (workspace.present, at ToolResult.for_model -
+  one place for every tool); SQL takes file names; one index sync for documents, pictures and tables, also
+  before a search; the file panel shows paths, who brought a file, its earlier versions and a restore.
+  Tests: 586 pass (tests/test_workspace_files.py checks one path for every reader, duplicates, versions, the
+  index following the folder, no key in any result a model reads, and the move of the first layout). The
+  four real workspaces were moved (99 files, none lost; backup in claude-cloud-backups/assistant-before-phase1).
+  Moved to phase 4: naming a pasted picture from its caption - it needs the vision model, and its caption is
+  what find searches.
