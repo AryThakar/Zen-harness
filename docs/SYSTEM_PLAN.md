@@ -147,11 +147,25 @@ policy to measure. ("Try again, answer quickly" after a reply that thought until
 - One coherent system (2026-10-10, commit 816fdab): the data analyst and the coder merged into one helper,
   the analyst-programmer (analyze_or_code: task, data, file; finish + save_code); judgment guards explain and
   take confirm: true, safety guards never do; repeats return their earlier result; every field described.
-  528 tests pass. On the 26B, stopped by the user after 2 of the 10 dev jobs: both passed (expense_memo in
-  617 s against 221 s before - to look at in its trace).
+  528 tests pass. (expense_memo took 617 s: main put the table in file=, read as a program to keep.)
+- The full read (2026-10-10, commit 200a104, docs/SYSTEM_MAP.md): every file read for what each model can send
+  and what the code does with it. A helper acts or finishes (llama-server's tool_choice 'required': no prose
+  results, nothing parsed out of prose, nothing repaired - repairs.py deleted); file= is a program, else refused
+  with the field that takes it; one definition of file types (filetypes.py) for nine lists that disagreed;
+  messages naming tools that don't exist fixed; one owner for a call written as JSON; tests/test_tool_contracts.py
+  checks every tool the same way. 560 tests pass.
+  - Acceptance jobs on it: dev 7/10 (bench/combos_dev.md; expense_memo 153 s, on the designed path). The three
+    failures were the model's choices: a checklist and a gantt handed to the helper instead of files() and
+    draw_diagram (the user still got both); a one-heading, one-slide deck; the rupee total without the USD one.
+  - Held out, run once: 9/10 (bench/combos_holdout.md). The failure was a design gap, fixed generally after: main
+    changed a crashing script with files(update), left it broken, and said what it "now prints" without a run. A
+    program written with files() now says it was not run and what runs it, and Python is parsed (the broken line
+    named). The same job after the fix (bench/combos_holdout_only.md, not counted): main fixed it, read "not
+    run", had analyze_or_code run it - the output from a real run.
+  - A rule placed where the numbers are written: the helper keeps the data's own unit (it wrote $ for sales with
+    no currency, and main repeated it).
 
-Next, on the 26B: the dev jobs on the merged design (all 10, read each trace), then the held-out half once;
-then the parked findings (section 14).
+Next: the parked findings (section 14), measured on the 26B as limits unless one shows a design gap.
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 
