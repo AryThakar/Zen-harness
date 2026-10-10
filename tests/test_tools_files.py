@@ -196,3 +196,12 @@ def test_text_is_never_written_into_a_binary_format(ws, index):
     assert run(ws, index, "rename", name=note, new_name="notes.pdf").status == "invalid_arguments"
     assert run(ws, index, "write", name="plan.docx", content="# Plan").status == "ok"  # built from Markdown
     assert ws.path(pdf).read_bytes() == b"%PDF-1.4 ..."
+
+
+def test_a_program_main_writes_is_parsed_and_said_to_be_unrun(ws, index):
+    """Measured on the 26B: main fixed stats.py with files(update), left it broken, and said what it 'now prints'."""
+    good = files(ws, index, "write", name="mean.py", content="print(sum([1, 2]) / 2)\n").result
+    assert "not run" in good["not_run"] and "file='mean.py'" in good["not_run"] and "broken" not in good
+    bad = files(ws, index, "update", name="mean.py", content="def mean(values):\ndef mean(values):\n    return 1\n").result
+    assert bad["broken"].startswith("mean.py does not parse") and "line 2" in bad["broken"]
+    assert "not_run" not in files(ws, index, "write", name="notes.md", content="# Notes\n").result

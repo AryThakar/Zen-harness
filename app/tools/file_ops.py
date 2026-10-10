@@ -27,7 +27,7 @@ from pathlib import Path, PurePath
 
 from . import approval, read_file
 from .core import ToolError, ToolResult, ok, tool
-from .filetypes import BINARY, FROM_MARKDOWN
+from .filetypes import BINARY, FROM_MARKDOWN, is_code, suffix
 from .search_index import SearchIndex
 from .workspace import Workspace
 
@@ -174,7 +174,7 @@ def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str
     item = kept.get("id") or kept.get("file")
     ws.set_meta(item, "by", "assistant")
     return ok({"file": item, "name": name, "kind": kept["kind"], "bytes": len(data),
-               "note": "Saved; the user sees it in the chat."}, _card(ws, item, "written"))
+               "note": "Saved; the user sees it in the chat.", **written_code(name, content)}, _card(ws, item, "written"))
 
 
 def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: str) -> ToolResult:
@@ -185,8 +185,25 @@ def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: s
     ws.replace_bytes(item, data)
     if index is not None and "passages" in ws.entry(item).get("meta", {}):
         reindex(ws, index, item)
-    return ok({"file": item, "name": name, "bytes": len(data), "note": "Updated; the user sees it in the chat."},
-              _card(ws, item, "updated"))
+    return ok({"file": item, "name": name, "bytes": len(data), "note": "Updated; the user sees it in the chat.",
+               **written_code(name, content)}, _card(ws, item, "updated"))
+
+
+def written_code(name: str, content: str) -> dict:
+    """For a program written or changed as text: it was not run - and, for Python, whether it still parses, with the
+    line where it breaks. Measured on the 26B: asked to fix a crashing stats.py and say what it prints, main
+    changed one line with files(update), left a second 'def mean(values):' in it, and answered 'It now prints:
+    mean reading: 15.1' - a run that never happened, of a file that still didn't run."""
+    if not is_code(name):
+        return {}
+    out = {"not_run": f"{name} was written, not run: analyze_or_code with file='{name}' runs and tests it - "
+                      "don't say what it prints before it has run."}
+    if suffix(name) == ".py":
+        try:
+            compile(content, name, "exec")
+        except SyntaxError as exc:
+            out["broken"] = f"{name} does not parse: {exc.msg} at line {exc.lineno}. Fix it before saying it works."
+    return out
 
 
 def made_by_assistant(entry: dict) -> bool:
