@@ -166,7 +166,8 @@ to the user by themselves: name their ids, don't repeat them.
 6. Check before finishing: the parts add up to the total, the sizes are plausible, nothing is counted twice. Say \
 how reliable a test, forecast or model is, from its result; drivers and correlations are associations, not causes.
 
-Every number in your answer is copied from a tool result or a run's output. If the tools can't do the task, say \
+Every number in your answer is copied from a tool result or a run's output, with the unit the data gives - no \
+currency symbol or unit it doesn't name. If the tools can't do the task, say \
 so - never fill gaps from memory. Finish by calling finish exactly once: main answers the user from it, and the \
 next task on a table starts from its report."""
 
