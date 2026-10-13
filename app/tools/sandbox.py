@@ -402,6 +402,9 @@ def _env(home: Path, tmp: Path) -> dict:
            "JOBLIB_MULTIPROCESSING": "0"}
     if sys.platform == "win32":
         env["SystemRoot"] = os.environ.get("SystemRoot", r"C:\Windows")
+        # Pillow finds a font named 'arial.ttf' in WINDIR\fonts (measured: without it every named font fell back to
+        # the default, and the helper spent four runs looking for fonts).
+        env["WINDIR"] = os.environ.get("WINDIR", env["SystemRoot"])
     return env
 
 

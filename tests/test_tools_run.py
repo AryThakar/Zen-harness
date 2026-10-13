@@ -113,3 +113,12 @@ def test_around_marks_the_line_near_the_edges():
     code = "\n".join(f"line {n}" for n in range(1, 21))
     assert around(code, 1).splitlines()[0] == ">> 1| line 1" and len(around(code, 1).splitlines()) == 4
     assert around(code, 20).splitlines()[-1] == ">> 20| line 20"
+
+
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="Windows fonts")
+def test_a_font_named_by_file_name_is_found(ws, index):
+    """Measured: every named font fell back to the default (the run had no WINDIR) and the helper spent four runs
+    looking for fonts."""
+    write(ws, index, "font.py", "from PIL import ImageFont\nprint(ImageFont.truetype('arial.ttf', 20).getname()[0])\n")
+    r = run(ws, index, "font.py")
+    assert r.status == "ok" and r.result["output"].strip() == "Arial", r.result
