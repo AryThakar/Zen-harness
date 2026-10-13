@@ -76,6 +76,76 @@ CHROME = re.compile(r"\b[\w-]*(?:nav|menu|sidebar|breadcrumb|related|footer|cook
                     r"promo|newsletter|subscribe|skip-link|toc)[\w-]*\b")
 
 
+# ---------------------------------------------------------------- what this chat has read
+
+# A helper remembers nothing between tasks, so the chat does, for a while: a page read in it comes back from memory
+# (same address, same find words), and a site that refused is refused at once with its earlier reason. Measured:
+# after leetcode.com refused (a bot check), the next two tasks of the same chat went to leetcode.com again and read
+# algo.monster again - minutes each. In memory only: a restart forgets, and a page is read afresh after
+# PAGE_MEMORY_HOURS.
+PAGE_MEMORY_HOURS = 12
+PAGES_KEPT = 40  # per chat
+_seen: dict[str, dict] = {}
+_seen_lock = threading.Lock()
+
+
+def _chat_memory(chat: str) -> dict:
+    now = time.time()
+    with _seen_lock:
+        mem = _seen.setdefault(chat, {"pages": {}, "refused": {}})
+        for kind in ("pages", "refused"):
+            mem[kind] = {k: v for k, v in mem[kind].items() if now - v[0] < PAGE_MEMORY_HOURS * 3600}
+        return mem
+
+
+def remembered_page(chat: str, url: str, find: str | None) -> ToolResult | None:
+    """This chat's earlier read of the page (with the same find words), or None."""
+    got = _chat_memory(chat)["pages"].get((url.strip(), (find or "").strip().lower()))
+    if not got:
+        return None
+    when, result, artifact = got
+    note = f"Read earlier in this chat ({time.strftime('%H:%M', time.localtime(when))}): the same page, from memory."
+    return ToolResult("ok", {**result, "note": " ".join(filter(None, [note, result.get("note")]))}, artifact)
+
+
+def refused_site(chat: str, url: str) -> ToolResult | None:
+    """A site that refused this chat earlier: refused again at once, with its reason - or None."""
+    host = (urlsplit(url.strip()).hostname or "").lower().removeprefix("www.")
+    got = _chat_memory(chat)["refused"].get(host)
+    if not got:
+        return None
+    when, why = got
+    return ToolResult("failed", {"error": {"message": (
+        f"{host} refused reading earlier in this chat ({time.strftime('%H:%M', time.localtime(when))}: "
+        f"{why.rstrip('.')}). Read another source."), "reason": "blocked"}})
+
+
+def remember_read(chat: str, url: str, find: str | None, result: ToolResult) -> None:
+    """A read's outcome kept for the chat: the page (read), or its site (refused)."""
+    mem = _chat_memory(chat)
+    with _seen_lock:
+        if result.status in ("ok", "partial"):
+            mem["pages"][(url.strip(), (find or "").strip().lower())] = (time.time(), result.result, result.artifact)
+            for old in sorted(mem["pages"], key=lambda k: mem["pages"][k][0])[:-PAGES_KEPT]:
+                mem["pages"].pop(old, None)
+        elif (result.result.get("error") or {}).get("reason") == "blocked":
+            host = (urlsplit(url.strip()).hostname or "").lower().removeprefix("www.")
+            mem["refused"][host] = (time.time(), str(result.result["error"].get("message", "it refused")))
+
+
+def seen_in_chat(chat: str) -> str:
+    """One line each for the web helper's opening: the pages this chat has read, and the sites that refused."""
+    mem = _chat_memory(chat)
+    pages = list(dict.fromkeys(f"{r.get('title') or url} ({url})" for (url, _), (_, r, _a) in mem["pages"].items()))
+    parts = []
+    if pages:
+        parts.append("Pages read earlier in this chat (read one again and it comes from memory): " + "; ".join(pages[-8:]))
+    if mem["refused"]:
+        parts.append("Sites that refused reading in this chat: " + "; ".join(
+            f"{h} ({why.split(':')[0][:60]})" for h, (_, why) in mem["refused"].items()))
+    return "\n".join(f"[{p}]" for p in parts)
+
+
 # ---------------------------------------------------------------- web_search
 
 RECENT = {"day": "d", "week": "w", "month": "m", "year": "y"}  # ddgs's timelimit codes
@@ -1180,7 +1250,7 @@ def _link_kind(url: str, ctype: str, body: bytes) -> str | None:
 
 
 def _document_text(url: str, kind: str, body: bytes) -> tuple[str | None, str]:
-    """A PDF, Word or PowerPoint file read by the one document reader (the knowledge helper's and read_file's)."""
+    """A PDF, Word or PowerPoint file read by the one document reader (the knowledge helper's and files(read)'s)."""
     from app.rag.extract import DocumentError, extract, lines
     name = PurePosixPath(urlsplit(url).path).name or "document"
     try:

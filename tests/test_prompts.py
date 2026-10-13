@@ -26,8 +26,7 @@ def _readers() -> dict[str, list[str]]:
     readers = {"main": (MAIN, main_specs)}
     for name, profile in workers.PROFILES.items():
         readers[name] = (profile.instructions,
-                         [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)]
-                         + ([workers._save_code_spec()] if profile.saves_code else []))
+                         [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)])
     return {name: [system] + [s["description"] for s in specs]
             + sorted({d for s in specs for d in _descriptions(s["input_schema"])})
             for name, (system, specs) in readers.items()}

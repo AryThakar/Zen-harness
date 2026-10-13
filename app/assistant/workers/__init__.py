@@ -5,24 +5,22 @@ own short instructions, only its own tools, a step limit - on the worker slot, a
 result instead of raw pages or tables - one shape for all three: answer (what main tells the user from),
 sources, report, files (id, name, kind of what it saved or made) and the briefing below.
 
-    web        web_search, read_webpage, ask_user                          -> submit_result: answer, sources (+ download links)
-    knowledge  search_files, recall, read_file                             -> submit_result: answer, sources
-    engineer   the 9 data tools, run_code, fix_code, read_file, ask_user,  -> finish: answer, method, caveats
-               save_code (keeps a program with its report)                    (+ the report kept on its table)
-(run_code / fix_code: the helper's one scratch script, written whole or changed by lines; it is new for every
-task - app/tools/scratch.py. Each helper's craft - how an expert works - is a short block in its own prompt, the
-user's design: a small model follows a few fundamentals it reads every task more reliably than it searches a
-guide. The prompts and the runner's nudges are in prompts.py.)
+    web        web_search, read_webpage, ask_user                          -> submit_result: answer, sources (page numbers)
+    knowledge  search_files, recall, files (find, read)                    -> submit_result: answer, sources
+    engineer   the 9 data tools, files (find, read, write, edit), run,     -> finish: answer, caveats
+               ask_user                                                       (+ the report kept on its table)
+(A program is a file in the workspace: written, run, edited - app/tools/run.py. Each helper's craft - how an
+expert works - is a short block in its own prompt, the user's design: a small model follows a few fundamentals it
+reads every task more reliably than it searches a guide. The prompts and the runner's nudges are in prompts.py.)
 
 A helper acts or finishes: every step requires a tool call and the last step offers only its finish, so a
 result always comes through the finish call - never read out of prose, never repaired. Results are checked by code
-before the main slot sees them (checks.py): a web answer must come from pages the worker read, with its file links
-in downloads, knowledge sources must be ones a tool returned, every number in the engineer's answer must appear in
-a tool result or a run, and a program it keeps must have a complete report and code that ran (or its report says
-it fails). On a failed check the worker gets one chance to fix it; after that the result goes back with the problem
-stated as a warning. main gets a kept
-program's report, never the code: the file itself goes to the UI as a card. Charts, tables and images from worker
-tools go straight to the UI, not through the summary.
+before the main slot sees them (checks.py): a web answer must come from pages the worker read, cited by their
+numbers, with its file links in downloads; knowledge sources must be ones a tool returned; every number in the
+engineer's answer must appear in a tool result or a run. On a failed check the worker gets one chance to fix it;
+after that the result goes back with the problem stated as a warning. Every helper's result is one envelope: what
+the model wrote (answer, caveats) and what the app saw (what ran, the files made or changed, pages read). Charts,
+tables, images and files go straight to the UI, not through the summary.
 
 Guards before a call (evidence.py) serve the model or protect the user: a repeat of a call that worked gets its
 earlier result back; one that failed is stopped with why and runs when the worker confirms it (confirm: true);
@@ -63,7 +61,7 @@ from ..registry import TOOLS, Tool, ToolContext
 from .checks import numbers_in, ungrounded_numbers  # noqa: F401 - used by main's checks
 from .contracts import BRIEF, DELEGATE_OF, DELEGATES, MAIN_DIRECT, PROFILES, Delegate  # noqa: F401
 from .evidence import Trace, _call_key  # noqa: F401 - Trace for tests, _call_key for main's checks
-from .runner import _pictures, _save_code_spec, _submit_spec, _table_report, program_problem, run_worker  # noqa: F401
+from .runner import _pictures, _submit_spec, _table_report, run_worker  # noqa: F401
 
 
 def delegate_tools(worker: Provider, progress: Callable[[dict], None] | None = None) -> dict[str, Tool]:
@@ -72,18 +70,13 @@ def delegate_tools(worker: Provider, progress: Callable[[dict], None] | None = N
         profile_name = d.profile
 
         def handler(ctx: ToolContext, args) -> ToolResult:
-            file = getattr(args, "file", None)
-            wrong = program_problem(ctx.ws, file) if file else None
-            if wrong:  # refused at main's call, with the field that takes it - not reinterpreted by the helper
-                return ToolResult("invalid_arguments", {"error": {"message": wrong, "field": "file"}})
+            named = [str(f) for f in getattr(args, "files", None) or []]
+            for f in named:  # a file that isn't there is said at main's call, with the closest names
+                ctx.ws.resolve(f, ("table", "image", "file"), field="files")
             task = getattr(args, "task", None) or args.question
-            if getattr(args, "data", None):
-                task += f"\n(The table to use: {args.data}.)"
-            out = run_worker(worker, PROFILES[profile_name], task, ctx, progress=progress,
-                             file=getattr(args, "file", None), table=getattr(args, "data", None))
-            status = out.pop("status")
-            if status != "ok":
-                return ToolResult("failed", {"error": {"message": f"The {profile_name} helper failed: {out.get('error')}"}})
+            out = run_worker(worker, PROFILES[profile_name], task, ctx, progress=progress, files=named)
+            ctx.trace = None  # done: a Stop from here on has no helper's work to keep (main._stopped)
+            out.pop("status")
             return ToolResult("partial" if out.get("warnings") else "ok", out)
         return Tool(name, d.description, d.input_model, handler, labels=d.labels)
     return {name: make(name, d) for name, d in DELEGATES.items()}

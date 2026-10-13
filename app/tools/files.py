@@ -161,26 +161,29 @@ def _picture_bytes(path: Path) -> bytes:
         return path.read_bytes()
 
 
-def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user") -> dict:
+def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user",
+               name: str | None = None) -> dict:
     """A file brought in (``by`` the user: an upload, a download) or written (by the assistant), kept by what it
     is through the workspace's one write path: a table (CSV, Excel) for the data tools, a document (PDF, Word,
     PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything else a file a
-    script can open. What the user brings and is already here, byte for byte, is that file ('same').
-    Raises ToolError if a table, image or document can't be read."""
+    script can open. What the user brings and is already here, byte for byte, is that file ('same'). ``name``: the
+    workspace path to keep it under (default: the file's own name). Raises ToolError if a table, image or document
+    can't be read."""
     path = Path(path)
     suffix = path.suffix.lower()
     dedupe = by == "user"
     if suffix in filetypes.DOCUMENT:
-        return {"kind": "document", **add_document(ws, index, path, by=by)}
+        return {"kind": "document", **add_document(ws, index, path, by=by, name=name)}
     kind = "table" if suffix in filetypes.TABLE else "image" if suffix in filetypes.IMAGE else "file"
-    put = ws.put(path.name, path.read_bytes(), kind=kind, by=by, dedupe=dedupe)
+    put = ws.put(name or path.name, path.read_bytes(), kind=kind, by=by, dedupe=dedupe)
     out = {"id": put.key, "kind": kind, "name": put.path, **({"same": True} if put.existed else {})}
     if kind == "table":
         out["rows"] = ws.entry(put.key)["rows"]
     return out
 
 
-def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user") -> dict:
+def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user",
+                 name: str | None = None) -> dict:
     """Keep and index a document; returns its key, path and size. Raises ToolError if it doesn't read."""
     path = Path(path)
     data = path.read_bytes()
@@ -188,7 +191,7 @@ def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, 
         doc = extract(path.name, data)
     except DocumentError as exc:
         raise ToolError(str(exc), invalid=False) from exc
-    put = ws.put(path.name, data, kind="file", by=by, dedupe=by == "user",
+    put = ws.put(name or path.name, data, kind="file", by=by, dedupe=by == "user",
                  meta={"title": doc.title, "kind": doc.kind, "pages": doc.pages, "words": doc.words})
     embedded = reindex(ws, index, put.key) if index is not None else True
     passages = ws.entry(put.key).get("meta", {}).get("passages", 0)

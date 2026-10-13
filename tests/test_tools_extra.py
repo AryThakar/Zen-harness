@@ -25,7 +25,7 @@ def test_calculate(expr, value):
     assert r.status == "ok" and r.result["result"] == pytest.approx(value)
 
 
-@pytest.mark.parametrize("expr", ["1 / 0", "__import__('os').getcwd()", "x + 1", "'a' * 3", "", "9 ** 9 ** 9"])
+@pytest.mark.parametrize("expr", ["1 / 0", "__import__('os').getcwd()", "foo(3)", "'a' * 3", "", "9 ** 9 ** 9"])
 def test_calculate_refuses(expr):
     assert calculate(expr).status == "invalid_arguments"
 

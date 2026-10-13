@@ -35,8 +35,7 @@ def tools_turn(*calls) -> ModelTurn:
     return ModelTurn(text="", tool_calls=list(calls), stop="tool_use")
 
 
-REPORT = {"answer": "South sells most.", "data_used": "data_1 as it is; no cleaning needed.",
-          "method": "Summed the amount per region with query_data.", "caveats": "Only the regions in this table."}
+REPORT = {"answer": "South sells most.", "caveats": "Only the regions in this table."}
 ENGINEER = PROFILES["engineer"]
 
 
@@ -101,7 +100,7 @@ def test_web_worker_answers_from_pages_it_read(ctx, fake_web):
     ])
     out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
     assert out == {"status": "ok", "worker": "web", "answer": "Rates rose by 0.25 points.",
-                   "sources": ["https://news.example.com/rates"]}
+                   "sources": ["https://news.example.com/rates"], "ran": "Ran web_search, read_webpage."}
     first = model.requests[0]
     assert {t["name"] for t in first["tools"]} == {"web_search", "read_webpage", "ask_user", "submit_result"}
     # the system prompt is the role's fixed instructions (cached across tasks); what changes is in the task
@@ -149,7 +148,7 @@ def test_a_second_bad_submission_returns_with_a_warning(ctx, fake_web):
     model = ScriptedProvider([submit(answer="Made up.", sources=["https://invented.example/"]),
                               submit(answer="Still made up.", sources=["https://invented.example/"])])
     out = run_worker(model, PROFILES["web"], "rates?", ctx)
-    assert out["answer"] == "Still made up." and "never found or read" in out["warnings"][0]
+    assert out["answer"] == "Still made up." and "is not a page you read" in out["warnings"][0]
 
 
 def test_the_web_helper_asks_the_user_in_place_when_the_task_is_unclear(ctx, fake_web):
@@ -204,7 +203,7 @@ def test_the_report_on_a_table_is_titled_by_the_task(ctx):
     """The title is the task's first line, written by the app: a report without one cost the 26B a step."""
     ctx.ws.add_table(pd.DataFrame({"roll": [1, 2, 3, 4, 5, 6]}), "rolls.csv")
     model = ScriptedProvider([report(answer="The die looks fair.")])
-    out = run_worker(model, ENGINEER, "Is the die fair?\nUse rolls.csv.", ctx, table="data_1")
+    out = run_worker(model, ENGINEER, "Is the die fair?\nUse rolls.csv.", ctx, files=["rolls.csv"])
     assert "warnings" not in out and out["report"].startswith("# Is the die fair?\n")
     assert len(model.requests) == 1
 
@@ -397,27 +396,27 @@ def test_an_incomplete_answer_comes_with_a_briefing(ctx, monkeypatch):
     ])
     out = run_worker(model, PROFILES["web"], "default port?", ctx)
     assert out["suggestion"] == "The project's README on GitHub may list it."
-    assert out["trail"].startswith("Ran web_search, read_webpage. Failed: read_webpage https://docs.example.com/a: "
-                                   "The page answered HTTP 503")
+    assert out["ran"].startswith("Ran web_search, read_webpage. Failed: read_webpage https://docs.example.com/a: "
+                                 "The page answered HTTP 503")
     page = {"url": "https://docs.example.com/b", "title": "B", "text": "Rates rose."}
     monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
                                                              lambda c, a: ok(dict(page))))
     clean = run_worker(ScriptedProvider([tools_turn(call("read_webpage", url=page["url"])),
                                          submit(answer="Rates rose.", sources=[page["url"]])]), PROFILES["web"], "x", ctx)
-    assert clean["answer"] == "Rates rose." and "trail" not in clean  # a complete answer needs no briefing
+    assert clean["answer"] == "Rates rose." and "warnings" not in clean and clean["ran"] == "Ran read_webpage."
 
 
 def test_any_worker_can_hand_a_question_to_the_user(ctx):
     ctx.ws.add_bytes("file", b"Leave: 24 days a year.", ".txt", "handbook_2024.txt")
     model = ScriptedProvider([
-        tools_turn(call("read_file", file="file_1")),
+        tools_turn(call("files", mode="read", name="handbook_2024.txt")),
         submit(answer="", question_for_user="Which year's handbook do you mean?", options=["2024", "2025"]),
     ])
     out = run_worker(model, PROFILES["knowledge"], "How many leave days?", ctx)
     assert out["question_for_user"] == "Which year's handbook do you mean?" and out["options"] == ["2024", "2025"]
-    assert "warnings" not in out and "trail" in out  # asking is not a failed check
+    assert "warnings" not in out and out["ran"] == "Ran files."  # asking is not a failed check
     spec = workers._submit_spec(PROFILES["knowledge"])["input_schema"]["properties"]
-    assert list(spec)[:2] == ["answer", "sources"] and list(spec)[-3:] == list(workers.BRIEF)
+    assert list(spec)[:3] == ["answer", "caveats", "sources"] and list(spec)[-3:] == list(workers.BRIEF)
 
 
 def test_the_last_steps_are_announced(ctx, fake_web):
@@ -636,7 +635,7 @@ def test_a_reply_cut_off_at_the_last_step_ends_without_a_result(ctx, fake_web):
     model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
                              + [ModelTurn(text="", stop="max_tokens")])
     out = run_worker(model, PROFILES["web"], "rates?", ctx)
-    assert out["warnings"] == ["the helper ran out of steps without finishing"] and "trail" in out
+    assert out["warnings"] == ["the helper ran out of steps without finishing"] and out["ran"].startswith("Ran web_search")
 
 
 def test_a_read_runs_as_the_helper_made_it(ctx, monkeypatch):
@@ -689,3 +688,54 @@ def test_a_file_link_written_in_the_answer_is_asked_for_in_downloads(ctx, monkey
     out = run_worker(model, PROFILES["web"], "Find the Iris CSV.", ctx)
     assert "give it in downloads" in model.requests[2]["messages"][-1]["content"]
     assert out["downloads"] == [link] and "download_with" in out and "warnings" not in out
+
+
+# ---------------------------------------------------------------- the web helper's memory and limits
+
+def test_pages_are_cited_by_the_number_their_read_gave(ctx, fake_web):
+    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                              submit(answer="Rates rose by 0.25 points.", sources=[1])])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert '"source": 1' in model.requests[1]["messages"][-1]["content"]  # the read says its number
+    assert out["sources"] == ["https://news.example.com/rates"] and "warnings" not in out  # the app writes the link
+    wrong = run_worker(ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")),
+                                         submit(answer="x", sources=[3]), submit(answer="x", sources=[3])]),
+                       PROFILES["web"], "rates?", ctx)
+    assert "there is no page 3: you read 1 page(s)" in wrong["warnings"][0]
+
+
+def test_three_searches_in_a_row_then_a_page_must_be_read(ctx, fake_web):
+    """Measured: 9 searches in a row for LeetCode's wording in snippets, 300 s, the listed pages never read."""
+    model = ScriptedProvider([tools_turn(call("web_search", query=f"two sum example {i}")) for i in range(4)]
+                             + [tools_turn(call("web_search", query="two sum", confirm=True)),
+                                submit(answer="I could not find it.")])
+    run_worker(model, PROFILES["web"], "exact example text", ctx)
+    refused = model.requests[4]["messages"][-1]["content"]
+    assert "3 searches in a row without reading a page" in refused
+    assert refused.index("news.example.com/rates") < refused.index("other.example.com")  # most listed first
+    assert '"results"' in model.requests[5]["messages"][-1]["content"]  # confirmed: it runs
+
+
+def test_the_chat_remembers_pages_read_and_sites_that_refused(ctx, monkeypatch):
+    from app.tools import web
+    reads = []
+
+    def fake_read(url, find=None):
+        reads.append(url)
+        if "leetcode.com" in url:
+            return ToolResult("failed", {"error": {"message": "The site showed a bot check.", "reason": "blocked"}})
+        return ok({"url": url, "title": "Two Sum", "text": "Example 1: nums = [2,7,11,15], target = 9"})
+
+    monkeypatch.setattr(web, "read_webpage", fake_read)
+    ctx.conversation = "chat-memory-test"
+    execute(ctx, "read_webpage", {"url": "https://leetcode.com/problems/two-sum/"})
+    again = execute(ctx, "read_webpage", {"url": "https://leetcode.com/problems/two-sum/description/"})
+    assert again.status == "failed" and "refused reading earlier in this chat" in again.result["error"]["message"]
+    execute(ctx, "read_webpage", {"url": "https://algo.monster/liteproblems/1"})
+    known = execute(ctx, "read_webpage", {"url": "https://algo.monster/liteproblems/1"})
+    assert "from memory" in known.result["note"] and reads == ["https://leetcode.com/problems/two-sum/",
+                                                               "https://algo.monster/liteproblems/1"]
+    model = ScriptedProvider([submit(answer="From memory.", sources=[])])
+    run_worker(model, PROFILES["web"], "the two sum example", ctx)
+    opening = model.requests[0]["messages"][0]["content"]
+    assert "Two Sum (https://algo.monster/liteproblems/1)" in opening and "leetcode.com (The site showed a bot check" in opening

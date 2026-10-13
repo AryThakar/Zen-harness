@@ -187,6 +187,37 @@ def shorten_tool_results(messages: list[dict], limit: int, count: Count, shorten
     return cut(n), n
 
 
+SHORT_ARGS = 300  # characters an older call's long text keeps (a file's whole text: the file keeps it)
+
+
+def shorten_call_args(messages: list[dict], limit: int, count: Count, cut: int = 0,
+                      keep_last: int = 2) -> tuple[list[dict], int]:
+    """Within one task, when shortened results are not enough: the long texts of the helper's own older calls (a
+    file's whole text it wrote) cut to their start - the file holds them, so nothing is lost. (the messages to send,
+    how many calls are cut). Measured before files: a scratch script sent whole five times filled a 16K slot."""
+    positions = [i for i, m in enumerate(messages)
+                 if m["role"] == "assistant" and m.get("tool_calls")][:-keep_last or None]
+
+    def short(value):
+        if isinstance(value, str) and len(value) > SHORT_ARGS:
+            return value[:SHORT_ARGS] + " ... [shortened here: the rest is in the file]"
+        return value
+
+    def cut_to(n: int) -> list[dict]:
+        out = list(messages)
+        for i in positions[:n]:
+            calls = [{**c, "input": {k: short(v) for k, v in c["input"].items()} if isinstance(c.get("input"), dict)
+                      else c.get("input")} for c in out[i]["tool_calls"]]
+            out[i] = {**out[i], "tool_calls": calls, "raw": None}  # rebuilt from the calls (llamacpp)
+        return out
+
+    cut = min(cut, len(positions))
+    if count(cut_to(cut)) <= limit or cut == len(positions):
+        return cut_to(cut), cut
+    n = _fewest(cut + 1, len(positions), lambda k: count(cut_to(k)) <= int(limit * (1 - HEADROOM)))
+    return cut_to(n), n
+
+
 IMAGES_SHOWN = 2  # pictures a helper keeps in view: the newest; an older one is a line saying what it was
 
 

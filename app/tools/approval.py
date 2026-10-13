@@ -46,13 +46,11 @@ def delete_request(ws: Workspace, items: list[str]) -> ToolResult:
                 f"Delete {', '.join(named)} from this workspace? This can't be undone.", "Delete")
 
 
-def replace_request(ws: Workspace, item: str, content: str, report: str | None = None,
-                    outputs: list[str] | None = None) -> ToolResult:
-    """Updating a file the user brought (an upload or a download): it is theirs, so they decide (the version
-    before is kept). From save_code: with its report and run outputs."""
+def replace_request(ws: Workspace, item: str, content: str) -> ToolResult:
+    """Changing a file the user brought (an upload or a download): it is theirs, so they decide (the version
+    before is kept)."""
     e = ws.entry(item)
-    details = {"item": item, "name": e["name"], "content": content,
-               **({"report": report, "outputs": outputs or []} if report else {})}
+    details = {"item": item, "name": e["name"], "content": content}
     return _ask("replace_file", details,
                 f"Update your file {e['name']}? Its current version is kept and can be restored.", "Update")
 
@@ -79,9 +77,6 @@ def carry_out(ws: Workspace, index: SearchIndex | None, approval: dict, options:
         elif approval["action"] == "replace_file":
             from .file_ops import replace_file  # file_ops asks through this module
             done = replace_file(ws, index, approval["item"], approval["content"])
-            if approval.get("report"):  # save_code's: its report and outputs go with the file
-                from .scratch import keep
-                done = keep(ws, index, approval["item"], approval["report"], approval.get("outputs", []))
         else:
             raise ToolError(f"Unknown action {approval['action']!r}.", invalid=False)
     except ToolError as exc:

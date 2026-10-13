@@ -20,8 +20,9 @@ from app.providers.scripted import ScriptedProvider
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
-REAL = set(TOOLS) | set(workers.DELEGATES) | {"submit_result", "finish", "save_code"}
-RETIRED = ("write_code", "analyze_data", "save_report", "import_table", "download_file", "save_note", "run_python")
+REAL = set(TOOLS) | set(workers.DELEGATES) | {"submit_result", "finish"}
+RETIRED = ("write_code", "analyze_data", "save_report", "import_table", "download_file", "save_note", "run_python",
+           "run_code", "fix_code", "save_code", "read_file")
 SCRIPT_CALLS = {"table", "path", "open"}  # what a helper's script calls (run_code's description)
 WRONG = {"table": "image_1", "image": "file_1", "file": "data_1"}  # an item of another kind, per kind wanted
 KIND_NAMES = {"table": "a table", "image": "an image", "file": "a file"}
@@ -111,8 +112,7 @@ def _readers() -> dict[str, list[str]]:
     main = [t.spec() for t in workers.main_tools(ScriptedProvider([]), _bare()).values()]
     out = {"main": [prompts.MAIN] + [d for s in main for d in texts(s)]}
     for name, profile in workers.PROFILES.items():
-        specs = [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)] + (
-            [workers._save_code_spec()] if profile.saves_code else [])
+        specs = [t.spec() for t in profile.own_tools().values()] + [workers._submit_spec(profile)]
         out[name] = [profile.instructions] + [d for s in specs for d in texts(s)]
     return out
 
@@ -139,6 +139,7 @@ def test_every_field_a_model_fills_says_what_it_holds():
             if prop.get("type") == "array" and isinstance(prop.get("items"), dict):
                 yield from fields(prop["items"], f"{path}{key}[].")
     specs = [t.spec() for t in TOOLS.values()] + [t.spec() for t in workers.delegate_tools(None).values()]
-    specs += [workers._submit_spec(p) for p in workers.PROFILES.values()] + [workers._save_code_spec()]
+    specs += [workers._submit_spec(p) for p in workers.PROFILES.values()]
+    specs += [t.spec() for p in workers.PROFILES.values() for t in p.own_tools().values()]  # helpers' own versions
     blank = [f"{s['name']}.{f}" for s in specs for f, prop in fields(s["input_schema"]) if not prop.get("description")]
     assert not blank, blank

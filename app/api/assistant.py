@@ -47,7 +47,8 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import file_ops, filetypes, sandbox
+from app.tools import file_ops, filetypes
+from app.tools import run as run_tool
 from app.tools import files as files_tool
 from app.tools import notes as notes_tool
 from app.tools import web
@@ -398,18 +399,15 @@ def save_text(ws_id: str, item_id: str, body: TextBody, request: Request) -> dic
 
 @router.post("/workspaces/{ws_id}/items/{item_id}/run")
 def run_file(ws_id: str, item_id: str, body: RunBody, request: Request) -> dict:
-    """Run a stored Python file as the user's own run, from the file panel: the same engine, limits and rules as
-    a helper's (sandbox.ENGINE). Files it writes become items, made from this file; run again, it updates them."""
+    """Run a Python file as the user's own run, from the file panel: the helper's run itself (app/tools/run.py) -
+    the same engine, limits, rules and report of the last run. Files it writes are the workspace's, made from it."""
     ws = _item(request, ws_id, item_id)
     e = ws.entry(item_id)
     if e["kind"] != "file" or not e["name"].lower().endswith(".py"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only Python files run here.")
-    code = ws.path(item_id).read_text("utf-8", errors="replace")
-    result = sandbox.ENGINE.run(ws, code, body.timeout, stdin=body.input)
+    _, index = _store(request).open(ws_id)
+    result = run_tool.run(ws, index, item_id, body.input, body.timeout)
     made = (result.artifact or {}).get("files", [])
-    for f in made:
-        if not f.get("updated"):
-            ws.set_parent(f["id"], item_id)
     if made:
         _store(request).sync_items(ws_id)  # pictures it drew, tables it wrote: searchable now
     return jsonable({"status": result.status, **result.result, "files": made})

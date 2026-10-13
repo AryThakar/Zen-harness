@@ -1,5 +1,5 @@
 """Text out of documents: PDF, Word (.docx), PowerPoint (.pptx), plain text and Markdown - the one
-reader for uploads, read_file and web links to documents.
+reader for uploads, files(read) and web links to documents.
 
 Each document becomes a list of blocks - a paragraph (or table row) with the PDF
 page or slide it is on and the heading it sits under - so search results can say

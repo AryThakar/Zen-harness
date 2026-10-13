@@ -305,13 +305,11 @@ def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_go
     """inspect_data's date question is asked by the runner at once; the click's cleaning step is applied by
     code and the same helper task goes on (before: it ended, main asked, and the task started again)."""
     ws = _ambiguous_dates(store, chat)
-    worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
+    worker = ScriptedProvider([tools_turn(call("inspect_data", data="sales_q1.csv")),
                                tools_turn(call("query_data", sql=FEB)),
-                               tools_turn(call("finish", answer="636",
-                                               data_used="data_2: data_1 with day-first dates",
-                                               method="Summed amount for February 2025.",
-                                               caveats="One quarter of data."))])
-    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="February 2025 total sales", data="data_1")),
+                               tools_turn(call("finish", answer="636", caveats="One quarter of data."))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="February 2025 total sales",
+                                             files=["sales_q1.csv"])),
                              answer("February 2025: 636.")])
     asked = run(send(store, chat["id"], "February total?", main, worker))
     question = asked[-1]  # this request's stream ends at the question; the turn waits in place
@@ -332,9 +330,9 @@ def test_a_question_only_the_user_can_answer_is_asked_in_place_and_the_helper_go
 
 def test_a_typed_answer_also_picks_the_option(store, chat):
     ws = _ambiguous_dates(store, chat)
-    worker = ScriptedProvider([tools_turn(call("inspect_data", data="data_1")),
-                               tools_turn(call("finish", answer="r", data_used="data_2", method="m", caveats="c"))])
-    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="Feb total", data="data_1")), answer("ok")])
+    worker = ScriptedProvider([tools_turn(call("inspect_data", data="sales_q1.csv")),
+                               tools_turn(call("finish", answer="r", caveats="c"))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="Feb total", files=["sales_q1.csv"])), answer("ok")])
     run(send(store, chat["id"], "Feb total?", main, worker))
     run(reply(store, chat["id"], "month first", main, worker))  # typed instead of clicked
     assert ws.table("data_2")["date"].dt.month.tolist()[0] == 1
@@ -342,13 +340,10 @@ def test_a_typed_answer_also_picks_the_option(store, chat):
 
 def test_a_helper_asks_its_own_question_in_place(store, chat):
     worker = ScriptedProvider([tools_turn(call("ask_user", question="Which language?", options=["Python", "Rust"])),
-                               tools_turn(call("run_code", code="print('hi')")),
-                               tools_turn({"id": "s", "name": "save_code", "input": {
-                                   "name": "hi.py", "purpose": "Says hi.", "how_it_works": "One print.",
-                                   "inputs_outputs": "Prints hi.", "how_to_run": "Run it.", "limits": "None."}}),
-                               tools_turn(call("finish", answer="hi.py prints hi.", method="One print.", caveats="None."))])
-    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="a hello script", file="hi.py")),
-                             answer("Saved hi.py.")])
+                               tools_turn(call("files", mode="write", name="hi.py", content="print('hi')")),
+                               tools_turn(call("run", file="hi.py")),
+                               tools_turn(call("finish", answer="hi.py prints hi.", caveats="None."))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="a hello script")), answer("Saved hi.py.")])
     asked = run(send(store, chat["id"], "write a hello script", main, worker))
     assert asked[-1]["question"] == "Which language?" and asked[-1]["tool"] == "analyze_or_code"
     done = run(reply(store, chat["id"], "Python", main, worker))
@@ -362,7 +357,7 @@ def test_a_skipped_helper_question_goes_on_with_the_recommended_option(store, ch
                                ModelTurn(text="I can't do that.", stop="end")])
     ws, _ = store.open(chat["workspace_id"])
     ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="chart it", data="data_1")), answer("ok")])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="chart it", files=["t.csv"])), answer("ok")])
     run(send(store, chat["id"], "chart it", main, worker))
     run(reply(store, chat["id"], None, main, worker))
     told = worker.requests[1]["messages"][-1]["content"]
@@ -382,3 +377,24 @@ def test_a_message_sent_while_a_helper_waits_in_place_is_its_answer(store, chat,
     monkeypatch.setattr(main_slot, "reply", lambda st, cid, text, m, w: iter(handed.append(text) or [{"type": "done"}]))
     events = list(send(store, chat["id"], "the bar chart", ScriptedProvider([]), ScriptedProvider([])))
     assert handed == ["the bar chart"] and events == [{"type": "done"}]
+
+
+def test_a_tables_question_is_asked_once_and_a_typed_your_call_is_an_answer(store, chat):
+    """Measured: 'Are they copies?' was asked of one table twice in a chat, an hour apart; the user's 'do whatever
+    you think is best' was kept nowhere."""
+    ws, _ = store.open(chat["workspace_id"])
+    ws.add_table(pd.DataFrame({"sex": ["m", "m", "f"], "age": [30, 30, 41]}), "people.csv")
+    first = ScriptedProvider([tools_turn(call("inspect_data", data="people.csv")),
+                              tools_turn(call("finish", answer="Kept the repeats."))])
+    main = ScriptedProvider([tools_turn(call("analyze_or_code", task="look at it", files=["people.csv"])), answer("ok"),
+                             tools_turn(call("analyze_or_code", task="again", files=["people.csv"])), answer("ok")])
+    asked = run(send(store, chat["id"], "look", main, first))
+    assert asked[-1]["type"] == "question" and "repeats an earlier row" in asked[-1]["question"]
+    run(reply(store, chat["id"], "do whatever you think is best", main, first))
+    told = first.requests[1]["messages"][-1]["content"]
+    assert "The user answered 'do whatever you think is best'" in told and "recommended option (Keep them" in told
+    second = ScriptedProvider([tools_turn(call("inspect_data", data="people.csv")),
+                               tools_turn(call("finish", answer="Still kept."))])
+    again = run(send(store, chat["id"], "again", main, second))
+    assert again[-1]["type"] == "done" and not any(e.get("type") == "question" for e in again)  # not asked twice
+    assert "answered this before: 'do whatever you think is best'" in second.requests[1]["messages"][-1]["content"]

@@ -33,10 +33,10 @@ def test_a_wrong_name_gets_the_closest_items_and_a_wrong_kind_says_what_reads_it
     near = execute(ctx, "inspect_data", {"data": "shop_sale.csv"}).result["error"]["message"]
     assert near == "No table 'shop_sale.csv'. Did you mean: shop_sales.csv?"
     wrong = execute(ctx, "inspect_data", {"data": "squares.py"}).result["error"]["message"]
-    assert wrong.startswith("squares.py is a file, not a table.") and "files(read)" in wrong
-    table = execute(ctx, "read_file", {"file": "shop_sales.csv"}).result  # not text: says what reads it
+    assert wrong.startswith("squares.py is a file, not a table.") and "files(mode='read')" in wrong
+    table = execute(ctx, "files", {"mode": "read", "name": "shop_sales.csv", "start": 1}).result  # not text: what reads it
     assert table["kind"] == "table" and "table('shop_sales.csv')" in table["note"]
-    assert execute(ctx, "read_file", {"file": "squares.py"}).result["file"] == "file_1"
+    assert execute(ctx, "files", {"mode": "read", "name": "squares.py"}).result["file"] == "file_1"
 
 
 def test_an_error_raised_outside_a_tool_function_keeps_its_message(ctx):
@@ -73,13 +73,13 @@ def test_analyze_or_code_resolves_its_table_too(ctx):
     seen = {}
 
     def handler(c, a):
-        seen["data"] = a.data
+        seen["files"] = a.files
         return ToolResult("ok", {})
 
     from app.assistant.registry import WorkTaskIn
-    execute(ctx, "analyze_or_code", {"task": "x", "data": "shop_sales.csv"},
+    execute(ctx, "analyze_or_code", {"task": "x", "files": ["shop_sales.csv"]},
             {"analyze_or_code": Tool("analyze_or_code", "", WorkTaskIn, handler)})
-    assert seen["data"] == "data_1"
+    assert seen["files"] == ["shop_sales.csv"]  # the files by name: the helper's runner resolves them
 
 
 def test_one_workspace_shared_by_threads_never_reuses_an_id(tmp_path):

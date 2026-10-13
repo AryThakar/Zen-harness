@@ -1,19 +1,15 @@
-"""The checks a helper's result must pass before main sees it: a web answer read from pages, its sources really
-read and its file links in downloads, knowledge sources really returned, every number in the engineer's answer from
-a tool result or a run, and a kept program's report true to its code and its last run. A check verifies; it never
-edits the result: a failed one names the problem and gives one chance to fix it. save_code's checks answer the call
-itself, so the helper fixes the report and calls again."""
+"""The checks a helper's result must pass before main sees it: a web answer read from pages, cited by the pages'
+numbers, with its file links in downloads; knowledge sources really returned; every number in the engineer's
+answer from a tool result or a run. A check verifies; it never edits the result: a failed one names the problem
+and gives one chance to fix it."""
 
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING
 
-from app.tools.reports import section_problems
-from app.tools.scratch import Scratch, report_problems
-
 if TYPE_CHECKING:
-    from .contracts import SaveCodeIn, SourcedResult, WebResult, WorkResult
+    from .contracts import SourcedResult, WebResult, WorkResult
     from .evidence import Trace
 
 
@@ -33,14 +29,16 @@ def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
     problems += [f"{u} is a file's link: give it in downloads, so main can bring it in" for u in written
                  if u not in result.downloads and is_file_link(u) and given_link(u, trace)]
     for s in result.sources:
-        if s in trace.read_urls:
+        if trace.cited(s):
             continue
-        if s in trace.found_urls:
+        if str(s).strip() in trace.found_urls:
             problems.append(f"{s} was only seen as a search snippet; read it with read_webpage or don't cite it")
+        elif isinstance(s, int) or str(s).strip().isdigit():
+            problems.append(f"there is no page {s}: you read {len(trace.pages)} page(s), numbered 1 to {len(trace.pages)}")
         else:
-            problems.append(f"{s} was never found or read; cite only pages you read")
+            problems.append(f"{s} is not a page you read: cite pages by the numbers their reads gave")
     if not result.sources and trace.read_urls and not result.question_for_user:
-        problems.append("no sources given; list the URLs of the pages you used")
+        problems.append("no sources given; list the numbers of the pages you used")
     if (not result.sources and not trace.read_urls and not result.question_for_user
             and not NOTHING_FOUND.search(result.answer) and not GAVE_UP.match(result.answer)):
         # Measured on the 26B: asked for a public data file and an overview of it, the helper found the CSV's
@@ -116,54 +114,19 @@ def ungrounded_numbers(answer: str, evidence: list[str]) -> list[str]:
     return missing
 
 
-WORK_SECTIONS = (("answer", ""), ("method", "Method"), ("caveats", "Caveats"))
-
-
 def _check_work(result: WorkResult, trace: Trace, context: str) -> list[str]:
-    """The engineer's finish: its sections written, every number in what it says (the method's queries aside) from
-    a tool result, a run's output, its code or the task - and the file the task asked for kept."""
+    """The engineer's finish: an answer, and every number in what it says from a tool result, a run's output, the
+    code that ran or the task."""
     if result.question_for_user:
         return []
-    problems = section_problems(WORK_SECTIONS, result.model_dump())
-    said = " ".join(s for s in (result.answer, result.caveats, result.data_used) if s)
-    problems += _numbers_problem(said, trace, context)
-    if trace.wanted_file and not trace.saved:
-        problems.append(f"the task asks for {trace.wanted_file} to be kept: keep it with save_code, then finish")
-    return problems
+    if not result.answer.strip():
+        return ["answer is empty: say what you found or made"]
+    said = " ".join(s for s in (result.answer, result.caveats) if s)
+    return _numbers_problem(said, trace, context)
 
 
 def _numbers_problem(text: str, trace: Trace, context: str) -> list[str]:
     evidence = trace.outputs + [context] + [code for code, _ in trace.python_runs]
-    if trace.saved:  # a program kept with save_code ran as it was kept: its report's facts are the app's
-        evidence.append(trace.saved["report"])
     missing = ungrounded_numbers(text, evidence)
     return [f"these numbers are not in any tool result: {', '.join(missing)}; copy numbers exactly from the "
             "results, or compute them with query_data (SELECT arithmetic needs no table)"] if missing else []
-
-
-CLAIMS = ("purpose", "how_it_works", "inputs_outputs")  # what the file does and prints - not change examples
-
-
-def save_problems(fields: SaveCodeIn, code: str, trace: Trace, context: str, scratch: Scratch,
-                  confirmed: bool = False) -> list[str]:
-    """Before a program is kept: a report with every section, functions it names that the code has, no number in
-    what it says the file does or prints that isn't in the code, the task or a run's output - and code that ran,
-    unless the helper confirms keeping it failing (its report then says so). Measured on 14 real reports: those
-    sections had no such number; 'How to run or change it' had one, a legitimate example ('print(fibonacci(45))'),
-    so change examples and limits are not checked."""
-    if not code.strip():
-        return ["there is no code to keep: write it with run_code first"]
-    name = fields.name.strip().lower()
-    python = name.endswith(".py") or "." not in name
-    problems = report_problems(fields.model_dump(), code, python)
-    claims = " ".join(str(getattr(fields, k) or "") for k in CLAIMS)
-    missing = ungrounded_numbers(claims, trace.outputs + [code, context] + [c for c, _ in trace.python_runs])
-    if missing:
-        problems.append(f"the report states {', '.join(m.strip(',.;:') for m in missing)}, which is not in the code or "
-                        "anything a run printed: say only what the code does and its last run showed (run it to show more)")
-    last = scratch.last
-    if python and not fields.code and last and last["code"] == code and not last["ok"] and not confirmed:
-        error = next((ln for ln in reversed(last["errors"].splitlines()) if ln.strip()), "an error")
-        problems.append(f"the last run failed ({error.strip()[:160]}): fix it with fix_code - or, to keep it as it is "
-                        "(its report will say it fails), make the same call again with confirm: true")
-    return problems

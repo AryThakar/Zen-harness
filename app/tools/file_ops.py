@@ -1,25 +1,27 @@
-"""files(): main's one tool for the workspace's files - list, find, read, write, update, rename,
-delete, download. One job per mode: write only makes new files, update only changes existing ones
-(the whole text, or lines start-end), rename only renames.
+"""files(): the one tool for the workspace's files - for main and for the helpers (who get find, read, write and
+edit): list, find, read, write, edit, rename, delete, download.
 
-Notes are not files (they are the AI's memory, notes.py) and never show here. An item is named by
-its id ('file_3'), the name it was saved under ('parabola.py') or a copied listing line - the
-workspace's one resolver (Workspace.resolve); a name that isn't there gets the closest items back as
-'id (name)', so an invented name is corrected in one step. read gives an item's report first (what a
-worker did with it) when it has one; with start, its content (start=0 reads from the first line) -
-the one reader, read_file.read, which the helpers' read_file uses too.
+    write   a new file - or, for a file that is there, its whole new text (the version before is kept)
+    edit    one passage changed: old_text exactly as it is in the file -> new_text (a file shown with line numbers
+            may be quoted with them: they are the reader's, not the file's)
+    rename  a file moved to another path
 
-The user decides (approval.py): delete and download always ask with a button, and so does
-updating a file the user brought (an upload or a download) - there are no versions, so the
-original would be lost. Files the assistant wrote are updated freely; renaming loses nothing and
-never asks. A .docx (headings, paragraphs, lists, tables, bold and italic) and a .pptx (a slide per
-# heading: its bullets, a picture, speaker notes) are written from Markdown by code; a line that is only
-![caption](image_7) puts that picture in - a generated image, or a chart (every chart is also kept as a
-picture, chart_image.py).
+A file is named by its path ('report.md', 'charts/sales.png'), in any case, or a copied listing line - the
+workspace's one resolver (Workspace.resolve); a name that isn't there gets the closest paths back, so an invented
+name is corrected in one step. read gives a file's report first (what a helper did with it) when it has one; with
+start, its content - the one reader, read_file.read.
+
+The user decides (approval.py): delete and download always ask with a button, and so does changing a file the user
+brought (an upload or a download) - it is theirs, even though its version before is kept. Files the assistant made
+change freely; renaming loses nothing and never asks. A .docx (headings, paragraphs, lists, tables, bold and italic)
+and a .pptx (a slide per # heading: its bullets, a picture, speaker notes) are written from Markdown by code; a line
+that is only ![caption](charts/sales.png) puts that picture in - a generated image, or a chart (every chart is also
+kept as a picture, chart_image.py).
 """
 
 from __future__ import annotations
 
+import difflib
 import io
 import re
 import tempfile
@@ -34,33 +36,38 @@ from .workspace import Workspace, clean_path
 PAGE = 15  # items per list page
 KINDS = ("table", "image", "file")  # everything but notes
 MAX_WRITE = 1_000_000  # characters
-MODES = ("list", "find", "read", "write", "update", "rename", "delete", "download")
+MODES = ("list", "find", "read", "write", "edit", "rename", "delete", "download")
+HELPER_MODES = ("find", "read", "write", "edit")  # a helper's files: what it reads and makes; asking is main's
 # Formats that are not text (filetypes.BINARY): text written under such a name would be a broken file (a .docx and
 # a .pptx are the exceptions - FROM_MARKDOWN, built from Markdown). A script makes them (analyze_or_code).
 
 
 @tool
 def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | None = None, page: int = 1,
-          start: int | None = None, end: int | None = None, content: str | None = None,
-          new_name: str | None = None, link: str | None = None) -> ToolResult:
+          start: int | None = None, content: str | None = None, old_text: str | None = None,
+          new_text: str | None = None, new_name: str | None = None, link: str | None = None,
+          helper: bool = False) -> ToolResult:
     mode = str(mode).strip().lower()
+    modes = HELPER_MODES if helper else MODES
+    if mode not in modes:
+        raise ToolError(f"mode must be one of {', '.join(modes)}.", field="mode")
     if mode == "list":
         return _list(ws, page)
     if mode == "download":
         return _download(_need(link, "link", "download needs link: a GitHub file's link, or a data file's link"))
-    if mode not in MODES:
-        raise ToolError(f"mode must be one of {', '.join(MODES)}.", field="mode")
-    name = _need(name, "name", f"{mode} needs name: a file's name or id")
+    name = _need(name, "name", f"{mode} needs name: a file's name, e.g. 'report.md'")
     if mode == "find":
         return _find(ws, name)
     if mode == "read":
-        return _read(ws, _resolve(ws, name), start)
+        return _read(ws, _resolve(ws, name), start, helper)
     if mode == "write":
-        return _write(ws, index, name, _need(content, "content", "write needs content: the file's text"))
-    if mode == "update":
-        return _update(ws, index, _resolve(ws, name),
-                       _need(content, "content", "update needs content: the new text (of the whole file, or of "
-                                                 "lines start-end)"), start, end)
+        return _write(ws, index, name, _need(content, "content", "write needs content: the file's whole text"))
+    if mode == "edit":
+        if new_text is None:
+            raise ToolError("edit needs new_text: what replaces old_text ('' removes it).", field="new_text")
+        return _edit(ws, index, _resolve(ws, name), _need(old_text, "old_text", "edit needs old_text: the passage "
+                                                                               "to change, exactly as in the file"),
+                     str(new_text))
     if mode == "rename":
         return _rename(ws, index, _resolve(ws, name), _need(new_name, "new_name", "rename needs new_name"))
     return approval.delete_request(ws, [_resolve(ws, name)])
@@ -90,51 +97,67 @@ def _find(ws: Workspace, name: str) -> ToolResult:
         return ok({"found": False, "note": missing.message})
 
 
-def _read(ws: Workspace, item: str, start: int | None) -> ToolResult:
-    """The one reader (read_file.read): the report alone first, then the text from start."""
+def _read(ws: Workspace, item: str, start: int | None, helper: bool = False) -> ToolResult:
+    """The one reader (read_file.read). main: the report alone first, then the text from start; a helper: the report
+    beside the first lines, and more of them at once (it reads a long document in fewer steps)."""
+    if helper:
+        return read_file.read(ws, item, start, read_file.HELPER_CHARS, tool="files")
     return read_file.read(ws, item, start, read_file.MAIN_CHARS, tool="files", report_alone=True)
 
 
 # ---------------------------------------------------------------- write
 
 def _write(ws: Workspace, index: SearchIndex | None, name: str, content: str) -> ToolResult:
-    """A new file; an existing name is update's job."""
+    """A new file - or, for one that is there, its whole new text (the user's own file asks first)."""
     _fits(content)
-    existing = _exact(ws, name)  # an id or a stored name, as given - before a default suffix is added
+    existing = _exact(ws, name)  # a path, as given - before a default suffix is added
     if existing is None:
         name = _file_name(name)
         existing = _exact(ws, name)
-    if existing is not None:
-        raise ToolError(f"A file called {ws.entry(existing)['name']} exists: change it with mode='update', or write "
-                        "under another name.", field="name")
-    _writable(name)
-    _pictures_there(ws, name, content)
-    return _store_new(ws, index, name, content)
+    if existing is None:
+        _writable(name)
+        _pictures_there(ws, name, content)
+        return _store_new(ws, index, name, content)
+    return _change(ws, index, existing, content)
 
 
-def _update(ws: Workspace, index: SearchIndex | None, item: str, content: str, start: int | None,
-            end: int | None) -> ToolResult:
-    """The whole text, or lines start-end (inclusive) replaced by content. The user's own files ask first."""
+def _change(ws: Workspace, index: SearchIndex | None, item: str, content: str) -> ToolResult:
+    """A file's new text: the assistant's own is changed (its version before kept), the user's asks first."""
     e = ws.entry(item)
-    if e["kind"] != "file":
-        raise ToolError(f"{e['name']} is a {e['kind']}, which can't be changed as text: write a new file instead.",
-                        field="name")
+    if e["kind"] == "image" or (e["kind"] == "table" and suffix(e["name"]) not in (".csv", ".tsv")):
+        raise ToolError(f"{e['name']} is {'an image' if e['kind'] == 'image' else 'a spreadsheet'}, which isn't "
+                        "written as text: write a new file, or a script makes it.", field="name")
     _writable(e["name"])  # before the user is asked to approve it: a PDF written as text would be broken
-    _fits(content)
     _pictures_there(ws, e["name"], content)
-    if start is not None or end is not None:
-        if e["name"].lower().endswith(FROM_MARKDOWN):
-            raise ToolError(f"A {PurePath(e['name']).suffix} is updated whole: give its full text in Markdown, without "
-                            "start and end.", field="start")
-        lines = read_file.units(e["name"], ws.path(item).read_bytes(), numbered=False)
-        start, end = start or 1, end or start or 1
-        if not 1 <= start <= end <= len(lines):
-            raise ToolError(f"{e['name']} has {len(lines)} lines; start and end must be within 1-{len(lines)}, "
-                            "start first.", field="start")
-        content = "\n".join(lines[:start - 1] + content.splitlines() + lines[end:]) + "\n"
     if made_by_assistant(e):
         return replace_file(ws, index, item, content)
     return approval.replace_request(ws, item, content)
+
+
+GUTTER = re.compile(r"^\s*(?:>>)?\s*\d+\| ?", re.M)  # the line numbers files(read) and a run's 'around' show
+
+
+def _edit(ws: Workspace, index: SearchIndex | None, item: str, old: str, new: str) -> ToolResult:
+    """One passage changed: ``old`` exactly as it is in the file (found once), replaced by ``new``."""
+    e = ws.entry(item)
+    if e["name"].lower().endswith(FROM_MARKDOWN):
+        raise ToolError(f"A {PurePath(e['name']).suffix} is written whole from Markdown: give its full text with "
+                        "mode='write'.", field="name")
+    if e["kind"] == "image" or suffix(e["name"]) in BINARY:
+        raise ToolError(f"{e['name']} isn't text, so it can't be edited: a script changes it.", field="name")
+    text = ws.path(item).read_text("utf-8", errors="replace")
+    if text.count(old) == 0 and all(GUTTER.match(ln) for ln in old.splitlines() if ln.strip()):
+        old, new = GUTTER.sub("", old), GUTTER.sub("", new)  # quoted as read, with the reader's line numbers
+    found = text.count(old)
+    if found == 0:
+        close = difflib.get_close_matches(old.splitlines()[0] if old.strip() else old, text.splitlines(), n=3, cutoff=0.5)
+        near = (" The closest lines: " + " | ".join(c.strip() for c in close) + ".") if close else ""
+        raise ToolError(f"old_text is not in {e['name']}: copy the passage exactly as it is in the file (read it with "
+                        f"files(mode='read')), spaces and line breaks included.{near}", field="old_text")
+    if found > 1:
+        raise ToolError(f"old_text is in {e['name']} {found} times: give more of the lines around it, so it is found "
+                        "once.", field="old_text")
+    return _change(ws, index, item, text.replace(old, new, 1))
 
 
 def _rename(ws: Workspace, index: SearchIndex | None, item: str, new_name: str) -> ToolResult:
@@ -168,9 +191,9 @@ def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str
     from .files import store_file
     data = _bytes(name, content, ws)
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / name
+        path = Path(tmp) / PurePath(name).name  # kept under its whole path, folder and all
         path.write_bytes(data)
-        kept = store_file(ws, index, path, by="assistant")
+        kept = store_file(ws, index, path, by="assistant", name=name)
     item = kept.get("id") or kept.get("file")
     return ok({"file": item, "name": kept["name"], "kind": kept["kind"], "bytes": len(data),
                "note": "Saved; the user sees it in the chat.", **written_code(name, content)}, _card(ws, item, "written"))
@@ -184,8 +207,8 @@ def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: s
     ws.replace_bytes(item, data)
     if index is not None and "passages" in ws.entry(item).get("meta", {}):
         reindex(ws, index, item)
-    return ok({"file": item, "name": name, "bytes": len(data), "note": "Updated; the user sees it in the chat.",
-               **written_code(name, content)}, _card(ws, item, "updated"))
+    return ok({"file": item, "name": name, "bytes": len(data), "note": "Changed (its version before is kept); the user "
+               "sees it in the chat.", **written_code(name, content)}, _card(ws, item, "updated"))
 
 
 def written_code(name: str, content: str) -> dict:
@@ -195,8 +218,8 @@ def written_code(name: str, content: str) -> dict:
     mean reading: 15.1' - a run that never happened, of a file that still didn't run."""
     if not is_code(name):
         return {}
-    out = {"not_run": f"{name} was written, not run: analyze_or_code with file='{name}' runs and tests it - "
-                      "don't say what it prints before it has run."}
+    out = {"not_run": f"{name} was written, not run: don't say what it prints before a run (run runs it in a helper; "
+                      "main gives it to analyze_or_code)."}
     if suffix(name) == ".py":
         try:
             compile(content, name, "exec")

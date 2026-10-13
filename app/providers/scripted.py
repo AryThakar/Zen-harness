@@ -11,7 +11,7 @@ from .base import EventCallback, ModelTurn, ProviderError, estimate_tokens
 _ids = itertools.count(1)
 
 
-def call(name: str, **inputs) -> dict:
+def call(name: str, /, **inputs) -> dict:
     """A tool call for a scripted turn."""
     return {"id": f"call_{next(_ids)}", "name": name, "input": inputs}
 

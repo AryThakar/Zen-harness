@@ -12,12 +12,12 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from app.tools.core import ToolResult
-from app.tools.scratch import Scratch
 
 from ..registry import CONFIRMABLE, ToolContext
 
 
-SCRIPT_TOOLS = ("run_code", "fix_code")
+SCRIPT_TOOLS = ("run",)  # a run of the same file can give a new result once the file or its inputs changed
+SEARCHES_BEFORE_READING = 3  # web searches in a row before the next one is refused: read a page they found
 
 
 @dataclass
@@ -42,11 +42,13 @@ class Trace:
     last_query: str | None = None  # the latest web search, to focus long pages on
     inspected: set[str] = field(default_factory=set)  # tables inspect_data looked at in this task
     questions: list[dict] = field(default_factory=list)  # questions tools raised for the user, with options
-    scratch: Scratch | None = None  # the helper's scratch script (save_code checks its last run)
     table: str | None = None  # the table the task is about (the report is kept on it)
-    wanted_file: str | None = None  # the file the task asks to keep or change (main's file=...)
-    saved: dict | None = None  # the program save_code kept: file, name, report
+    stamps: dict[str, str] = field(default_factory=dict)  # file -> its content hash before the task (what changed)
     site_reads: dict[str, int] = field(default_factory=dict)  # site -> pages asked of it in this task
+    pages: list[str] = field(default_factory=list)  # pages read, in order: page n is pages[n - 1] (cited by number)
+    searches_in_a_row: int = 0  # web searches since the last page read
+    listed: dict[str, int] = field(default_factory=dict)  # page -> how many searches listed it
+    last_output: str = ""  # what the latest run printed
 
     def add(self, name: str, args: dict, result: ToolResult) -> None:
         self.calls[_call_key(name, args)] = result
@@ -60,8 +62,8 @@ class Trace:
             self.failures.append(f"{name} {target[:80]}: {why[:140]}".replace(" :", ":"))
         res = result.result
         if name == "inspect_data" and result.status == "ok":
-            self.inspected.add(args.get("data", ""))
-        self.questions += [{**q, "table": args.get("data")} for q in res.get("questions", [])
+            self.inspected.add(res.get("data") or args.get("data", ""))  # the table's key: it was named by path
+        self.questions += [{**q, "table": res.get("data") or args.get("data")} for q in res.get("questions", [])
                            if isinstance(q, dict) and q.get("question")]
         if name == "read_webpage":
             self.tried_urls.add(args.get("url", ""))
@@ -74,21 +76,43 @@ class Trace:
             self.read_urls.add(args.get("url", ""))
             card = {k: v for k, v in (result.artifact or {}).items() if k != "type"}
             self.cards[res["url"]] = self.cards[args.get("url", "")] = card
+            if res["url"] not in self.pages:
+                self.pages.append(res["url"])
+            res["source"] = self.pages.index(res["url"]) + 1  # cited by this number in the finish
+        if name == "read_webpage":
+            self.searches_in_a_row = 0
         if name == "web_search":
             self.found_urls.update(r["url"] for r in res.get("results", []))
+            for r in res.get("results", []):
+                self.listed[r["url"]] = self.listed.get(r["url"], 0) + 1
             self.last_query = args.get("query") or self.last_query
+            self.searches_in_a_row += 1
         # search_files' notes and pages read before are sources too (forecast's "notes" are plain lines)
         notes = res.get("notes", []) + res.get("web_pages", []) if name == "search_files" else []
         for p in res.get("passages", []) + notes + res.get("turns", []):
             source = p.get("source") or f"conversation {p.get('conversation')}"
             self.sources.add(source)
             self.passages.append((source, p.get("text", "")))
-        if name == "read_file" and result.status == "ok":
+        if name == "files" and args.get("mode") == "read" and result.status == "ok" and res.get("name"):
             self.sources.update({res["file"], res["name"]})
             self.passages.append((res["name"], res.get("text", "")))
-        if name in SCRIPT_TOOLS:  # the whole script that ran (fix_code's input is only the changed lines)
-            self.python_runs.append(((result.artifact or {}).get("code", args.get("code", "")), result.status == "ok"))
+        if name in SCRIPT_TOOLS:  # the whole program that ran: the file as it was
+            self.python_runs.append(((result.artifact or {}).get("code", ""), result.status == "ok"))
             self.python_outputs.append(res.get("output", ""))
+            self.last_output = res.get("output", "") or self.last_output
+
+    def cited(self, source) -> str | None:
+        """The page a finish cites: by the number its read gave it, or by its link as read; None otherwise."""
+        if isinstance(source, int) or str(source).strip().isdigit():
+            n = int(source)
+            return self.pages[n - 1] if 1 <= n <= len(self.pages) else None
+        url = str(source).strip()
+        return url if url in self.read_urls else None
+
+
+def _unread(trace: Trace) -> list[str]:
+    """The pages the searches listed that nobody read, the most often listed first."""
+    return [u for u, _ in sorted(trace.listed.items(), key=lambda kv: -kv[1]) if u not in trace.tried_urls]
 
 
 SITE_CAP = 6  # pages of one site in one task (the plan: a cap per task - a shop checked us after 2-3 quick visits)
@@ -107,7 +131,11 @@ def _uninspected(ctx: ToolContext, trace: Trace, name: str, args: dict) -> str |
     from inspected ones; an inspection from an earlier task is remembered on the table."""
     if name == "inspect_data":
         return None
-    named = TABLE_ID.findall(args.get("sql", "")) if name == "query_data" else [args.get("data", "")]
+    if name == "query_data":
+        from app.tools.query_data import by_key
+        named = TABLE_ID.findall(by_key(ctx.ws, str(args.get("sql", ""))))
+    else:
+        named = [ctx.ws.find(str(args.get("data", "")), ("table",)) or ""]
     for t in named:
         if (t in trace.existing and t not in trace.inspected and t in ctx.ws.ids("table")
                 and ctx.ws.entry(t).get("meta", {}).get("issues") is None):
@@ -168,7 +196,7 @@ def _repeat(trace: Trace, name: str, args: dict, confirmed: bool = False) -> Too
         return ToolResult("invalid_arguments", {"error": {"message": (
             f"This exact call already failed ({why.rstrip('.')}): try something else." + CONFIRMABLE)}})
     if name == "web_search":
-        unread = [r["url"] for r in earlier.result.get("results", []) if r["url"] not in trace.tried_urls][:3]
+        unread = _unread(trace)[:3]
         note = "The same search as before - its results again. " + (
             f"Read one you haven't tried: {', '.join(unread)}." if unread else "Search with other words for more.")
     else:

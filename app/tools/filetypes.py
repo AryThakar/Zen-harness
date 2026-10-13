@@ -5,7 +5,7 @@ file panel, files(), scripts' outputs, the reader, the search index).
     DOCUMENT  read as text and indexed for search                 uploads, links read, files(read)
               (PDF, Word, PowerPoint, plain text, Markdown)
     IMAGE     an image item: PNG, JPEG, WebP, GIF                 uploads, generated, drawn by scripts
-    CODE      program text, shown with line numbers               files(read), read_file, the programs helpers keep
+    CODE      program text, shown with line numbers               files(read), the programs helpers write and run
     BINARY    not text: never written or changed as text          files(write/update), the file panel
     FROM_MARKDOWN  documents built from Markdown by code          files(write/update): .docx, .pptx
 

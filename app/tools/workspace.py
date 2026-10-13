@@ -66,8 +66,8 @@ WRONG_KIND = {("table", "file"): " A script reads it with pd.read_csv('{path}') 
                                  "works with it.",
               ("image", "file"): " It has no text: view_image looks at it and says what it shows.",
               ("image", "table"): " view_image looks at it and says what it shows.",
-              ("file", "table"): " Its text is read with files(read) or read_file.",
-              ("file", "image"): " Its text is read with files(read) or read_file.",
+              ("file", "table"): " Its text is read with files(mode='read').",
+              ("file", "image"): " Its text is read with files(mode='read').",
               ("table", "image"): " analyze_or_code charts it."}
 
 

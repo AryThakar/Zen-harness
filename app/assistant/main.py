@@ -251,6 +251,27 @@ def _agent(state: TurnState, config) -> dict:
     return {"messages": new}
 
 
+def _stopped(t: Turn, name: str) -> dict:
+    """A call the user stopped, as its result: what its helper ran, made and last printed - so the next turn goes
+    on from it (measured: main resent a stopped task three times from the start, though the helper had found the
+    answer 95 s into the first)."""
+    trace = t.ctx.trace
+    out = {"status": "stopped", "note": "The user stopped this call. What it did before the stop is below and is "
+                                       "kept; go on from it if the user asks to continue."}
+    if trace is None:
+        return out
+    from .workers.runner import _ran
+    made = [k for k in t.ws.ids() if k not in trace.existing and t.ws.kind(k) != "note"]
+    changed = [k for k, sha in trace.stamps.items() if k in t.ws.ids() and t.ws.entry(k).get("sha", "") != sha]
+    out["ran"] = _ran(trace)
+    if made or changed:
+        out["files"] = [t.ws.label(k) for k in made] + [f"{t.ws.label(k)} (changed)" for k in changed]
+    if trace.last_output:
+        out["last_run_printed"] = trace.last_output[-600:]
+    t.ctx.trace = None
+    return out
+
+
 def _tools(state: TurnState, config) -> dict:
     t: Turn = config["configurable"]["turn"]
     t.setup(get_stream_writer())
@@ -264,8 +285,14 @@ def _tools(state: TurnState, config) -> dict:
         if confirmed and isinstance(given, dict) and invented_numbers(call, state["messages"]):
             given = {**given, "task": str(given.get("task", "")) + SAMPLE_DATA}  # it runs, labelled
         began = time.perf_counter()
-        result = (ToolResult("invalid_arguments", {"error": {"message": refused}}) if refused
-                  else execute(t.ctx, call["name"], given, t.tools))
+        try:
+            result = (ToolResult("invalid_arguments", {"error": {"message": refused}}) if refused
+                      else execute(t.ctx, call["name"], given, t.tools))
+        except Cancelled:  # the user pressed Stop: what was done is kept as this call's result, then the turn ends
+            t.store.append(t.chat_id, {"role": "tool", "tool_call_id": call["id"], "name": call["name"],
+                                       "content": json.dumps(present(t.ws, _stopped(t, call["name"])), ensure_ascii=False),
+                                       "is_error": False})
+            raise
         if t.live is not None:
             t.live.note("tools", {"name": call["name"], "status": result.status,
                                   "seconds": round(time.perf_counter() - began, 2), **({"refused": refused} if refused else {})})

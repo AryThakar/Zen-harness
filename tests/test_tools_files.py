@@ -81,7 +81,7 @@ def test_read_in_lines_with_the_next_step(ws, index):
     table = ws.add_table(pd.DataFrame({"a": range(30)}), "t.csv")
     read = run(ws, index, "read", name=table).result
     assert read["rows"] == 30 and len(read["first_rows"]) == 10 and "analyze_or_code" in read["note"]
-    assert run(ws, index, "read").result["error"]["message"] == "read needs name: a file's name or id."
+    assert run(ws, index, "read").result["error"]["message"] == "read needs name: a file's name, e.g. 'report.md'."
 
 
 def test_write_new_files_by_kind(ws, index):
@@ -108,32 +108,31 @@ def test_a_docx_is_made_from_markdown(ws, index):
     assert made["kind"] == "document" and search_files(index, "all good").result["passages"]
 
 
-def test_write_makes_new_files_and_update_changes_them(ws, index):
+def test_write_makes_a_file_or_gives_one_its_whole_new_text(ws, index):
     run(ws, index, "write", name="notes.txt", content="first")
-    exists = run(ws, index, "write", name="notes.txt", content="second")
-    assert exists.status == "invalid_arguments" and "mode='update'" in exists.result["error"]["message"]
-    mine = run(ws, index, "update", name="notes.txt", content="second")
+    mine = run(ws, index, "write", name="notes.txt", content="second")
     assert mine.status == "ok" and ws.path("file_1").read_text() == "second"  # the assistant's own: no asking
-    assert mine.artifact["action"] == "updated"
-    table = ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
-    assert "write a new file" in run(ws, index, "update", name=table, content="x").result["error"]["message"]
-    assert run(ws, index, "update", name="notes.txt").result["error"]["field"] == "content"
+    assert mine.artifact["action"] == "updated" and len(ws.versions("file_1")) == 1  # the first text kept
+    picture = ws.add_image(_png(), "logo.png")
+    assert "an image" in run(ws, index, "write", name="logo.png", content="x").result["error"]["message"]
+    assert ws.path(picture).read_bytes() == _png()
+    assert run(ws, index, "write", name="notes.txt").result["error"]["field"] == "content"
+    assert run(ws, index, "update", name="notes.txt", content="x").result["error"]["field"] == "mode"  # gone
 
 
-def test_update_changes_lines(ws, index):
+def test_edit_changes_one_passage(ws, index):
     run(ws, index, "write", name="calc.py", content="a = 1\nb = 2\nc = 3\nprint(a + b + c)\n")
-    run(ws, index, "update", name="calc.py", start=2, end=3, content="b = 20\nc = 30\nd = 40")
+    run(ws, index, "edit", name="calc.py", old_text="b = 2\nc = 3", new_text="b = 20\nc = 30\nd = 40")
     assert ws.path("file_1").read_text() == "a = 1\nb = 20\nc = 30\nd = 40\nprint(a + b + c)\n"
-    run(ws, index, "update", name="calc.py", start=1, content="a = 100")  # end defaults to start: one line
-    assert ws.path("file_1").read_text().splitlines()[0] == "a = 100"
-    assert "within 1-5" in run(ws, index, "update", name="calc.py", start=4, end=9, content="x").result["error"]["message"]
+    run(ws, index, "edit", name="calc.py", old_text="a = 1", new_text="a = 100")
+    assert ws.path("file_1").read_text().splitlines()[0] == "a = 100" and len(ws.versions("file_1")) == 2
     run(ws, index, "write", name="plan.docx", content="# Plan")
-    assert "updated whole" in run(ws, index, "update", name="plan.docx", start=1, content="x").result["error"]["message"]
+    assert "written whole" in run(ws, index, "edit", name="plan.docx", old_text="Plan", new_text="x").result["error"]["message"]
 
 
-def test_updating_the_users_own_file_asks_first(ws, index):
+def test_changing_the_users_own_file_asks_first(ws, index):
     upload = ws.add_bytes("file", b"original", "txt", name="upload.txt", by="user")
-    ask = run(ws, index, "update", name="upload.txt", content="changed").artifact
+    ask = run(ws, index, "write", name="upload.txt", content="changed").artifact
     assert ask["options"] == ["Update", "Cancel"] and ws.path(upload).read_bytes() == b"original"
     approval.carry_out(ws, index, ask["approval"], ask["options"], "Cancel")
     assert ws.path(upload).read_bytes() == b"original"
@@ -201,7 +200,14 @@ def test_text_is_never_written_into_a_binary_format(ws, index):
 def test_a_program_main_writes_is_parsed_and_said_to_be_unrun(ws, index):
     """Measured on the 26B: main fixed stats.py with files(update), left it broken, and said what it 'now prints'."""
     good = files(ws, index, "write", name="mean.py", content="print(sum([1, 2]) / 2)\n").result
-    assert "not run" in good["not_run"] and "file='mean.py'" in good["not_run"] and "broken" not in good
-    bad = files(ws, index, "update", name="mean.py", content="def mean(values):\ndef mean(values):\n    return 1\n").result
+    assert "not run" in good["not_run"] and "analyze_or_code" in good["not_run"] and "broken" not in good
+    bad = files(ws, index, "write", name="mean.py", content="def mean(values):\ndef mean(values):\n    return 1\n").result
     assert bad["broken"].startswith("mean.py does not parse") and "line 2" in bad["broken"]
     assert "not_run" not in files(ws, index, "write", name="notes.md", content="# Notes\n").result
+
+
+def _png() -> bytes:
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (4, 4), "red").save(out, "PNG")
+    return out.getvalue()

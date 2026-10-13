@@ -267,18 +267,20 @@ class Engine(Protocol):
     would be another class with this run(), and nothing else in the app would change."""
     name: str
 
-    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult: ...
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None,
+            name: str | None = None) -> ToolResult: ...
 
 
 class LocalPython:
     """A separate Python process on this computer, with the limits and the audit hook above."""
     name = "local Python"
 
-    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult:
-        return run_python(ws, code, timeout, stdin)
+    def run(self, ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None,
+            name: str | None = None) -> ToolResult:
+        return run_python(ws, code, timeout, stdin, name)
 
 
-ENGINE: Engine = LocalPython()  # scratch.py runs every script through it
+ENGINE: Engine = LocalPython()  # run.py runs every program through it
 
 
 _locks: dict[str, threading.Lock] = {}
@@ -290,9 +292,11 @@ def _lock(folder: Path) -> threading.Lock:
         return _locks.setdefault(str(folder.resolve()), threading.Lock())
 
 
-def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None) -> ToolResult:
+def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: str | None = None,
+               name: str | None = None) -> ToolResult:
     """Run a Python script in the workspace's folder; returns its printed output, errors and the files it wrote
-    or changed (by path; a file written again in a later run is the same file, updated)."""
+    or changed (by path; a file written again in a later run is the same file, updated). ``name``: the workspace
+    file the code is (its tracebacks then name it, with its lines)."""
     code = str(code)
     if not code.strip():
         return _invalid("code is empty.", "code")
@@ -307,7 +311,7 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: 
         protected = [ws.entry(k)["file"] for k in ws.ids() if ws.kind(k) != "note" and ws.by_user(k)]
         script = str((run_dir / SCRIPT).resolve())
         (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script,
-                                                   name=script, images=tuple(IMAGES), tracked=tracked,
+                                                   name=name or script, images=tuple(IMAGES), tracked=tracked,
                                                    protected=protected), encoding="utf-8")
         (run_dir / SCRIPT).write_text(code, encoding="utf-8")
         before = _snapshot(ws.files)

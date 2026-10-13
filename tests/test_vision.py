@@ -68,31 +68,35 @@ def seeing(*turns) -> ScriptedProvider:
     return model
 
 
-DONE = call("finish", answer="Done.", method="Ran a script.", caveats="None.")
-SAVE = {"name": "plot.py", "purpose": "Draws a line.", "how_it_works": "matplotlib.", "inputs_outputs": "line.png",
-        "how_to_run": "Run it.", "limits": "One line."}
+DONE = call("finish", answer="Done.", caveats="None.")
+
+
+def program(name: str, code: str) -> list[ModelTurn]:
+    """A program the helper writes and runs: its two steps."""
+    return [turn(call("files", mode="write", name=name, content=code)), turn(call("run", file=name))]
 
 
 def test_a_script_edits_an_image_by_its_name_into_a_new_image(ctx):
-    from app.tools.scratch import Scratch, run_code
+    from app.tools.file_ops import files
+    from app.tools.run import run
     original = ctx.ws.add_image(png((60, 30)), "photo.png")
     code = ("from PIL import Image, ImageDraw\nimg = Image.open('photo.png').convert('RGB')\n"
             "ImageDraw.Draw(img).text((5, 5), 'Hi', fill='white')\nimg.resize((120, 60)).save('photo_hi.png')\n"
             "print(img.size)")
-    scratch = Scratch()
-    r = run_code(ctx.ws, scratch, code)
+    files(ctx.ws, ctx.index, "write", name="edit_photo.py", content=code, helper=True)
+    r = run(ctx.ws, ctx.index, "edit_photo.py")
     assert r.status == "ok", r.result
     new = r.artifact["files"][0]["id"]
     assert ctx.ws.kind(new) == "image" and ctx.ws.entry(new)["meta"]["width"] == 120 and new != original
-    assert scratch.images == [new] and "next" not in r.result  # the runner shows it; no tool to call
+    assert r.result["files"] == [{"path": "photo_hi.png", "kind": "image"}] and "next" not in r.result
 
 
 def test_the_helper_is_shown_what_its_script_drew(ctx):
     plot = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\nplt.title('Sales')\nplt.savefig('line.png')\n"
-    model = seeing(turn(call("run_code", code=plot)), turn({**call("save_code"), "input": SAVE}), turn(DONE))
+    model = seeing(*program("plot.py", plot), turn(DONE))
     out = run_worker(model, PROFILES["engineer"], "Draw a line titled Sales.", ctx)
     assert "view_image" not in {t["name"] for t in model.requests[0]["tools"]}
-    shown = model.requests[1]["messages"][-1]  # after the run's result, before the next step
+    shown = model.requests[2]["messages"][-1]  # after the run's result, before the next step
     assert shown["role"] == "user" and shown["content"].startswith("[The picture your script made: line.png (")
     assert len(shown["images"]) == 1 and shown["images"][0]["mime"] == "image/png"
     assert out["files"] and not out.get("warnings") and not ctx.look.seen  # no separate vision call
@@ -100,7 +104,7 @@ def test_the_helper_is_shown_what_its_script_drew(ctx):
 
 def test_an_image_the_task_names_or_the_helper_reads_is_shown(ctx):
     ctx.ws.add_image(png(), "passengers.png")
-    model = seeing(turn(call("read_file", file="passengers.png")), turn({**call("save_code"), "input": SAVE}), turn(DONE))
+    model = seeing(turn(call("files", mode="read", name="passengers.png")), turn(DONE))
     run_worker(model, PROFILES["engineer"], "Add the caption 'Q3' to the passengers chart.", ctx)
     opening = model.requests[0]["messages"][0]
     assert "[The picture the task names: passengers.png (40x20).]" in opening["content"]
@@ -110,7 +114,7 @@ def test_an_image_the_task_names_or_the_helper_reads_is_shown(ctx):
 
 def test_without_vision_on_the_server_nothing_is_shown(ctx):
     plot = "import matplotlib.pyplot as plt\nplt.plot([1, 2])\nplt.savefig('line.png')\n"
-    model = ScriptedProvider([turn(call("run_code", code=plot)), turn({**call("save_code"), "input": SAVE}), turn(DONE)])
+    model = ScriptedProvider([*program("plot.py", plot), turn(DONE)])
     run_worker(model, PROFILES["engineer"], "Draw the passengers line.", ctx)
     assert not any(m.get("images") for r in model.requests for m in r["messages"])
 
@@ -125,16 +129,12 @@ def test_only_the_newest_pictures_stay_in_view():
     assert view[0]["content"] == "[a] [1 of its pictures no longer shown]" and messages[0]["images"] == [pic, pic]
 
 
-def test_a_script_named_after_its_picture_is_told_to_keep_the_py(ctx):
-    """Seen on the real model: the coder called save with the edited image's name ('passengers_modified.png') - the
-    script is what save_code keeps, as Python; the picture is kept already."""
+def test_a_file_the_task_names_is_shown_and_listed(ctx):
+    """main names the files a task is about: a picture is shown, every one is listed with what it is."""
     ctx.ws.add_image(png(), "passengers.png")
-    edit = ("from PIL import Image\nimg = Image.open('image_1')\nimg.resize((80, 20)).save('passengers_modified.png')\n"
-            "print(img.size)")
-    report = {**SAVE, "name": "passengers_modified.png", "inputs_outputs": "image_1 in, passengers_modified.png out"}
-    model = seeing(turn(call("run_code", code=edit)), turn({**call("save_code"), "input": report}),
-                   turn({**call("save_code"), "input": {**report, "name": "passengers_modified.py"}}), turn(DONE))
-    out = run_worker(model, PROFILES["engineer"], "Make the passengers chart twice as wide.", ctx)
-    assert "keep it as 'passengers_modified.py'" in model.requests[2]["messages"][-1]["content"]
-    assert out["files"][0]["name"] == "passengers_modified.py" and not out.get("warnings")
-    assert ctx.ws.kind(out["files"][0]["id"]) == "file" and ctx.ws.entry("image_2")["meta"]["width"] == 80
+    ctx.ws.add_bytes("file", b"print(1)", "py", name="caption.py")
+    model = seeing(turn(DONE))
+    run_worker(model, PROFILES["engineer"], "Add the caption 'Q3'.", ctx, files=["passengers.png", "caption.py"])
+    opening = model.requests[0]["messages"][0]
+    assert "Files for this task:\npassengers.png: image 40x20\ncaption.py: 8 bytes" in opening["content"]
+    assert len(opening["images"]) == 1

@@ -1,15 +1,12 @@
-"""The report.md a helper keeps on an item (docs/ARCHITECTURE.md, section 5): its own sections, in a
-fixed order, then facts the app writes itself - so a report can't claim what didn't happen. The
-first line is the item's line in lists. Used by save_code (scratch.py) and by the report kept on a table at
-the analyst-programmer's finish (app/assistant/workers/runner.py).
+"""The report kept on a file (docs/ARCHITECTURE.md, section 5): its sections, in a fixed order, then facts the app
+writes itself - so a report can't claim what didn't happen. The first line is the file's line in lists. Used by the
+report kept on a table at the analyst-programmer's finish (app/assistant/workers/runner.py); a program's report is
+written by its runs (app/tools/run.py).
 """
 
 from __future__ import annotations
 
-CODE_SECTIONS = (("purpose", ""), ("how_it_works", "How it works"), ("inputs_outputs", "Inputs and outputs"),
-                 ("how_to_run", "How to run or change it"), ("limits", "Limits and next steps"))
-DATA_SECTIONS = (("question", ""), ("data_used", "Data used and cleaning decisions"), ("method", "Method"),
-                 ("results", "Results"), ("caveats", "Caveats and next steps"))
+DATA_SECTIONS = (("question", ""), ("results", "Results"), ("caveats", "Caveats and next steps"))
 MAX_REPORT_WORDS = 450  # a report must fit beside the work in a 16K worker context
 
 

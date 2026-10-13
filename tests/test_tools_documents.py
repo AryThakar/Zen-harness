@@ -121,6 +121,7 @@ def test_slides_are_made_from_markdown_with_charts_and_notes(ws, index, sales):
 def test_slides_need_a_heading_and_are_changed_whole(ws, index):
     assert files(ws, index, "write", name="empty.pptx", content="\n\n").status == "invalid_arguments"
     r = files(ws, index, "write", name="deck.pptx", content="# One\n- a\n")
-    assert files(ws, index, "update", name="deck.pptx", content="- b", start=2, end=2).status == "invalid_arguments"
-    assert files(ws, index, "update", name="deck.pptx", content="# One\n- b\n# Two\n").status == "ok"
+    edit = files(ws, index, "edit", name="deck.pptx", old_text="- a", new_text="- b")
+    assert edit.status == "invalid_arguments" and "written whole from Markdown" in edit.result["error"]["message"]
+    assert files(ws, index, "write", name="deck.pptx", content="# One\n- b\n# Two\n").status == "ok"
     assert len(Presentation(io.BytesIO(ws.path(r.result["file"]).read_bytes())).slides) == 2

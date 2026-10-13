@@ -18,8 +18,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.tools import (analyze_text, ask, calc, clean_data, compare, diagram, file_ops, files, find_patterns,
-                       forecast, image, inspect_data, make_chart, memory, ml, notes, query_data, read_file,
-                       sandbox, scratch, vision, weather, web)
+                       forecast, image, inspect_data, make_chart, memory, ml, notes, query_data, sandbox, vision,
+                       weather, web)
+from app.tools import run as run_tool
 from app.tools.core import ToolError, ToolResult, ok
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
@@ -33,7 +34,8 @@ class ToolContext:
     index: SearchIndex
     conversation: str = "default"
     emit: Callable[[dict], None] = field(default=lambda artifact: None)  # artifacts go to the UI
-    scratch: scratch.Scratch = field(default_factory=lambda: scratch.Scratch())  # a helper's file, one task long
+    # The running helper's trace (what it ran and made), so a Stop can keep it as the call's result.
+    trace: Any = None
     # When main's window starts (the first turn it still sees): this chat's turns from before it were cut
     # from view, and recall finds them; None = nothing cut, the whole chat is in view.
     visible_since: str | None = None
@@ -93,9 +95,11 @@ class DiagramIn(_In):
 
 
 class CalcIn(_In):
-    expression: str = Field(description="arithmetic, e.g. '2450 * 0.18' or '(1410 - 1250) / 1250 * 100'; ^ for "
-                                        "powers, n! for factorials, sqrt exp ln log2 log10, sin cos tan asin acos atan "
-                                        "(radians: write degrees as 35°), round abs min max, pi and e")
+    expression: str = Field(description="one expression. Arithmetic: '2450 * 0.18', '(1410 - 1250) / 1250 * 100' (^ "
+                                        "powers, n! factorials, sqrt ln log10, sin cos tan in radians - degrees as 35°). "
+                                        "Maths, in SymPy's notation (x y z t n are symbols): 'x^3 - x^2 + x - 3 = 0', "
+                                        "'diff(2/(1+x^2), x)', 'integrate(x*exp(x), x)', 'Integral(Abs(x-1), (x, 0, 2)).evalf()', "
+                                        "'limit(sin(x)/x, x, 0)', 'nsolve(x^3 - 3, x, 1)', 'Matrix([[1, 2], [3, 4]]).det()'")
 
 
 class NotesIn(_In):
@@ -133,9 +137,14 @@ class PlanIn(_In):
 
 
 def _read_page(c: ToolContext, a) -> ToolResult:
-    """read_webpage, and what was read kept in the workspace's index (files.index_webpage): the knowledge
-    helper can find a page read in earlier research - dated, after the user's own files, for 30 days."""
+    """read_webpage - or this chat's earlier read of the page, or its site's earlier refusal (web: the chat
+    remembers what its helpers read) - and what was read kept in the workspace's index (files.index_webpage): the
+    knowledge helper can find a page read in earlier research - dated, after the user's own files, for 30 days."""
+    known = web.remembered_page(c.conversation, a.url, a.find) or web.refused_site(c.conversation, a.url)
+    if known is not None:
+        return known
     r = web.read_webpage(a.url, a.find)
+    web.remember_read(c.conversation, a.url, a.find, r)
     if r.status in ("ok", "partial") and c.index is not None:
         files.index_webpage(c.index, r.result)
     return r
@@ -165,10 +174,8 @@ class TaskIn(_In):
 
 
 class WorkTaskIn(TaskIn):
-    data: str | None = Field(None, description="the table the task is about, e.g. 'sales.csv'")
-    file: str | None = Field(None, description="the program to keep or change, e.g. 'primes.py': a new name makes "
-                                               "it, an existing one is changed (omit when no program is wanted; a "
-                                               "table goes in data)")
+    files: list[str] | None = Field(None, description="the workspace files the task is about, by name - tables, "
+                                                      "pictures, documents, programs - e.g. ['sales.csv', 'stats.py']")
 
 
 class QuestionIn(_In):
@@ -182,18 +189,33 @@ class SearchIn(_In):
         None, description="only pages from the last day, week, month or year - for news and 'latest' questions")
 
 
+FILE_NAME = "the file's name, e.g. 'report.md' or 'charts/sales.png'"
+START = "read: the line to read from (the result's next says where to go on)"
+CONTENT = "write: the file's whole text (Markdown for .md, .docx and .pptx)"
+OLD_TEXT = "edit: the passage to change, exactly as it is in the file (spaces and line breaks too)"
+NEW_TEXT = "edit: the text to put instead ('' removes the passage)"
+
+
 class FilesIn(_In):
-    mode: Literal["list", "find", "read", "write", "update", "rename", "delete", "download"] = Field(
+    mode: Literal["list", "find", "read", "write", "edit", "rename", "delete", "download"] = Field(
         description="what to do: each mode is described with the tool")
-    name: str | None = Field(None, description="the file's name, e.g. 'report.md' or 'charts/sales.png' (all modes but list and "
-                                               "download)")
+    name: str | None = Field(None, description=FILE_NAME + " (all modes but list and download)")
     page: int = Field(1, ge=1, description="list: which page")
-    start: int | None = Field(None, ge=0, description="read: the line to read from (the result's next says where "
-                                                      "to go on); update: the first line to change")
-    end: int | None = Field(None, ge=1, description="update: the last line to change")
-    content: str | None = Field(None, description="write, update: the text (Markdown for .md and .docx)")
+    start: int | None = Field(None, ge=0, description=START)
+    content: str | None = Field(None, description=CONTENT)
+    old_text: str | None = Field(None, description=OLD_TEXT)
+    new_text: str | None = Field(None, description=NEW_TEXT)
     new_name: str | None = Field(None, description="rename: the new name")
     link: str | None = Field(None, description="download: a GitHub file's link, or a data file's link (CSV, Excel)")
+
+
+class HelperFilesIn(_In):
+    mode: Literal["find", "read", "write", "edit"] = Field(description="what to do: each mode is described with the tool")
+    name: str = Field(description=FILE_NAME)
+    start: int | None = Field(None, ge=0, description=START)
+    content: str | None = Field(None, description=CONTENT)
+    old_text: str | None = Field(None, description=OLD_TEXT)
+    new_text: str | None = Field(None, description=NEW_TEXT)
 
 
 class ReadPageIn(_In):
@@ -203,11 +225,6 @@ class ReadPageIn(_In):
 
 class FilesQueryIn(_In):
     query: str = Field(description="what to look for, in words the document would use")
-
-
-class ReadFileIn(_In):
-    file: str = Field(description="a file or note by its name, e.g. 'report.md'")
-    start: int = Field(1, ge=0, description="the line to read from; the result's next says where to go on")
 
 
 class DataIn(_In):
@@ -319,21 +336,19 @@ class TextIn(_In):
 TYPED = "what a person would type when the program asks (input()), one line per answer, e.g. 'w\\nw\\nq'"
 
 
-class RunCodeIn(_In):
-    code: str = Field(description="the whole Python script; print what you need")
-    timeout: int = Field(30, ge=1, le=120, description=TIMEOUT)
+class RunIn(_In):
+    file: str = Field(description="the Python file to run, by its name, e.g. 'scripts/age_by_class.py'")
     input: str | None = Field(None, description=TYPED)
-
-
-class FixCodeIn(_In):
-    from_line: int = Field(ge=1, description="the first line to change")
-    to_line: int = Field(ge=0, description="the last line to change (from_line - 1 inserts before from_line)")
-    new_code: str = Field(description="the lines that replace them (may be more or fewer lines)")
     timeout: int = Field(30, ge=1, le=120, description=TIMEOUT)
-    input: str | None = Field(None, description="typed input as for run_code; omit to type what the last run typed")
 
 
 # ---------------------------------------------------------------- the tools
+
+FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Looking for a file", "Looked for a file"),
+                    "read": ("Reading a file", "Read a file"), "write": ("Writing a file", "Wrote a file"),
+                    "edit": ("Changing a file", "Changed a file"), "rename": ("Renaming a file", "Renamed a file"),
+                    "delete": ("Asking to delete a file", "Asked to delete a file"),
+                    "download": ("Asking to download", "Asked to download")}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("get_weather", "Weather where the user is - found automatically, don't ask them - or in a named place: now "
@@ -355,9 +370,11 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "or a plot of a formula (analyze_or_code charts and plots them).",
        DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title),
        labels=("Drawing a diagram", "Drew a diagram")),
-    Tool("calculate", "Exact arithmetic: use it for every number you work out - even a sum or an average - "
-       "instead of doing it in your head; one call can hold a whole expression. Maths problems: solve them yourself, "
-       "step by step, and check the numbers here. Not for a table's numbers (analyze_or_code).",
+    Tool("calculate", "Exact maths: use it for every number you work out - even a sum or an average - instead of "
+       "doing it in your head. Arithmetic, and maths: equations (solve, or 'lhs = rhs'; nsolve for a number), "
+       "derivatives (diff), integrals (integrate; a definite integral's number: Integral(f, (x, a, b)).evalf()), "
+       "limits, sums, matrices. A maths problem is yours: solve it step by step, every number from here - a helper "
+       "only for maths that needs a program (a simulation, many cases). Not for a table's numbers (analyze_or_code).",
        CalcIn, lambda c, a: calc.calculate(a.expression),
        labels=("Calculating", "Calculated")),
     Tool("notes", "Your notes - your memory across chats. save: a decision, preference, constraint, conclusion or "
@@ -390,25 +407,22 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "description (not what is said in it).", ReadPageIn,
        lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
-    Tool("files", "The workspace's files (notes are not files). Use it when the user asks what files they have, or to open, "
-       "save, change, rename, delete or bring in one. list: everything, a page at a time; find: whether a name "
-       "exists; read: a file's report (what a helper did with it), or its text from line start on (an image or a "
-       "table says which tool reads it); write: a new file the user asked for - text, Markdown, CSV, JSON, code, "
-       "and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading starts a "
-       "slide; a line that is only ![caption](charts/sales.png) puts in that picture or chart); update: change an "
-       "existing file - its whole text, or lines start-end; rename; delete: one file; download: one file from "
-       "GitHub, or a data table (CSV, Excel) from any public link - a repository's or folder's page lists the "
-       "files it has, to pick one. Not for running code (analyze_or_code) or finding where something is on the web "
-       "(research_web). Delete, download and updating the user's own file ask the user with a button - call it "
-       "straight away, don't ask first in words.",
+    Tool("files", "The workspace's files (notes are not files): what the user has, and the files you make. Use it when "
+       "the user asks what files they have, or to open, write, change, rename, delete or bring in one. list: everything, "
+       "a page at a time; find: whether a name exists; read: a file's report (what a helper did with it), or its text "
+       "from line start on (an image or a table says which tool reads it); write: a new file - text, Markdown, CSV, "
+       "JSON, code, and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading "
+       "starts a slide; a line that is only ![caption](charts/sales.png) puts in that picture or chart) - or the whole "
+       "new text of a file that is there (its version before is kept); edit: change one passage - old_text exactly as "
+       "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
+       "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
+       "one. Not for running code (analyze_or_code) or finding where something is on the web (research_web). Delete, "
+       "download and changing the user's own file ask the user with a button - call it straight away, don't ask "
+       "first in words.",
        FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
-                                            end=a.end, content=a.content, new_name=a.new_name, link=a.link),
-       labels=("Working with files", "Worked with files"),
-       mode_labels={"list": ("Listing files", "Listed files"), "find": ("Looking for a file", "Looked for a file"),
-                    "read": ("Reading a file", "Read a file"), "write": ("Writing a file", "Wrote a file"),
-                    "update": ("Updating a file", "Updated a file"), "rename": ("Renaming a file", "Renamed a file"),
-                    "delete": ("Asking to delete a file", "Asked to delete a file"),
-                    "download": ("Asking to download", "Asked to download")}),
+                                            content=a.content, old_text=a.old_text, new_text=a.new_text,
+                                            new_name=a.new_name, link=a.link),
+       labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
     Tool("search_files", "Find what matches a query in the user's documents and file reports, their pictures (by what they show) "
        "and tables (by their columns and values) - then, apart, their saved notes and pages read in earlier "
        "research (dated).", FilesQueryIn,
@@ -418,10 +432,6 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        FilesQueryIn,
        lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since),
        labels=("Searching earlier chats", "Searched earlier chats")),
-    Tool("read_file", "Read a stored file or note in order, from a line on (code with line numbers, documents with "
-       "their pages), with what a helper reported about it.", ReadFileIn,
-       lambda c, a: read_file.read_file(c.ws, a.file, a.start),
-       labels=("Reading a file", "Read a file")),
     Tool("inspect_data", "First look at a table: columns, types, missing values, duplicates, outliers, suggested "
        "cleaning steps and questions only the user can answer.", DataIn,
        lambda c, a: inspect_data.inspect_data(c.ws, a.data),
@@ -474,21 +484,17 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        ViewImageIn,
        lambda c, a: vision.view_image(c.ws, a.image, a.question, c.look),
        labels=("Looking at the image", "Looked at the image")),
-    Tool("run_code", "Write your scratch Python script (the whole of it) and run it. It runs in the workspace's "
-       "folder, so its files open by their names: pd.read_csv('sales.csv'), Image.open('panda.jpg'), "
-       "open('notes.md'); table('sales.csv') gives a table with its dates and numbers already read. Files the script "
-       "writes are kept in the workspace (.csv / .parquet become tables, images are shown); writing again a file the "
-       "assistant made changes it (its version before is kept); the user's own files are never changed - write "
-       "under a new name. It runs on Windows: fonts by file name, e.g. ImageFont.truetype('segoeui.ttf', 96) "
-       "(arial, georgia, segoeui, times, verdana ...). No internet: a file from the web must be in the workspace "
-       "first. "
-       "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunCodeIn,
-       lambda c, a: scratch.run_code(c.ws, c.scratch, a.code, a.timeout, a.input),
+    Tool("run", "Run a Python file of the workspace - write it with files first, change it with files edit, run it "
+       "again. It runs in the workspace's folder, so files open by their names: pd.read_csv('sales.csv'), "
+       "Image.open('panda.jpg'), open('notes.md'); table('sales.csv') gives a table with its dates and numbers "
+       "already read. Files it writes are kept in the workspace (.csv / .parquet become tables, pictures are shown "
+       "to you); writing again a file the assistant made changes it (its version before is kept); the user's own "
+       "files are never changed - write under a new name. A failed run shows the lines around the error. It runs "
+       "on Windows: fonts by file name, e.g. ImageFont.truetype('segoeui.ttf', 96) (arial, georgia, segoeui, times, "
+       "verdana ...). No internet: a file from the web must be in the workspace first. "
+       "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunIn,
+       lambda c, a: run_tool.run(c.ws, c.index, a.file, a.input, a.timeout),
        labels=("Running code", "Ran code")),
-    Tool("fix_code", "Change lines from_line-to_line of your scratch script and run it again - after an error, "
-       "the lines it shows. Cheaper and safer than sending the whole script again.", FixCodeIn,
-       lambda c, a: scratch.fix_code(c.ws, c.scratch, a.from_line, a.to_line, a.new_code, a.timeout, a.input),
-       labels=("Fixing the code", "Fixed the code")),
 ]}
 
 
@@ -542,7 +548,7 @@ def execute(ctx: ToolContext, name: str, raw_input, tools: dict[str, Tool] | Non
 # Inputs that name a workspace item, and the kinds each may be: resolved by one resolver before any tool
 # runs, so every tool takes a file's name (any case), a copied listing line or a key alike (Workspace.resolve).
 ITEM_FIELDS = {"data": ("table",), "new_data": ("table",), "image": ("image",)}
-ITEM_FIELDS_BY_INPUT = {ReadFileIn: {"file": read_file.KINDS}}
+ITEM_FIELDS_BY_INPUT: dict[type, dict[str, tuple[str, ...]]] = {}
 
 
 def _resolve_items(ctx: ToolContext, args: _In) -> None:
@@ -605,3 +611,17 @@ def _strip_titles(schema) -> None:
     elif isinstance(schema, list):
         for item in schema:
             _strip_titles(item)
+
+
+# A helper's own version of a tool main also has: the same name and handler, the modes it may use.
+HELPER_TOOLS: dict[str, Tool] = {
+    "files": Tool("files", "The workspace's files, by name. find: whether a name exists; read: a file's text from "
+                  "line start on, with its report (an image or a table says what reads it); write: a new file, or "
+                  "the whole new text of one (its version before is kept) - a program is written here, then run "
+                  "with run; edit: change one passage - old_text exactly as in the file (line numbers as read may "
+                  "stay), new_text to put instead - then run it again. A file the user brought is changed only if "
+                  "they allow it: they are asked.", HelperFilesIn,
+                  lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, content=a.content,
+                                              old_text=a.old_text, new_text=a.new_text, helper=True),
+                  labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
+}

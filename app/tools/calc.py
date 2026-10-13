@@ -1,4 +1,13 @@
-"""calculate: exact arithmetic, so the model never does sums in its head.
+"""calculate: exact maths, so the model never works numbers out in its head - arithmetic at once, and the rest
+(equations, derivatives, integrals, limits, sums, matrices) by SymPy.
+
+Arithmetic first, by the safe evaluator below. What it can't read - a symbol (x), a SymPy function (solve, diff,
+integrate, limit, Matrix ...), an equation written 'lhs = rhs' - goes to SymPy, in a sandbox process of its own (an
+empty folder, no network, a time limit: SymPy reads an expression by evaluating it). Measured before: calculate
+was arithmetic only, so every real maths problem went to the analyst-programmer - 10 since 3 Oct, the calculus
+problem of 10 Oct for 8 minutes - or was worked out in the model's head.
+
+The arithmetic evaluator:
 
 A safe evaluator (simpleeval): numbers, + - * / // % ** ^, parentheses, pi and e, and FUNCTIONS -
 no other names, attributes or calls. The set is what the model writes when left to itself
@@ -21,7 +30,7 @@ import math
 import re
 from decimal import Decimal
 
-from simpleeval import InvalidExpression, SimpleEval
+from simpleeval import FunctionNotDefined, InvalidExpression, NameNotDefined, SimpleEval
 
 from .core import ToolError, ToolResult, ok, tool
 
@@ -61,8 +70,12 @@ def calculate(expression: str) -> ToolResult:
     if not expr or len(expr) > 500:
         raise ToolError("expression must be 1 to 500 characters.", field="expression")
     expr = _factorials(DEGREES.sub(r"(\1*pi/180)", expr))
+    if EQUATION.search(expr):  # 'x^2 + 1 = 10': an equation, solved for its symbols
+        return symbolic(expr)
     try:
         value = _evaluator.eval(expr)
+    except (NameNotDefined, FunctionNotDefined):  # a symbol or a SymPy function: maths beyond arithmetic
+        return symbolic(expr)
     except ZeroDivisionError as exc:
         raise ToolError("Division by zero.", field="expression") from exc
     except (InvalidExpression, SyntaxError, TypeError, ValueError, OverflowError) as exc:
@@ -113,3 +126,73 @@ def _bang(expr: str) -> int:
         if ch == "!" and k > 0 and (expr[k - 1].isdigit() or expr[k - 1] == ")") and not expr.startswith("!=", k):
             return k
     return -1
+
+
+# ---------------------------------------------------------------- SymPy
+
+EQUATION = re.compile(r"(?<![=<>!])=(?!=)")  # one '=' alone: an equation, not == <= >= !=
+SYMBOLIC_TIMEOUT = 20
+SYMPY = r"""  # raw: its regex is written as the script will read it
+import json
+import sympy as sp
+from sympy.parsing.sympy_parser import convert_xor, implicit_multiplication, parse_expr, standard_transformations
+names = {{k: getattr(sp, k) for k in dir(sp) if not k.startswith("_")}}
+names.update(ln=sp.log, e=sp.E, inf=sp.oo, Max=sp.Max, Min=sp.Min)
+names.update({{s: sp.Symbol(s) for s in ("x", "y", "z", "t", "n", "k", "a", "b", "c", "u", "v", "w")}})
+read = lambda s: parse_expr(s, local_dict=names,
+                            transformations=standard_transformations + (implicit_multiplication, convert_xor))
+text = {expr!r}
+import re
+unknown = [f for f in re.findall(r"(?<![\w.])([A-Za-z_]\w*)\s*\(", text) if f not in names]
+if unknown:  # an unknown name before '(' would be read as a symbol times the bracket: said instead
+    raise NameError("no function " + ", ".join(dict.fromkeys(unknown)) + " in SymPy")
+if {equation!r}:
+    left, right = text.split("=", 1)
+    equation = sp.Eq(read(left), read(right))
+    value = sp.solve(equation, sorted(equation.free_symbols, key=str) or None, dict=True)
+else:
+    value = read(text)
+def number(v):
+    try:
+        if getattr(v, "is_number", False):
+            n = complex(sp.N(v, 15))
+            return n.real if abs(n.imag) < 1e-12 else str(sp.N(v, 12))
+    except (TypeError, ValueError):
+        pass
+    return None
+if isinstance(value, (list, tuple, set)):
+    items = list(value)
+    numeric = [{{str(k): number(x) for k, x in i.items()}} if isinstance(i, dict) else number(i) for i in items]
+else:
+    numeric = number(value)
+print(json.dumps({{"result": sp.sstr(value), "value": numeric}}))
+"""
+
+
+def symbolic(expr: str) -> ToolResult:
+    """An expression or equation worked out by SymPy, exactly - and as a number where it is one."""
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from .sandbox import run_python
+    from .workspace import Workspace
+    equation = bool(EQUATION.search(expr))
+    with tempfile.TemporaryDirectory() as tmp:  # an empty workspace: the maths can reach nothing of the user's
+        ran = run_python(Workspace(Path(tmp) / "maths"), SYMPY.format(expr=expr, equation=equation),
+                         SYMBOLIC_TIMEOUT, name="calculate.py")
+    if ran.status != "ok":
+        if "time limit" in str((ran.result.get("error") or {}).get("message", "")):
+            raise ToolError(f"That took longer than {SYMBOLIC_TIMEOUT} s. For a definite integral's number, try "
+                            "Integral(f, (x, a, b)).evalf(); for an equation's roots, nsolve(f, x, guess).",
+                            field="expression")
+        last = next((ln for ln in reversed(ran.result.get("errors", "").splitlines()) if ln.strip()), "an error")
+        raise ToolError(f"Can't work that out: {last.strip()[:200]}. Write it in SymPy's notation - x, y, z, t, n "
+                        "are symbols: solve(x**2 - 4, x), x**2 + 1 = 10, diff(x*sin(x), x), "
+                        "integrate(exp(-x**2), (x, 0, oo)), limit(sin(x)/x, x, 0), Matrix([[1, 2], [3, 4]]).det().",
+                        field="expression")
+    out = json.loads(ran.result["output"].strip().splitlines()[-1])
+    result = {"expression": expr, "result": out["result"]}
+    if out.get("value") is not None and str(out["value"]) != out["result"]:
+        result["value"] = out["value"]
+    return ok(result)
