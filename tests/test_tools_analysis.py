@@ -262,7 +262,9 @@ def test_scatter_box_heatmap_and_pie(ws, sales):
 
 
 def test_chart_kinds_say_how_to_fix_a_wrong_call(ws, sales):
-    assert "use type='box'" in make_chart(ws, sales, "histogram", "amount", by="region").result["error"]["message"]
+    split = make_chart(ws, sales, "histogram", "amount", by="region")  # one spread per group, the same bins
+    assert split.status == "ok" and len(split.artifact["series"]) >= 2 and "y" not in split.artifact
+    assert "groups of a box chart go in x" in make_chart(ws, sales, "box", "amount", by="region").result["error"]["message"]
     assert "sum or count" in make_chart(ws, sales, "pie", "region", "amount", agg="mean").result["error"]["message"]
     assert "needs x and by" in make_chart(ws, sales, "heatmap", "region").result["error"]["message"]
     same = make_chart(ws, sales, "bar", "region", "amount", by="region", agg="mean")  # by = x: no split, no error

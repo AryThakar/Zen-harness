@@ -509,6 +509,8 @@ class Workspace:
                 info = f"table, {e.get('rows', 0):,} rows, {len(cols)} columns ({shown})"
             elif e["kind"] == "image":
                 info = f"image {meta['width']}x{meta['height']}" if meta.get("width") else "image"
+            elif meta.get("chart"):  # a chart file: the page draws it, a document takes its picture
+                info = f"chart ({meta['chart']}" + (f", {meta['points']} points" if meta.get("points") else "") + ")"
             elif "passages" in meta:  # a document, indexed for search: say what it is about
                 title = f' "{meta["title"]}"' if meta.get("title") and meta["title"] != e["name"] else ""
                 size = f"{meta['pages']} pages" if meta.get("pages") else f"{meta.get('words') or 0:,} words"

@@ -1,37 +1,92 @@
-"""A chart as a picture: the same chart a tool showed the user (make_chart, forecast, find_patterns' unusual
-periods), drawn again from its own data by matplotlib and kept as an image item - so a Word document or a
-slide deck can include it (files' write: ![caption](image_7)), a script can open it, and the user can
-download it. The page draws charts itself (Chart.js); this is the same data, not a screenshot.
+"""Charts as files: a chart a tool made (make_chart, forecast, find_patterns' unusual periods) or a script made
+(chart() in the sandbox) is a chart file - charts/<its title>.chart.json, the data and how to draw it. The page
+draws it live (Chart.js: animated, values on hover); where a picture is needed - a Word document or a slide deck
+(files' write: ![caption](charts/sales.chart.json)), a download - it is drawn from that same file by matplotlib,
+and kept only as a cache beside it. Measured before: every chart was also kept as a PNG item (10 of a workspace's
+39 pictures), and answers showed the chart twice.
 
-Never in the way: a chart that can't be drawn as a picture just has none (the chart itself still shows).
+The same chart made again from the same table (the same title) is the same file, its new version.
 """
 
 from __future__ import annotations
 
 import io
+import json
 import logging
+from pathlib import Path
 
+from .core import jsonable
 from .image import file_name
 from .workspace import Workspace
 
 log = logging.getLogger(__name__)
+SUFFIX = ".chart.json"
 
 SERIES = ["#5a51c7", "#e07b26", "#1f9e74", "#d9468f", "#1f8fcf", "#d64545"]
 DATA, SOFT, INK, LINE = "#5a51c7", "#8f8f8f", "#1d1d1f", "#e3e3e8"
 MAX_TICKS = 12
 
 
-def keep_chart(ws: Workspace, artifact: dict, parent: str | None = None) -> str | None:
-    """The chart drawn as a PNG and kept as an image item (named after its title); None when it can't be."""
+def save_chart(ws: Workspace, artifact: dict, parent: str | None = None) -> str:
+    """The chart kept as its chart file; returns its key (the card's id, so the page knows it once). The same
+    title from the same table again is the same file, its next version."""
+    spec = jsonable({k: v for k, v in artifact.items() if k not in ("type", "tool", "id")})
+    data = json.dumps(spec, ensure_ascii=False).encode("utf-8")
+    path = "charts/" + file_name(str(spec.get("title") or "chart"), SUFFIX.lstrip("."))
+    meta = {"chart": spec.get("chart"), "title": spec.get("title"), "points": _points(spec)}
+    same = ws.find_path(path)
+    if same and ws.entry(same).get("parent") == parent and not ws.by_user(same):
+        ws.put("", data, key=same, meta=meta)
+        return same
+    return ws.put(path, data, kind="file", parent=parent, meta=meta).key
+
+
+def is_chart(name: str) -> bool:
+    return str(name).lower().endswith(SUFFIX)
+
+
+def describe_chart(ws: Workspace, key: str) -> bool:
+    """A chart file a script wrote, described like a tool's (its kind, title and points); False when it isn't a
+    chart the page can draw."""
     try:
-        png = draw(artifact)
+        spec = json.loads(ws.path(key).read_text("utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(spec, dict) or not spec.get("chart"):
+        return False
+    for name, value in (("chart", spec["chart"]), ("title", spec.get("title")), ("points", _points(spec))):
+        ws.set_meta(key, name, value)
+    return True
+
+
+def spec_of(ws: Workspace, key: str) -> dict:
+    """A chart file's chart: the artifact the page draws."""
+    return {"type": "chart", **json.loads(ws.path(key).read_text("utf-8")), "id": key}
+
+
+def picture_of(ws: Workspace, key: str) -> Path | None:
+    """The chart file drawn as a PNG (for a document, a slide or a download), cached beside it until the chart
+    changes; None when it can't be drawn."""
+    source = ws.path(key)
+    cached = ws.zen / "cache" / f"{key}.png"
+    if cached.exists() and cached.stat().st_mtime >= source.stat().st_mtime:
+        return cached
+    try:
+        png = draw(spec_of(ws, key))
     except Exception:  # noqa: BLE001 - a chart without its picture is still a chart
-        log.exception("chart %r could not be drawn as a picture", artifact.get("title"))
+        log.exception("chart %s could not be drawn as a picture", key)
         return None
     if png is None:
         return None
-    return ws.add_image(png, "charts/" + file_name(str(artifact.get("title") or "chart"), "png"), parent=parent,
-                        meta={"chart": artifact.get("chart")})
+    cached.write_bytes(png)
+    return cached
+
+
+def _points(spec: dict) -> int:
+    for k in ("y", "x", "values", "boxes"):
+        if isinstance(spec.get(k), list):
+            return len(spec[k])
+    return sum(len(s.get("y") or []) for s in spec.get("series") or [])
 
 
 def draw(a: dict) -> bytes | None:
@@ -43,7 +98,7 @@ def draw(a: dict) -> bytes | None:
     kind = a.get("chart")
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
     try:
-        drawn = {"line": _line, "bar": _bar, "scatter": _scatter, "histogram": _histogram, "box": _box,
+        drawn = {"line": _line, "area": _area, "bar": _bar, "scatter": _scatter, "histogram": _histogram, "box": _box,
                  "heatmap": _heatmap, "pie": _pie, "forecast": _forecast, "unusual": _unusual}.get(kind)
         if drawn is None:
             return None
@@ -127,9 +182,26 @@ def _scatter(ax, a):
         ax.plot([x0, x1], [y0, y1], color=SOFT, linestyle="--", linewidth=1.2)
 
 
+def _area(ax, a):
+    x = a.get("x") or []
+    series = a.get("series") or [{"name": a.get("y_label") or "value", "y": a.get("y") or []}]
+    ys = [[0.0 if v is None else v for v in s["y"]] for s in series]
+    if a.get("series"):
+        ax.stackplot(range(len(x)), *ys, labels=[str(s["name"]) for s in series], colors=SERIES[:len(ys)], alpha=0.8)
+    else:
+        ax.fill_between(range(len(x)), ys[0], color=DATA, alpha=0.3)
+        ax.plot(range(len(x)), ys[0], color=DATA, linewidth=2)
+    _labels(ax, x)
+
+
 def _histogram(ax, a):
-    edges, counts = a.get("x") or [], a.get("y") or []
-    ax.bar(edges, counts, width=a.get("bin_width") or 1, align="edge", color=DATA, edgecolor="white", linewidth=0.5)
+    edges, width = a.get("x") or [], a.get("bin_width") or 1
+    if a.get("series"):  # one spread per group, the same bins, drawn over each other
+        for i, s in enumerate(a["series"]):
+            ax.bar(edges, s["y"], width=width, align="edge", color=SERIES[i % 6], alpha=0.55, label=str(s["name"]),
+                   edgecolor="white", linewidth=0.5)
+        return
+    ax.bar(edges, a.get("y") or [], width=width, align="edge", color=DATA, edgecolor="white", linewidth=0.5)
 
 
 def _box(ax, a):

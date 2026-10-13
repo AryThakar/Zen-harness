@@ -45,6 +45,7 @@ from typing import Protocol
 
 from .core import ToolError, ToolResult, jsonable
 from .filetypes import IMAGE
+from .chart_image import describe_chart, is_chart
 from .workspace import Workspace, kind_of, prune_versions
 
 DEFAULT_TIMEOUT = 30
@@ -228,6 +229,34 @@ def _open_resolving(file, mode="r", *args, **kwargs):
         file = path(file)
     return _open(file, mode, *args, **kwargs)
 _builtins.open = _open_resolving
+
+_CHARTS = ("line", "area", "bar", "scatter", "histogram", "pie")
+
+def chart(type, x, y=None, series=None, title=None, x_label=None, y_label=None):
+    """A chart the page draws live, like make_chart's: chart('line', x=[...], y=[...], title='...'), or several
+    lines or bars with series=[{{'name': 'A', 'y': [...]}}, ...]. Written as charts/<title>.chart.json; returns its
+    name. A picture that isn't a chart (an image, a map, 3D) is drawn with matplotlib instead."""
+    import re as _re
+    if type not in _CHARTS:
+        raise ValueError(f"chart type must be one of {{', '.join(_CHARTS)}}")
+    tolist = lambda v: v.tolist() if hasattr(v, "tolist") else list(v)
+    spec = {{"chart": type, "title": str(title or y_label or "chart"), "x": tolist(x),
+            "x_label": x_label, "y_label": y_label}}
+    if series is not None:
+        spec["series"] = [{{"name": str(s["name"]), "y": tolist(s["y"])}} for s in series]
+    elif y is not None:
+        spec["y"] = tolist(y)
+    else:
+        raise ValueError("chart needs y (the values) or series")
+    for s in spec.get("series") or [{{"y": spec.get("y")}}]:
+        if len(s["y"]) != len(spec["x"]):
+            raise ValueError(f"x has {{len(spec['x'])}} values but y has {{len(s['y'])}}")
+    slug = "-".join(_re.findall(r"[a-z0-9]+", spec["title"].lower()))[:40].strip("-") or "chart"
+    _os.makedirs("charts", exist_ok=True)
+    name = f"charts/{{slug}}.chart.json"
+    with _open(name, "w", encoding="utf-8") as f:
+        _json.dump(spec, f, default=str)
+    return name
 
 def _images():
     return {{n: _os.stat(n).st_mtime for n in _os.listdir(".") if n.lower().endswith({images!r})}}
@@ -482,11 +511,14 @@ def _register(ws: Workspace, before: dict) -> tuple[list[dict], list[dict]]:
             told.append({"path": rel, "note": f"not kept: {exc}"})
             continue
         kind = ws.kind(put.key)
+        if is_chart(put.path) and describe_chart(ws, put.key):
+            kind = "chart"  # drawn live, like make_chart's (run shows its card)
         entry = {"path": put.path, "kind": kind, **({"updated": True} if known else {})}
-        if kind != kind_of(rel):
+        if kind not in (kind_of(rel), "chart"):
             entry["note"] = f"not a readable {kind_of(rel)}; kept as a file"
         told.append(entry)
-        made.append({"path": put.path, "id": put.key, **({"updated": True} if known else {})})
+        made.append({"path": put.path, "id": put.key, **({"chart": True} if kind == "chart" else {}),
+                     **({"updated": True} if known else {})})
         if known:
             folder = ws.zen / "versions" / known
             if folder.exists():

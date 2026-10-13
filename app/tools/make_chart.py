@@ -2,10 +2,12 @@
 
     line       x = a date (bucketed by time_unit) or number; y = a number combined by agg;
                by = one line per group
+    area       a line with its area filled; with by, the groups stacked (each one's share of the whole)
     bar        x = a category; y combined by agg (largest first, top N); by = grouped bars,
                stacked=true stacks them
     scatter    x and y = numbers (up to 2,000 points) with a trend line; by = one colour per group
-    histogram  x = a number: how its values spread
+    histogram  x = a number: how its values spread; by = one spread per group, the same bins, drawn over each
+               other (measured: 'age of survivors vs the rest' was refused, so it was drawn with seaborn)
     box        y = a number, x = groups (optional): median, quartiles and outliers per group
     heatmap    x and by = two categories; each cell is y combined by agg (or a row count)
     pie        x = a category; y summed or counted; the 5 largest slices and 'other'
@@ -24,13 +26,13 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .chart_image import keep_chart
+from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import CODE, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq
 from .values import parse_dates
 from .workspace import Workspace, resolve_column
 
-ChartType = Literal["line", "bar", "scatter", "histogram", "box", "heatmap", "pie"]
+ChartType = Literal["line", "area", "bar", "scatter", "histogram", "box", "heatmap", "pie"]
 Agg = Literal["sum", "mean", "median", "count", "min", "max"]
 TimeUnit = Literal["auto", "day", "week", "month", "quarter", "year"]
 MAX_POINTS = 2000
@@ -44,7 +46,7 @@ PIE_SLICES = 5
 def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, y: str | None = None,
                by: str | None = None, agg: Agg = "sum", time_unit: TimeUnit = "auto", top: int = 20,
                stacked: bool = False, title: str | None = None) -> ToolResult:
-    """Draw a chart of a table: line, bar, scatter, histogram, box, heatmap or pie."""
+    """Draw a chart of a table: line, area, bar, scatter, histogram, box, heatmap or pie - kept as a chart file."""
     df = ws.table(data)
     if x is None and not (type == "box" and y):
         raise ToolError(f"A {type} chart needs x (a column).", field="x")
@@ -53,9 +55,8 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
     by = resolve_column(df, by, "by") if by else None
     if by and by in (x, y):  # 'bar of tip by day' given as x=day, by=day: the split is x itself
         by = None
-    if by and type in ("histogram", "box", "pie"):
-        hint = {"histogram": "to compare how a number spreads across groups use type='box' with x=the groups",
-                "box": "the groups of a box chart go in x", "pie": "a pie shows one column's shares"}[type]
+    if by and type in ("box", "pie"):
+        hint = {"box": "the groups of a box chart go in x", "pie": "a pie shows one column's shares"}[type]
         raise ToolError(f"A {type} chart takes no by: {hint}.", field="by")
     unit = ws.column_notes(data).get(y, {}).get("unit") if y else None
     top = max(1, min(int(top), 50))
@@ -65,7 +66,7 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
         _need_number(df, y, "y")
 
     if type == "histogram":
-        chart, summary = _histogram(df, x)
+        chart, summary = _histogram(df, x) if not by else _histograms(df, x, by)
     elif type == "scatter":
         if not y:
             raise ToolError("A scatter chart needs y (a number column).", field="y")
@@ -81,7 +82,7 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
             raise ToolError("A pie shows shares of a total: agg must be sum or count. For averages use a bar chart.",
                             field="agg")
         chart, summary = _pie(df, x, y, agg)
-    elif type == "line":
+    elif type in ("line", "area"):
         chart, summary = _line(df, x, y, agg, time_unit, by)
     else:
         chart, summary = _bar(df, x, y, agg, top, by)
@@ -92,9 +93,9 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
                 **({"unit": unit} if unit else {}), **({"stacked": True} if stacked and by and type == "bar" else {}),
                 **chart}
     warning = ws.issues_warning(data)
-    picture = keep_chart(ws, artifact, parent=data)  # the same chart as an image item, for documents and slides
+    artifact["id"] = save_chart(ws, artifact, parent=data)  # the chart file: drawn live, a picture when a document needs one
     return ok({"chart": type, "data": data, "title": title, **summary, **({"data_warning": warning} if warning else {}),
-               **({"picture": picture} if picture else {})}, artifact)
+               "chart_file": artifact["id"]}, artifact)
 
 
 def _title(type, x, y, by, y_label) -> str:
@@ -295,6 +296,29 @@ def _histogram(df, x):
                "max": number(v.max()), "most_common_range": [number(edges[peak]), number(edges[peak + 1])]}
     return {"x": [number(e) for e in edges[:-1]], "y": [int(c) for c in counts],
             "bin_width": number(float(edges[1] - edges[0])), "y_label": "rows"}, summary
+
+
+def _histograms(df, x, by):
+    """How x spreads in each of the largest groups of by: the same bins for all, so they compare."""
+    v = _need_number(df, x, "x")
+    frame = df.assign(_v=v).dropna(subset=["_v", by])
+    if frame.empty:
+        raise ToolError(f"'{x}' has no values.", invalid=False)
+    groups, total = _largest_groups(frame, by, None, "count", MAX_SERIES)
+    edges = np.histogram_bin_edges(frame["_v"], bins="auto")
+    if len(edges) > 41:
+        edges = np.histogram_bin_edges(frame["_v"], bins=40)
+    series, summary = [], {"values": len(frame), "bins": len(edges) - 1, "groups": {}}
+    keys = frame[by].astype(str)
+    for g in groups:
+        part = frame.loc[keys == g, "_v"]
+        counts, _ = np.histogram(part, bins=edges)
+        series.append({"name": g, "y": [int(c) for c in counts]})
+        summary["groups"][g] = {"values": len(part), "median": number(part.median())}
+    if total > len(groups):
+        summary["note"] = f"The {len(groups)} largest of {total} {by} groups are drawn."
+    return {"x": [number(e) for e in edges[:-1]], "series": series, "bin_width": number(float(edges[1] - edges[0])),
+            "y_label": "rows"}, summary
 
 
 def _box(df, x, y, top):

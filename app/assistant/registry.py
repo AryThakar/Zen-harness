@@ -149,6 +149,16 @@ def _read_page(c: ToolContext, a) -> ToolResult:
         files.index_webpage(c.index, r.result)
     return r
 
+def _run(c: ToolContext, a) -> ToolResult:
+    """run - and each chart the program wrote shown as a live card, as make_chart's are."""
+    from app.tools.chart_image import spec_of
+    r = run_tool.run(c.ws, c.index, a.file, a.input, a.timeout)
+    for f in (r.artifact or {}).get("files", []):
+        if f.get("chart"):
+            c.emit({"tool": "run", **spec_of(c.ws, f["id"])})
+    return r
+
+
 def _search_files(c: ToolContext, query: str) -> ToolResult:
     """search_files over an index in step with the files as they are now (a file a script just wrote, too)."""
     if c.index is not None:
@@ -251,14 +261,15 @@ class SqlIn(_In):
 
 class ChartIn(_In):
     data: str = Field(description=TABLE_ID)
-    type: Literal["line", "bar", "scatter", "histogram", "box", "heatmap", "pie"] = Field(
+    type: Literal["line", "area", "bar", "scatter", "histogram", "box", "heatmap", "pie"] = Field(
         description="the kind of chart: which fits what is in the tool's description")
     x: str = Field(description="line: the date or number column; bar, pie: the categories; scatter: a number; "
                                "histogram: the number; box: the groups (or the number, for one box); heatmap: "
                                "the columns' categories")
     y: str | None = Field(None, description="the number column, combined by agg; omit to count rows")
-    by: str | None = Field(None, description="split into groups: one line each (line), grouped bars (bar), one "
-                                             "colour each (scatter), or the heatmap's rows")
+    by: str | None = Field(None, description="split into groups: one line each (line), stacked (area), grouped bars "
+                                             "(bar), one colour each (scatter), one spread each (histogram), or the "
+                                             "heatmap's rows")
     agg: Literal["sum", "mean", "median", "count", "min", "max"] = Field(
         "sum", description="how y is combined in each category or period: sum for amounts, mean for rates or prices")
     time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
@@ -412,7 +423,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "a page at a time; find: whether a name exists; read: a file's report (what a helper did with it), or its text "
        "from line start on (an image or a table says which tool reads it); write: a new file - text, Markdown, CSV, "
        "JSON, code, and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading "
-       "starts a slide; a line that is only ![caption](charts/sales.png) puts in that picture or chart) - or the whole "
+       "starts a slide; a line that is only ![caption](charts/sales.chart.json) puts in that picture or chart) - or the whole "
        "new text of a file that is there (its version before is kept); edit: change one passage - old_text exactly as "
        "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
        "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
@@ -443,12 +454,13 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100.",
        SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save),
        labels=("Querying the data", "Queried the data")),
-    Tool("make_chart", "Draw a chart of a table, computed from all its rows (also kept as a picture in charts/ - "
-       "its name comes back as picture - for documents and slides): line (over time; by = one line per "
-       "group), bar (by category; by = grouped or stacked), scatter (two numbers, with a trend line), histogram "
-       "(how one number spreads), box (a number's spread per group), heatmap (two categories, e.g. weekday x hour) "
-       "or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with query_data "
-       "first.",
+    Tool("make_chart", "Draw a chart of a table, computed from all its rows, kept as a chart file in charts/ (its "
+       "name comes back as chart_file: a document or slide takes it as a picture): line (over time; by = one line "
+       "per group), area (a line filled; by = stacked groups), bar (by category; by = grouped or stacked), scatter "
+       "(two numbers, with a trend line), histogram (how one number spreads; by = one spread per group, e.g. the "
+       "ages of survivors and the rest), box (a number's spread per group), heatmap (two categories, e.g. weekday x "
+       "hour) or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with "
+       "query_data first. The chart the user needs is drawn here, not in a script.",
        ChartIn, lambda c, a: make_chart.make_chart(c.ws, a.data, a.type, a.x, a.y, a.by, a.agg, a.time_unit, a.top,
                                                    a.stacked, a.title),
        labels=("Drawing a chart", "Drew a chart")),
@@ -489,11 +501,14 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "Image.open('panda.jpg'), open('notes.md'); table('sales.csv') gives a table with its dates and numbers "
        "already read. Files it writes are kept in the workspace (.csv / .parquet become tables, pictures are shown "
        "to you); writing again a file the assistant made changes it (its version before is kept); the user's own "
-       "files are never changed - write under a new name. A failed run shows the lines around the error. It runs "
+       "files are never changed - write under a new name. A chart from a program: chart('line', x=[...], y=[...], "
+       "title='...') (line, area, bar, scatter, histogram, pie; series=[{'name': ..., 'y': [...]}] for several) - "
+       "drawn live like make_chart's; matplotlib only for pictures that aren't charts. A failed run shows the lines "
+       "around the error. It runs "
        "on Windows: fonts by file name, e.g. ImageFont.truetype('segoeui.ttf', 96) (arial, georgia, segoeui, times, "
        "verdana ...). No internet: a file from the web must be in the workspace first. "
        "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunIn,
-       lambda c, a: run_tool.run(c.ws, c.index, a.file, a.input, a.timeout),
+       lambda c, a: _run(c, a),
        labels=("Running code", "Ran code")),
 ]}
 

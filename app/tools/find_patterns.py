@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .chart_image import keep_chart
+from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .forecast import MAX_GROUPS, SEASON, _positions, _series
 from .periods import CODE, ORDER, WORD, native_freq, split_dates, split_time
@@ -63,8 +63,8 @@ def find_patterns(ws: Workspace, data: str, kind: Literal["segments", "unusual",
                                      resolve_column(df, item, "item") if item else None)
     if warning:
         result["data_warning"] = warning
-    if artifact.get("type") == "chart" and (picture := keep_chart(ws, artifact, parent=data)):
-        result["picture"] = picture  # unusual periods' chart, kept as an image item for documents and slides
+    if artifact.get("type") == "chart":  # unusual periods' chart, kept as its chart file
+        artifact["id"] = result["chart_file"] = save_chart(ws, artifact, parent=data)
     return ok({"kind": kind, "data": data, **result}, artifact)
 
 

@@ -5,6 +5,7 @@
 // and uploads (drop, paste or pick), each showing its progress.
 
 import { api, itemUrl, KEYS, rowsUrl, send, state, uploadFile } from "./api.js";
+import { chartCard } from "./charts.js";
 import { openViewer, viewerOpen } from "./viewer.js";
 import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
 
@@ -21,6 +22,7 @@ const LANG = { python: "Python", javascript: "JavaScript", typescript: "TypeScri
 const DOT = { python: "#3b7ddd", javascript: "#e5c07b", typescript: "#3b7ddd", sql: "#c678dd", json: "#d19a66", markdown: "#8e8e8e", plaintext: "#8e8e8e", xml: "#e8784a" };
 function shape(item) {
   if (item.kind === "table") return "table";
+  if (/\.chart\.json$/i.test(item.name || "")) return "chart";
   if (item.kind === "note") return "md";
   if (item.kind === "image") return "image";
   const e = ext(item.name || item.id);
@@ -75,6 +77,8 @@ export async function openItem(item, from) {
   try {
     if (kind === "table") {
       fv.table = await api(rowsUrl(item.id));
+    } else if (kind === "chart") {
+      fv.chart = await (await fetch(itemUrl(item.id))).json();
     } else {
       const r = await fetch(itemUrl(item.id));
       if (!r.ok) throw new Error("Couldn't open the file");
@@ -123,6 +127,9 @@ function show() {
     const t = fv.table;
     body.append(gridView(t.columns, t.rows));
     status = ["Table", `${count(t.total_rows)} rows`, plural(t.columns.length, "column"), t.rows.length < t.total_rows ? `first ${count(t.rows.length)} shown` : null];
+  } else if (kind === "chart") {
+    body.append(h("div", { class: "chart-view" }, chartCard({ type: "chart", ...fv.chart, id: item.id })));
+    status = ["Chart", fv.chart.chart, "drawn live"];
   } else if (kind === "pdf") {
     body.append(h("iframe", { class: "pdf-view", src: fv.blob, title: item.name }));
     status = ["PDF"];
@@ -344,7 +351,9 @@ export function fillDrawer() {
   const sections = [
     ["Tables", itemsOf("table"), i => row(fileTile(/\.(csv|tsv|xlsx?|xlsm)$/i.test(i.name || "") ? i.name : "table.csv"), i.name, `${count(i.rows)} rows × ${i.columns} columns${from(i)}${kept(i)}`,
       act("View", () => openItem(i)))],
-    ["Documents & files", itemsOf("file"), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
+    ["Charts", itemsOf("file").filter(i => shape(i) === "chart"), i => row(fileTile("chart.csv"), i.title || i.name,
+      `${i.name} · drawn live${from(i)}${kept(i)}`, act("View", () => openItem(i)))],
+    ["Documents & files", itemsOf("file").filter(i => shape(i) !== "chart"), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
       `${i.passages != null ? `${i.pages ? plural(i.pages, "page") : plural(i.words || 0, "word")} · searchable` : fileSize(i.bytes)}${kept(i)}${i.report ? ` · ${i.report}` : ""}`,
       canView(i) ? act("View", () => openItem(i)) : h("a", { class: "act", href: itemUrl(i.id), download: i.name || "" }, "Download"))],
     ["Pinned notes", itemsOf("note"), i => row(noteTile(), i.title || i.name, `saved ${i.saved || ""} · kept in view`,

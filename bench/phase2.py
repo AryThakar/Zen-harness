@@ -58,10 +58,13 @@ def picture_name(r: Run) -> str | None:
         return f"{len([t for t in r.tools if t['name'] == 'run'])} runs (3 or fewer wanted)"
     scripts = [i for i in r.ws.ids("file") if r.ws.entry(i)["name"].endswith(".py")]
     code = " ".join(r.ws.path(i).read_text("utf-8", errors="replace") for i in scripts)
-    if "/usr/share/fonts" in code:
-        return "looked for Linux fonts"
-    if not re.search(r"truetype\(\s*['\"][\w ./-]+\.ttf", code, re.I):
-        return "no TrueType font named (the default font is tiny)"
+    named = {m.lower() for m in re.findall(r"['\"]([\w-]+\.tt[fc])['\"]", code)}  # fonts by file name
+    windows = {p.name.lower() for p in Path(r"C:\Windows\Fonts").glob("*.tt[fc]")}
+    if not named & windows:  # a fallback list may try other paths first: what counts is a font that loads here
+        return "no Windows font named (the default font is tiny)"
+    printed = " ".join(r.ws.report(i) or "" for i in scripts)
+    if re.search(r"default font", printed, re.I):
+        return "the run fell back to the default font"
     if not [i for i in r.ws.ids("image") if r.ws.entry(i)["name"] != "panda.jpg"]:
         return "no picture made"
     return None
@@ -106,7 +109,7 @@ def long_program(r: Run) -> str | None:
 def leetcode(r: Run) -> str | None:
     searches, longest = 0, 0
     for t in r.tools:
-        if t["name"] == "web_search":
+        if t["name"] == "web_search" and t.get("status") != "invalid_arguments":  # a refused search didn't run
             searches += 1
             longest = max(longest, searches)
         elif t["name"] == "read_webpage":
@@ -120,6 +123,38 @@ def leetcode(r: Run) -> str | None:
     if not re.search(r"leetcode", " ".join(r.answers), re.I) or not re.search(
             r"could ?n[o']t|cannot|can'?t|blocked|refus|bot check|not able|unable", " ".join(r.answers), re.I):
         return "the answer doesn't say LeetCode couldn't be read"
+    return None
+
+
+def _titanic(store: Store, ws_id: str, truth: dict) -> None:
+    """A Titanic-like table from a fixed seed: who survived, by sex, class and age."""
+    import numpy as np
+    import pandas as pd
+    rng = np.random.default_rng(7)
+    n = 400
+    sex = rng.choice(["male", "female"], n, p=[0.64, 0.36])
+    pclass = rng.choice([1, 2, 3], n, p=[0.24, 0.21, 0.55])
+    age = np.clip(rng.normal(30, 13, n), 1, 75).round()
+    chance = 0.2 + 0.5 * (sex == "female") + 0.15 * (pclass == 1) - 0.1 * (pclass == 3) + 0.1 * (age < 12)
+    survived = (rng.random(n) < np.clip(chance, 0.02, 0.95)).astype(int)
+    ws, _ = store.open(ws_id)
+    df = pd.DataFrame({"passenger": range(1, n + 1), "survived": survived, "pclass": pclass, "sex": sex, "age": age})
+    ws.put("titanic.csv", df.to_csv(index=False).encode(), kind="table", by="user")
+
+
+def titanic_charts(r: Run) -> str | None:
+    charts = [a for a in r.artifacts if a.get("type") == "chart"]
+    if len(charts) < 3:
+        return f"{len(charts)} live chart(s) (3 wanted: by sex, by class, ages)"
+    if r.ws.ids("image"):
+        return f"{len(r.ws.ids('image'))} picture(s) made - a chart is drawn live, not as a picture"
+    ids = [a.get("id") for a in charts]
+    if None in ids:
+        return "a chart without its chart file"
+    if len(set(ids)) < len(ids):
+        return "the same chart file shown as more than one card"
+    if any(re.search(r"!\[[^\]]*\]\([^)]*\.(png|jpe?g)\)", a) for a in r.answers):
+        return "the answer shows a picture of a chart"
     return None
 
 
@@ -140,6 +175,10 @@ JOBS = [
     Combo("leetcode", "phase2", [Step("Can you go to LeetCode, find the description for the problem 'Two Sum', and copy "
                                       "the exact text inside the Example 1 output block?"),
                                  Step("and give me the full problem description too")], leetcode),
+    # phase 3 (charts as files): run with --only titanic_charts
+    Combo("titanic_charts", "phase3", [Step("Show me titanic.csv visually: survival rate by sex, survival rate by class, "
+                                            "and the ages of those who survived vs those who didn't. Explain each "
+                                            "chart in a line.")], titanic_charts, setup=_titanic),
 ]
 
 

@@ -1,7 +1,7 @@
 // What a turn shows besides its text: tables, pictures, diagrams, weather, notes, files, reports, code
 // runs and sources. They sit in the answer itself; the chart artifacts are in charts.js.
 
-import { iconUrl, imageUrl, itemUrl, state } from "./api.js";
+import { api, iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
 import { canView, openItem } from "./files.js";
 import { stepLabel } from "./steps.js";
@@ -113,9 +113,12 @@ export function finishAnswer(root) {
     block.parentElement.replaceWith(diagramParts(block.textContent, "Diagram", "flowchart"));
   });
   codeBlocks(root);
-  const shown = new Set([...(root.closest(".reply")?.querySelectorAll(".cards img") || [])].map(i => i.getAttribute("src")));
+  const reply = root.closest(".reply");
+  const shown = new Set([...(reply?.querySelectorAll(".cards img") || [])].map(i => i.getAttribute("src")));
+  const charts = new Set([...(reply?.querySelectorAll(".cards [data-item]") || [])].map(c => c.dataset.item));
   root.querySelectorAll("img").forEach(img => {
     const id = (img.dataset.item || img.getAttribute("src") || "").trim();
+    if (/\.chart\.json$/i.test(id)) { answerChart(img, id, charts); return; }  // a chart file: drawn live, once
     if (/^image_\d+$/.test(id)) {
       const src = itemUrl(id);
       if (shown.has(src)) { (img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img).remove(); return; }
@@ -129,6 +132,20 @@ export function finishAnswer(root) {
       span.replaceWith(h("img", { class: "zoomable answer-pic", src: itemUrl(id), alt: id, loading: "lazy" }));
     }
   });
+}
+
+// A chart file an answer names (![caption](charts/sales.chart.json)): the live chart in its place - or nothing, when
+// the reply already shows it as a card (measured: the same chart twice, as a card and as its picture).
+async function answerChart(img, name, charts) {
+  const block = img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img;
+  const find = () => state.items.find(i => i.name === name || i.name?.toLowerCase() === name.toLowerCase());
+  let item = find();
+  if (!item) { try { state.items = await api(`/workspaces/${state.ws.id}/items`); } catch {} item = find(); }
+  if (!item || charts.has(item.id)) { block.remove(); return; }
+  try {
+    const spec = await (await fetch(itemUrl(item.id))).json();
+    block.replaceWith(chartCard({ type: "chart", ...spec, id: item.id }));
+  } catch { block.remove(); }
 }
 
 /* ═══ A plan ════════════════════════════════════════════════════════════ */

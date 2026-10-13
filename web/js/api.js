@@ -70,6 +70,7 @@ export async function* serverEvents(response) {
 }
 
 export const itemUrl = id => `${API}/workspaces/${state.ws.id}/items/${encodeURIComponent(id)}/file`;
+export const pngUrl = id => `${API}/workspaces/${state.ws.id}/items/${encodeURIComponent(id)}/png`;  // a chart file's picture
 export const rowsUrl = (id, limit = 500) => `/workspaces/${state.ws.id}/items/${encodeURIComponent(id)}/rows?limit=${limit}`;
 export const iconUrl = (page, favicon) => `${API}/web/icon?page=${encodeURIComponent(page)}${favicon ? `&favicon=${encodeURIComponent(favicon)}` : ""}`;
 export const imageUrl = url => `${API}/web/image?url=${encodeURIComponent(url)}`;

@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .chart_image import keep_chart
+from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import (CODE, OFFSET, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq,
                       split_dates, split_time)
@@ -79,8 +79,8 @@ def forecast(ws: Workspace, data: str, date: str | None = None, value: str | Non
         result["notes"] = notes
     artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast ({WORD[freq]}s)", **chart,
                 "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
-    picture = keep_chart(ws, artifact, parent=data)
-    return ok({**result, **({"picture": picture} if picture else {})}, artifact)
+    artifact["id"] = save_chart(ws, artifact, parent=data)
+    return ok({**result, "chart_file": artifact["id"]}, artifact)
 
 
 def _date_column(ws, data, df, date):
@@ -234,8 +234,8 @@ def _by_group(ws, frame, date, value, by, agg, freq, horizon, data, label, notes
         result["notes"] = notes + [f"Not forecast - {s}" for s in skipped]
     artifact = {"type": "chart", "chart": "forecast", "title": f"{label} forecast by {by} ({WORD[freq]}s)",
                 "series": series, "x_label": WORD[freq], "y_label": f"{agg} of {label}" if agg != "count" else "rows"}
-    picture = keep_chart(ws, artifact, parent=data)
-    return ok({**result, **({"picture": picture} if picture else {})}, artifact)
+    artifact["id"] = save_chart(ws, artifact, parent=data)
+    return ok({**result, "chart_file": artifact["id"]}, artifact)
 
 
 # ---------------------------------------------------------------- trend and season

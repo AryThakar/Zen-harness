@@ -334,6 +334,20 @@ def item_file(ws_id: str, item_id: str, request: Request) -> FileResponse:
                         media_type="application/octet-stream", headers=SAFE)
 
 
+@router.get("/workspaces/{ws_id}/items/{item_id}/png")
+def chart_png(ws_id: str, item_id: str, request: Request) -> FileResponse:
+    """A chart file drawn as a picture (to download; the page draws the chart itself)."""
+    from app.tools.chart_image import is_chart, picture_of
+    ws = _item(request, ws_id, item_id)
+    if not is_chart(ws.label(item_id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not a chart.")
+    png = picture_of(ws, item_id)
+    if png is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "This chart can't be drawn as a picture.")
+    name = Path(ws.label(item_id)).name.removesuffix(".chart.json") + ".png"
+    return FileResponse(png, media_type="image/png", filename=name, headers=SAFE)
+
+
 @router.get("/workspaces/{ws_id}/items/{item_id}/versions")
 def item_versions(ws_id: str, item_id: str, request: Request) -> list[dict]:
     """The file's earlier versions, newest first (kept before each change, the last 10)."""

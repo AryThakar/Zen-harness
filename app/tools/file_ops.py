@@ -265,9 +265,15 @@ def _bytes(name: str, content: str, ws: Workspace | None = None) -> bytes:
 
 
 def _picture(ws: Workspace, ref: str) -> Path | None:
-    """The stored picture a Markdown image names - by id ('image_7') or name; None when there is none."""
-    item = ws.find(ref, ("image",))
-    return ws.path(item) if item else None
+    """The picture a Markdown image names - a picture, or a chart file drawn as one - by its name; None when there
+    is none."""
+    from .chart_image import is_chart, picture_of
+    item = ws.find(ref, ("image", "file"))
+    if item and ws.kind(item) == "image":
+        return ws.path(item)
+    if item and is_chart(ws.label(item)):
+        return picture_of(ws, item)
+    return None
 
 
 PICTURE = re.compile(r"^\s*!\[([^\]]*)\]\(\s*<?([^)>]+?)>?\s*\)\s*$")
@@ -285,13 +291,14 @@ def _pictures_there(ws: Workspace, name: str, content: str) -> None:
     'Saved'."""
     if not name.lower().endswith(FROM_MARKDOWN):
         return
+    from .chart_image import is_chart
     refs = [m[2].strip() for m in map(PICTURE.match, content.splitlines()) if m]
-    missing = list(dict.fromkeys(r for r in refs if ws.find(r, ("image",)) is None))
+    pictures = [k for k in ws.ids() if ws.kind(k) == "image" or (ws.kind(k) == "file" and is_chart(ws.label(k)))]
+    missing = list(dict.fromkeys(r for r in refs if ws.find(r, ("image", "file")) not in pictures))
     if not missing:
         return
-    images = ws.ids("image")[-10:]
-    have = (", ".join(ws.label(i) for i in images) if images
-            else "none - a chart from analyze_or_code or a picture from generate_image is kept as one")
+    have = (", ".join(ws.label(i) for i in pictures[-10:]) if pictures
+            else "none - a chart from analyze_or_code or a picture from generate_image is one")
     raise ToolError(f"No picture {', '.join(missing)} in the workspace, so nothing was written. Pictures: {have}. "
                     "Name one of them in ![caption](its name), or leave the picture out.", field="content")
 

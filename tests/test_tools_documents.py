@@ -1,5 +1,6 @@
-"""Finished documents: every chart kept as a picture (chart_image.py), and Word and slide files written from
-Markdown with those pictures in them (file_ops.py) - opened again with python-docx and python-pptx."""
+"""Finished documents: every chart is a chart file whose picture is drawn when a document needs it (chart_image.py),
+and Word and slide files are written from Markdown with those pictures in them (file_ops.py) - opened again with
+python-docx and python-pptx."""
 
 from __future__ import annotations
 
@@ -43,7 +44,7 @@ def sales(ws):
 
 
 def _picture(ws, item):
-    with Image.open(ws.path(item)) as img:
+    with Image.open(chart_image.picture_of(ws, item)) as img:
         return img.format, img.size
 
 
@@ -52,26 +53,28 @@ def _picture(ws, item):
     ("bar", {"x": "region", "y": "amount"}), ("bar", {"x": "region", "y": "amount", "by": "units", "stacked": True}),
     ("scatter", {"x": "units", "y": "amount", "by": "region"}), ("histogram", {"x": "amount"}),
     ("box", {"x": "region", "y": "amount"}), ("heatmap", {"x": "region", "by": "units"}), ("pie", {"x": "region", "y": "amount"})])
-def test_every_chart_is_also_kept_as_a_picture(ws, sales, kind, args):
+def test_every_chart_is_a_chart_file_that_draws_as_a_picture(ws, sales, kind, args):
     r = make_chart(ws, sales, kind, **args)
-    assert r.status == "ok" and ws.kind(r.result["picture"]) == "image"
-    assert _picture(ws, r.result["picture"]) == ("PNG", (960, 540))
-    assert ws.entry(r.result["picture"])["name"].endswith(".png") and ws.entry(r.result["picture"])["parent"] == sales
+    key = r.result["chart_file"]
+    assert r.status == "ok" and ws.kind(key) == "file" and ws.label(key).endswith(".chart.json")
+    assert _picture(ws, key) == ("PNG", (960, 540)) and ws.entry(key)["parent"] == sales
+    assert ws.ids("image") == []  # no picture copy in the workspace
 
 
-def test_forecasts_and_unusual_periods_are_kept_as_pictures_too(ws, sales):
-    assert _picture(ws, forecast(ws, sales, value="amount", time_unit="month").result["picture"])[0] == "PNG"
-    assert _picture(ws, forecast(ws, sales, value="amount", time_unit="month", by="region").result["picture"])[0] == "PNG"
-    assert _picture(ws, find_patterns(ws, sales, "unusual", value="amount").result["picture"])[0] == "PNG"
+def test_forecasts_and_unusual_periods_are_chart_files_too(ws, sales):
+    assert _picture(ws, forecast(ws, sales, value="amount", time_unit="month").result["chart_file"])[0] == "PNG"
+    assert _picture(ws, forecast(ws, sales, value="amount", time_unit="month", by="region").result["chart_file"])[0] == "PNG"
+    assert _picture(ws, find_patterns(ws, sales, "unusual", value="amount").result["chart_file"])[0] == "PNG"
 
 
-def test_a_chart_that_cannot_be_drawn_has_no_picture_and_still_shows(ws, monkeypatch):
+def test_a_chart_that_cannot_be_drawn_has_no_picture_and_still_shows(ws, sales, monkeypatch):
+    key = make_chart(ws, sales, "bar", x="region", y="amount").result["chart_file"]
     monkeypatch.setattr(chart_image, "draw", lambda a: 1 / 0)
-    assert chart_image.keep_chart(ws, {"chart": "line", "title": "t"}) is None
+    assert chart_image.picture_of(ws, key) is None and chart_image.spec_of(ws, key)["chart"] == "bar"
 
 
 def test_a_word_document_includes_a_chart(ws, index, sales):
-    chart = make_chart(ws, sales, "bar", x="region", y="amount").result["picture"]
+    chart = ws.label(make_chart(ws, sales, "bar", x="region", y="amount").result["chart_file"])
     r = files(ws, index, "write", name="report.docx",
               content=f"# Sales report\n\nThe **North** leads.\n\n![Sales by region]({chart})\n")
     assert r.status == "ok"
@@ -82,23 +85,23 @@ def test_a_word_document_includes_a_chart(ws, index, sales):
 def test_a_document_naming_a_picture_that_is_not_there_is_not_written(ws, index, sales):
     """Not saved with '[picture ... not found]' in it under a result that says 'Saved': refused, with the
     pictures there are, so the next call names one of them."""
-    chart = make_chart(ws, sales, "bar", x="region", y="amount").result["picture"]
+    chart = ws.label(make_chart(ws, sales, "bar", x="region", y="amount").result["chart_file"])
     before = set(ws.ids())
     r = files(ws, index, "write", name="deck.pptx", content=f"# Sales\n![Sales]({chart})\n# More\n![Trend](image_99)\n")
     message = r.result["error"]["message"]
-    assert r.status == "invalid_arguments" and "image_99" in message and ws.label(chart) in message
+    assert r.status == "invalid_arguments" and "image_99" in message and chart in message
     assert set(ws.ids()) == before  # nothing written
     kept = files(ws, index, "write", name="notes.docx", content="# Notes\n- one\n").result["file"]
-    assert files(ws, index, "update", name=kept, content="# Notes\n![x](chart_9.png)\n").status == "invalid_arguments"
+    assert files(ws, index, "write", name=kept, content="# Notes\n![x](chart_9.png)\n").status == "invalid_arguments"
     edited = Document(io.BytesIO(markdown_docx("![x](image_99)")))  # the user's own edit (the UI) shows where it was
     assert any("[picture image_99 not found]" in p.text for p in edited.paragraphs)
 
 
 def test_slides_are_made_from_markdown_with_charts_and_notes(ws, index, sales):
-    chart = make_chart(ws, sales, "line", x="date", y="amount").result["picture"]
+    chart = make_chart(ws, sales, "line", x="date", y="amount").result["chart_file"]
     deck = (f"# Q4 sales review\nPrepared by Zen\n\n"
             f"# Highlights\n- Revenue grew **12%**\n  - mostly in the North\n- Fewer returns\n"
-            f"![Revenue by month]({chart})\nNotes: start with the good news\n\n"
+            f"![Revenue by month]({ws.label(chart)})\nNotes: start with the good news\n\n"
             f"# The trend\n![Revenue by month]({ws.entry(chart)['name']})\n\n## Next steps\n1. Hire\n2. Expand\n")
     r = files(ws, index, "write", name="review.pptx", content=deck)
     assert r.status == "ok" and r.result["kind"] == "document"  # slides are a document: searchable, like Word

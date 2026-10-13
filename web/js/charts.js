@@ -1,8 +1,9 @@
 // Charts: the analyst's chart artifacts, drawn in the answer itself (no boxes). One series takes the data
 // colour; groups take the series colours. Each chart can open larger in the viewer.
 
+import { pngUrl } from "./api.js";
 import { addExpand } from "./viewer.js";
-import { css, formatter, h, nf2, plural, xLabels, cap, escapeHtml } from "./util.js";
+import { css, formatter, h, nf2, plural, xLabels, cap, escapeHtml, svg } from "./util.js";
 
 export function rgba(color, alpha) {
   const hex = color.replace("#", "");
@@ -75,7 +76,19 @@ export function forgetCharts() {  // the thread was cleared
 }
 const plotHost = (cls = "") => h("div", { class: `plot ${cls}`.trim() });
 
+// A chart kept as a chart file (a.id): the card says which file it is (an answer naming it then shows it once),
+// and its picture downloads - drawn by the server from the same file.
 export function chartCard(a) {
+  const el = drawChart(a);
+  if (a.id && el) {
+    el.dataset.item = a.id;
+    el.querySelector(".card-head")?.append(h("a", { class: "card-dl", href: pngUrl(a.id), download: "", title: "Download as a picture",
+      "aria-label": "Download the chart as a picture", html: svg("download") }));
+  }
+  return el;
+}
+
+function drawChart(a) {
   if (a.chart === "forecast") return a.series ? forecastGroupsCard(a) : forecastCard(a);
   if (a.chart === "box") return boxCard(a);
   if (a.chart === "heatmap") return heatmapCard(a);
@@ -111,18 +124,24 @@ export function chartCard(a) {
 }
 
 function seriesCard(a) {
-  const fmt = formatter(a.unit), series = a.series || [], names = series.map(s => s.name), line = a.chart === "line";
+  const fmt = formatter(a.unit), series = a.series || [], names = series.map(s => s.name);
+  const line = a.chart === "line" || a.chart === "area", area = a.chart === "area", spread = a.chart === "histogram";
   const { el, body } = card(a.title, plural(names.length, "group"), legendFor(names, SERIES()));
   const host = plotHost();
   body.append(host);
   plot(host, () => {
     const colors = SERIES();
     const datasets = series.map((s, i) => line
-      ? { label: s.name, data: s.y, borderColor: colors[i % 6], backgroundColor: colors[i % 6], borderWidth: 2, tension: .3, pointRadius: s.y.length > 40 ? 0 : 2.5 }
-      : { label: s.name, data: s.y, backgroundColor: rgba(colors[i % 6], .85), borderRadius: 3 });
-    const options = chartOptions(fmt, { xTitle: line ? undefined : a.x_label, yTitle: a.y_label, stacked: !!a.stacked });
+      ? { label: s.name, data: s.y, borderColor: colors[i % 6], backgroundColor: area ? rgba(colors[i % 6], .35) : colors[i % 6],
+          borderWidth: 2, tension: .3, pointRadius: s.y.length > 40 ? 0 : 2.5, fill: area ? (i ? "-1" : "origin") : false }
+      : spread  // one spread per group, the same bins, drawn over each other
+        ? { label: s.name, data: s.y, backgroundColor: rgba(colors[i % 6], .5), grouped: false, categoryPercentage: 1, barPercentage: .96 }
+        : { label: s.name, data: s.y, backgroundColor: rgba(colors[i % 6], .85), borderRadius: 3 });
+    const options = chartOptions(spread ? formatter() : fmt, { xTitle: line ? undefined : a.x_label, yTitle: a.y_label,
+                                                              stacked: !!a.stacked || area });
     options.plugins.tooltip.displayColors = true;
-    return { type: line ? "line" : "bar", label: a.title, data: { labels: xLabels(a.x || []), datasets }, options };
+    const labels = spread ? (a.x || []).map(v => nf2.format(v)) : xLabels(a.x || []);
+    return { type: line ? "line" : "bar", label: a.title, data: { labels, datasets }, options };
   });
   return el;
 }

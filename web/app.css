@@ -303,6 +303,10 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 /* ---------------------------------------------------------------- cards */
 .card { border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); padding: 16px 18px; margin: 4px 0 16px; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.card-dl { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--soft); margin-left: auto; }
+.card-dl:hover { background: var(--hover); color: var(--ink); }
+.card-dl svg { width: 16px; height: 16px; }
+.chart-view { padding: 14px 16px; }
 .card h4 { margin: 0; font-size: 14.5px; font-weight: var(--w-head); line-height: 1.4; }
 .card .sub-t { font-size: 12.5px; color: var(--soft); margin-top: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
