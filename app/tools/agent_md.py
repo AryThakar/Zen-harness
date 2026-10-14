@@ -51,12 +51,16 @@ def body(ws: Workspace) -> str:
 
 
 def in_view(ws: Workspace) -> str:
-    """What the model reads: what agent.md holds, and how to change it."""
+    """What the model reads: agent.md's whole text, as it is in the file - so an edit quotes it exactly (measured on
+    the 26B: shown only what was remembered, its first edit guessed the header's words and failed) - and how to change
+    it."""
     if key(ws) is None:
         return ""
-    held = body(ws) or "(nothing yet)"
+    held = text(ws).strip() + ("\n(nothing remembered yet)" if not body(ws) else "")
     return ("[agent.md - your standing memory for this project, in view in every chat; to remember something, or when "
-            f"the user says how things should always be done, change it with files (write or edit):\n{held}]")
+            "the user says how things should always be done, call files(mode='write', name='agent.md', content=...) "
+            "with content = the text below plus your line. Its whole text as it is now - no need to read it:"
+            f"\n{held}]")
 
 
 def is_agent(name: str) -> bool:

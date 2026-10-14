@@ -1,0 +1,20 @@
+[
+ {
+  "id": "titanic_charts",
+  "ok": true,
+  "problem": null,
+  "seconds": 94.6,
+  "tools": [
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:make_chart(ok)",
+   "engineer:make_chart(ok)",
+   "engineer:make_chart(ok)"
+  ],
+  "answers": [
+   "Here are the visualizations from the `titanic.csv` data:\n\n![Survival Rate by Sex](charts/survival-rate-by-sex.chart.json)\nFemales had a much higher survival rate than males.\n\n![Survival Rate by Passenger Class](charts/survival-rate-by-pclass.chart.json)\nSurvival rates increased with higher passenger classes.\n\n![Age Distribution by Survival Status](charts/age-distribution-by-survival-status.chart.json)\nThe age distributions for survivors and non-survivors are quite similar."
+  ],
+  "errors": [],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-phase2-titanic_charts-w_i3cbya"
+ }
+]

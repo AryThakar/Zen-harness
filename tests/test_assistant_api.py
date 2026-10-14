@@ -193,7 +193,7 @@ def test_remembering_edits_agent_md_which_is_in_view_and_never_in_the_history(ap
     assert agent_md.body(ws) == "- Revenue is net_sales."
     events(client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Which column is revenue?"}))
     assert "- Revenue is net_sales." in slots.main.requests[-1]["system"]  # in view, as it is now
-    assert "(nothing yet)" in slots.main.requests[0]["system"]  # the first turn saw it as it was then
+    assert "(nothing remembered yet)" in slots.main.requests[0]["system"]  # the first turn saw it as it was then
     stored = json.dumps(store.messages(chat_id), ensure_ascii=False)
     assert "your standing memory" not in stored  # never in the history
     edit = client.put(f"/assistant/workspaces/{ws_id}/items/{items[0]['id']}/text", json={"text": "x" * 2001})

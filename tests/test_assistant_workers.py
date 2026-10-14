@@ -458,7 +458,9 @@ def test_a_tool_that_crashes_does_not_end_the_task(ctx, monkeypatch):
 def test_the_reply_room_is_the_providers_own_limit():
     from app.providers.llamacpp import LlamaCppProvider
     from app.assistant.context import SLOT_TOKENS, prompt_limit
-    assert prompt_limit(LlamaCppProvider("m", max_tokens=8_192)) == SLOT_TOKENS - 8_192
+    local = LlamaCppProvider("m", max_tokens=8_192)
+    local._slot_tokens = 20_480  # as the server's /props says it (not asked here: a running server answered 20k)
+    assert prompt_limit(local) == 20_480 - 8_192
     assert prompt_limit(ScriptedProvider([])) == SLOT_TOKENS - 4_096  # no max_tokens: the default room
 
 

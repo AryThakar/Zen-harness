@@ -164,7 +164,7 @@ def test_the_system_prompt_changes_only_with_agent_md_and_context_is_appended(st
     files(ws, index, "write", name="agent.md", content=agent_md.HEADER + "\n- The fiscal year starts in April.\n")
     run(send(store, chat["id"], "third", main, ScriptedProvider([])))
     systems = [r["system"] for r in main.requests]
-    assert systems[0] == systems[1] and systems[0].startswith(MAIN) and "(nothing yet)" in systems[0]
+    assert systems[0] == systems[1] and systems[0].startswith(MAIN) and "(nothing remembered yet)" in systems[0]
     assert systems[2].startswith(MAIN) and systems[2].endswith("- The fiscal year starts in April.]")
     first, second, third = (r["messages"][-1]["content"] for r in main.requests)
     assert "[Workspace now:\n" in first and "agent.md" in first  # a snapshot opens the chat (agent.md is a file)

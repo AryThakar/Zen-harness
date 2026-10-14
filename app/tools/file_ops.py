@@ -70,8 +70,11 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
     if mode == "edit":
         if new_text is None:
             raise ToolError("edit needs new_text: what replaces old_text ('' removes it).", field="new_text")
+        # Measured: the whole new text of agent.md sent as an edit - the way out is said, not only what is missing
         return _edit(ws, index, _resolve(ws, name), _need(old_text, "old_text", "edit needs old_text: the passage "
-                                                                               "to change, exactly as in the file"),
+                                                                               "to change, exactly as in the file - or, "
+                                                                               "to give the file's whole new text, "
+                                                                               "mode='write' with content"),
                      str(new_text))
     if mode == "rename":
         item = _resolve(ws, name)

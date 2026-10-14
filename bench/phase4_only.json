@@ -1,0 +1,37 @@
+[
+ {
+  "id": "remember",
+  "ok": true,
+  "problem": null,
+  "seconds": 27.9,
+  "tools": [
+   "main:files(writeok)"
+  ],
+  "answers": [
+   "I've noted that. Our fiscal year starts on 1 April.",
+   "Our fiscal year starts on 1 April."
+  ],
+  "errors": [],
+  "cache": [
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 1,
+    "cached": 4042
+   },
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 4209,
+    "cached": 0
+   },
+   {
+    "chat": 2,
+    "turn": 1,
+    "new": 33,
+    "cached": 4019
+   }
+  ],
+  "store": null
+ }
+]

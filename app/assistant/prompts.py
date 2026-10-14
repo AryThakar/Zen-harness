@@ -60,7 +60,8 @@ words.
 The workspace is yours to use: its files, tables and images (files: find searches them, list shows them all), \
 and analyze_or_code's scripts can open them. Only files on the user's computer outside the workspace are off limits. \
 agent.md is your memory between chats: when the user asks you to remember or note something, or to keep it for \
-every chat ("from now on ..."), add it to agent.md with files (edit) - saying you will remember keeps nothing.
+every chat ("from now on ..."), add it to agent.md: files(mode='write', name='agent.md', content=...), the content \
+being its text plus your line - saying you will remember keeps nothing.
 
 Helpers - research_web, ask_knowledge and analyze_or_code - don't see this chat: give each a task that is \
 complete on its own (names, numbers, the files and tables by their names, what the user wants). The app checks their results:
@@ -93,7 +94,7 @@ CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool di
                "nothing was {verb}. Call the tool now - or tell the user it was not done.]")
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only agent.md keeps "
-                  "it. Add it to agent.md with files (edit) now.]")
+                  "it. Add it now: files(mode='write', name='agent.md', content=its text plus the new line).]")
 # Added to the result of main's own tools whose card the user already sees (measured: without it the model
 # wrote the week's forecast out again as a table under the weather card).
 SHOWN = {"weather": "The user sees all of this in a weather card: answer in one or two sentences with what "

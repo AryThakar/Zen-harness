@@ -27,7 +27,7 @@ def test_agent_md_is_made_once_and_remembering_is_an_edit(ws, tmp_path):
     index = SearchIndex(tmp_path / "s.sqlite", None)
     key = agent_md.ensure(ws)
     assert agent_md.ensure(ws) == key and ws.label(key) == "agent.md" and agent_md.body(ws) == ""
-    assert "(nothing yet)" in agent_md.in_view(ws)
+    assert "(nothing remembered yet)" in agent_md.in_view(ws)
     done = files(ws, index, "edit", name="agent.md", old_text="2,000 characters.\n",
                  new_text="2,000 characters.\n\n- The user's name is Ary.\n- Never discount more than 15%.\n")
     assert done.status == "ok" and done.artifact["type"] != "question"  # its own: changed without asking

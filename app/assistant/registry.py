@@ -439,7 +439,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
        "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
        "one. agent.md is your memory for this project, always in view: to remember something (\"remember ...\", "
-       "\"from now on ...\") edit it - a line under the right heading. pin: keep a file in view in this chat - "
+       "\"from now on ...\") write it: content = what it holds plus the new line. pin: keep a file in view in this chat - "
        "the parts of it that match each message come with every turn (the user pins files too); unpin: stop. "
        "Not for running code (analyze_or_code) or "
        "finding where something is on the web (research_web). Delete, "

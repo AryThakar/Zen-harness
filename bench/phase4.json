@@ -1,0 +1,99 @@
+[
+ {
+  "id": "lion_count",
+  "ok": true,
+  "problem": null,
+  "seconds": 42.9,
+  "tools": [
+   "main:files(findok)"
+  ],
+  "answers": [
+   "You have 6 images that match \"lion\". \n\nFive of them are clearly lions, and one shows a panda fighting a lion."
+  ],
+  "errors": [],
+  "cache": [
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 4054,
+    "cached": 2
+   },
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 608,
+    "cached": 4056
+   }
+  ],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-phase4-lion_count-lburpm3l"
+ },
+ {
+  "id": "pinned_doc",
+  "ok": true,
+  "problem": null,
+  "seconds": 8.8,
+  "tools": [],
+  "answers": [
+   "The restocking fee for an opened laptop is **8% of the price paid**.\n\nThis fee is waived if the laptop arrived faulty. To complete the return, please ensure:\n* The laptop is reset to factory settings.\n* The charger and the original box are included.\n\nNote that business customers with an account should return their items through their account manager instead."
+  ],
+  "errors": [],
+  "cache": [
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 372,
+    "cached": 3904
+   }
+  ],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-phase4-pinned_doc-s8_zu5st"
+ },
+ {
+  "id": "remember",
+  "ok": true,
+  "problem": null,
+  "seconds": 21.8,
+  "tools": [
+   "main:files(editinvalid_arguments)",
+   "main:files(readok)",
+   "main:files(editok)"
+  ],
+  "answers": [
+   "I've added that to my memory in `agent.md`. I'll keep it in mind for our future conversations.",
+   "Our fiscal year starts on 1 April."
+  ],
+  "errors": [],
+  "cache": [
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 32,
+    "cached": 3906
+   },
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 131,
+    "cached": 3938
+   },
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 131,
+    "cached": 4066
+   },
+   {
+    "chat": 1,
+    "turn": 1,
+    "new": 3651,
+    "cached": 768
+   },
+   {
+    "chat": 2,
+    "turn": 1,
+    "new": 36,
+    "cached": 3940
+   }
+  ],
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-phase4-remember-pvkqp_8r"
+ }
+]

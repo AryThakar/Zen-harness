@@ -314,3 +314,25 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
   value; a chart placed in an answer took the answer's heading spacing. Restyled after review: bars grow from
   one baseline with the value at the tip (not a progress track), download and open-larger in one cluster, a
   chart file fills the side panel (its download is the picture), and a chart tile in the file icons' style.
+- **Phase 4 - find, @, pins, agent.md: done (2026-10-14).** find searches every file by words and by meaning
+  (documents, code, charts, tables, reports, pictures by their caption; "images", "py" and the like pick the
+  kind instead of matching words); agent.md replaces notes - one capped file (2,000 characters) in main's
+  system prompt, edited by the user in the file panel and by the model with files write, never deleted or
+  renamed; a pin keeps a file in view in its chat and @ points at one for a single message - both reach the
+  model as a snapshot (outline, passages for the message, a table's sample, code's functions with lines, a
+  picture's caption; 6,000 characters) attached to the turn being answered and never stored; a pasted picture
+  with a generic name is named from its caption. No move of old notes or chats (in development). Acceptance on
+  the 26B (bench/phase4.py), as measured:
+  - 6 lion pictures: pass - one find, all 6, the panda one said as such (43 s).
+  - a pinned return policy: pass - answered from the snapshot with no tool call (9 s; 372 new prompt tokens,
+    3,904 from cache).
+  - "remember our fiscal year starts on 1 April", then a new chat: pass - one files write, the new chat knew it
+    (28 s; 3 of 3 runs). Caching as designed: a normal turn reads 1-600 new tokens, the turn after agent.md
+    changes reads the prompt again once (about 4,200).
+  Found and fixed there: the model counted a table from the snapshot's sample rows (now labelled as a sample:
+  counts come from analyze_or_code); a chart or picture named by its path didn't show in the answer; agent.md's
+  instructions said edit while the model sends the whole new text (refused, then read, then edited: 3 calls) -
+  the instructions now name the call and its field. The model server's slot is now 20,480 tokens (the app's
+  prompt limit follows /props: 16,384 with 4,096 for the reply); generation speed unchanged (45-59 tokens/s).
+  Tests: 595 pass. Moved to phase 5: a check that every mode and field a description or prompt names exists
+  in that tool's schema - the agent.md failures were all instructions naming the wrong mode or field.
