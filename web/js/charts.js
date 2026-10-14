@@ -80,11 +80,20 @@ const plotHost = (cls = "") => h("div", { class: `plot ${cls}`.trim() });
 // and its picture downloads - drawn by the server from the same file.
 export function chartCard(a) {
   const el = drawChart(a);
-  if (a.id && el) {
+  if (!el) return el;
+  const acts = h("div", { class: "card-acts" });
+  if (a.id) {
     el.dataset.item = a.id;
-    el.querySelector(".card-head")?.append(h("a", { class: "card-dl", href: pngUrl(a.id), download: "", title: "Download as a picture",
+    acts.append(h("a", { class: "card-act", href: pngUrl(a.id), download: "", title: "Download as a picture",
       "aria-label": "Download the chart as a picture", html: svg("download") }));
   }
+  const open = el.querySelector(".expand");  // addExpand's button joins the cluster instead of floating on the plot
+  if (open) {
+    open.closest(".has-expand")?.classList.remove("has-expand");
+    open.classList.add("card-act");
+    acts.append(open);
+  }
+  if (acts.children.length) el.append(acts), el.classList.add("has-acts");
   return el;
 }
 
@@ -175,8 +184,8 @@ function boxCard(a) {
       h("div", { class: "med", style: `left:${pos(b.median)}` }),
       ...(b.outliers || []).map(o => h("div", { class: "out", style: `left:${pos(o)}` }))),
     h("span", { class: "val" }, fmt.full(b.median))));
-  const visual = h("div", { class: "boxes" }, rows);
-  body.append(visual, h("div", { class: "bscale" }, h("span", {}, fmt.axis(lo)), h("span", {}, fmt.axis(hi))));
+  const visual = h("div", { class: "boxes" }, rows, h("span"), h("div", { class: "bscale" }, h("span", {}, fmt.axis(lo)), h("span", {}, fmt.axis(hi))));
+  body.append(visual);
   addExpand(visual);
   return el;
 }
@@ -229,10 +238,10 @@ function pieCard(a) {
 function barsCard(title, items, fmt, sub) {
   const max = Math.max(...items.map(i => Math.abs(i.value) || 0), 1);
   const { el, body } = card(title, sub);
-  const visual = h("div", { class: "hbars" }, items.map(i => {
-    const fill = h("i");
-    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${Math.max(1.5, 100 * Math.abs(i.value || 0) / max)}%`; }));
-    return h("div", { class: "hbar" }, h("span", { class: "nm", title: i.label }, i.label), h("div", { class: "track" }, fill), h("span", { class: "val" }, fmt.full(i.value)));
+  const visual = h("div", { class: "hbars" }, items.flatMap(i => {
+    const bar = h("i");
+    requestAnimationFrame(() => requestAnimationFrame(() => bar.style.setProperty("--p", Math.max(.006, Math.abs(i.value || 0) / max))));
+    return [h("span", { class: "nm", title: i.label }, i.label), h("div", { class: "lane" }, bar, h("span", { class: "val" }, fmt.full(i.value)))];
   }));
   body.append(visual);
   addExpand(visual);

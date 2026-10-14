@@ -118,7 +118,7 @@ export function finishAnswer(root) {
   const charts = new Set([...(reply?.querySelectorAll(".cards [data-item]") || [])].map(c => c.dataset.item));
   root.querySelectorAll("img").forEach(img => {
     const id = (img.dataset.item || img.getAttribute("src") || "").trim();
-    if (/\.chart\.json$/i.test(id)) { answerChart(img, id, charts); return; }  // a chart file: drawn live, once
+    if (/\.chart\.json$/i.test(id)) { answerChart(img, id, charts, reply); return; }  // a chart file: drawn live, once
     if (/^image_\d+$/.test(id)) {
       const src = itemUrl(id);
       if (shown.has(src)) { (img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img).remove(); return; }
@@ -134,18 +134,38 @@ export function finishAnswer(root) {
   });
 }
 
-// A chart file an answer names (![caption](charts/sales.chart.json)): the live chart in its place - or nothing, when
-// the reply already shows it as a card (measured: the same chart twice, as a card and as its picture).
-async function answerChart(img, name, charts) {
-  const block = img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img;
+// A chart file an answer names (![caption](charts/sales.chart.json)): the chart shows there, once - the reply's own
+// card moved to that spot, so each chart sits above the line that explains it (measured: the cards above, the lines
+// below with a gap for each chart), or drawn there when the reply has no card for it.
+async function answerChart(img, name, charts, reply) {
+  const spot = chartSpot(img);
   const find = () => state.items.find(i => i.name === name || i.name?.toLowerCase() === name.toLowerCase());
   let item = find();
   if (!item) { try { state.items = await api(`/workspaces/${state.ws.id}/items`); } catch {} item = find(); }
-  if (!item || charts.has(item.id)) { block.remove(); return; }
+  if (!item) { spot.remove(); return; }
+  if (charts.has(item.id)) {
+    const card = reply?.querySelector(`.cards [data-item="${CSS.escape(item.id)}"]`), box = card?.parentElement;
+    card ? spot.replaceWith(card) : spot.remove();  // no card left: named twice, it is already shown
+    if (box && !box.children.length) box.remove();
+    return;
+  }
+  charts.add(item.id);
   try {
     const spec = await (await fetch(itemUrl(item.id))).json();
-    block.replaceWith(chartCard({ type: "chart", ...spec, id: item.id }));
-  } catch { block.remove(); }
+    spot.replaceWith(chartCard({ type: "chart", ...spec, id: item.id }));
+  } catch { spot.remove(); }
+}
+
+// The chart's own place: out of its paragraph (with the line break beside it), just before the paragraph's text.
+function chartSpot(img) {
+  const p = img.parentElement;
+  if (p?.tagName !== "P") return img;
+  for (const side of [img.previousSibling, img.nextSibling]) if (side?.nodeName === "BR") side.remove();
+  const spot = h("div", {});
+  p.before(spot);
+  img.remove();
+  if (!p.textContent.trim() && !p.querySelector("img")) p.remove();
+  return spot;
 }
 
 /* ═══ A plan ════════════════════════════════════════════════════════════ */

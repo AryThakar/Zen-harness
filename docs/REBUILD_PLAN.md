@@ -286,3 +286,31 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
   four real workspaces were moved (99 files, none lost; backup in claude-cloud-backups/assistant-before-phase1).
   Moved to phase 4: naming a pasted picture from its caption - it needs the vision model, and its caption is
   what find searches.
+- **Phase 2 - the helpers: done (2026-10-14).** A program is a file the helper writes, runs (run) and edits
+  (files edit) - the file is the state; one result envelope (the model writes answer, caveats, sources; the
+  app adds what ran, the files made or changed, the last run's output); calculate does symbolic maths (SymPy in
+  the sandbox); a Stop, a model failure or a full context keeps the work done; the web helper remembers the
+  pages and refusing sites of the chat, must read after 3 searches in a row, cites pages by number; a table's
+  question is asked once. Acceptance on the 26B (bench/phase2.py), as measured:
+  - picture name: pass - one write, one run, 135 s, fonts named by file. The first runs exposed a sandbox bug:
+    no WINDIR in the run's environment, so every named font fell back to the default (6 runs, 8 min); fixed.
+  - calculus: pass - main with calculate, no helper, 104 s (before: 8 min through a helper).
+  - Stop then "continue": pass - the same file carried on.
+  - the 10-run job: not exercised - the model made all four changes in one program and one run; the
+    overflow path is covered by a test without the model only.
+  - LeetCode: the helper meets the bar (3 searches in a row at most - the 4th was refused and it read;
+    LeetCode fetched once; its answer and caveat say the page was blocked). Not met at the user's end: main's
+    reply dropped that caveat, and called NeetCode's version LeetCode's; 9-13 min chasing the exact quote on
+    mirrors. Both moved to phase 5 (main passes a helper's caveats and sources on; a refused page needs one
+    mirror, not a hunt for its exact words).
+- **Phase 3 - charts as files: done (2026-10-14).** make_chart, forecast, find_patterns and a script's chart()
+  each write one chart file (charts/<title>.chart.json) the page draws live; its picture is drawn only for a
+  document or a download (cached per drawing version); the same chart again is its next version; histograms
+  by group and area charts. Acceptance on the 26B: the Titanic showcase passed (95 s) - three native charts
+  from make_chart after inspect_data, three chart files, no picture files. Checked in the browser (light,
+  dark, phone width, the side panel beside a narrow chat): each chart shows once, moved to where the answer
+  explains it; its picture downloads. Found there and fixed: the box chart's picture had its axis titles
+  swapped; a starter chip offered to summarise a chart file; on touch the open-larger button covered the first
+  value; a chart placed in an answer took the answer's heading spacing. Restyled after review: bars grow from
+  one baseline with the value at the tip (not a progress track), download and open-larger in one cluster, a
+  chart file fills the side panel (its download is the picture), and a chart tile in the file icons' style.

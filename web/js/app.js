@@ -325,7 +325,8 @@ function renderHello() {
   const notice = $("#helloNotice");
   notice.hidden = !s || s.ready;
   if (s && !s.ready) notice.replaceChildren(h("b", {}, s.reachable ? "The model isn't ready yet" : "The server isn't reachable"), s.message || "");
-  const tables = state.items.filter(i => i.kind === "table" && !i.parent), files = state.items.filter(i => i.kind === "file");
+  const tables = state.items.filter(i => i.kind === "table" && !i.parent);
+  const files = state.items.filter(i => i.kind === "file" && !/\.chart\.json$/i.test(i.name || ""));  // a chart is no read
   const ideas = [];
   if (tables[0]) ideas.push(["chart", `What stands out in ${tables[0].name}? Show a chart`]);
   if (files[0]) ideas.push(["doc", `Summarise ${files[0].name}`]);

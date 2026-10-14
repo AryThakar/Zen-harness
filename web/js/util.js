@@ -110,13 +110,16 @@ const MARKS = {
   py: '<path d="m13 14.3-3.3 3.4 3.3 3.4M19 14.3l3.3 3.4-3.3 3.4"/>',
   md: LINES, pdf: LINES, doc: LINES,
   img: '<rect x="9.5" y="12.5" width="13" height="10.5" rx="1.8"/><circle cx="13.3" cy="16" r="1.2"/><path d="m22.5 20.8-3.6-3.6-7.2 5.6"/>',
+  chart: '<path d="M11.4 22.8v-4.6M16 22.8v-9.4M20.6 22.8v-6.6"/>',  // the PDF's lines stood up: bars rising
 };
 const sheet = (kind, tag) => `<svg class="fdoc" viewBox="0 0 32 40" aria-hidden="true">` +
   `<path class="pg" d="M7 1.5h12.6l8.9 8.9v25.1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-31a3 3 0 0 1 3-3z"/>` +
   `<path class="fold" d="M19.6 1.5v6.4a2.5 2.5 0 0 0 2.5 2.5h6.4z"/><g class="mk">${MARKS[kind]}</g>` +
   `<text x="16" y="33.4" text-anchor="middle">${escapeHtml(tag)}</text></svg>`;
 export function fileTile(name, label) {
-  const type = ext(name), kind = TILES[type] || "md", tag = (label || type || "file").slice(0, 4).toUpperCase();
+  const chart = /\.chart\.json$/i.test(name);  // a chart file: drawn live, not read as JSON
+  const type = chart ? "chart" : ext(name), kind = chart ? "chart" : TILES[type] || "md";
+  const tag = (label || type || "file").slice(0, chart ? 5 : 4).toUpperCase();
   return h("span", { class: `ficon k-${kind}`, title: tag, html: sheet(kind, tag) });
 }
 // A pinned note: a notepad sheet with its yellow top, like a note on the desk

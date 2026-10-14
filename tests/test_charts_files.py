@@ -76,3 +76,19 @@ def test_a_document_takes_a_charts_picture(ctx):
     missing = files(ctx.ws, ctx.index, "write", name="r2.docx", content="![x](charts/nope.chart.json)\n")
     assert missing.status == "invalid_arguments" and name in missing.result["error"]["message"]  # what there is
     assert json.loads(ctx.ws.path(key).read_text())["chart"] == "bar"
+
+
+def test_a_box_charts_picture_names_its_axes_as_drawn(ctx):
+    """Measured: the box picture lies down (values along the bottom) but titled the bottom axis with the groups."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from app.tools import chart_image
+    key = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "box", "x": "survived", "y": "age"}).result["chart_file"]
+    spec = spec_of(ctx.ws, key)
+    fig, ax = plt.subplots()
+    chart_image._box(ax, spec)
+    chart_image._style(ax, spec)
+    assert (ax.get_xlabel(), ax.get_ylabel()) == (spec["y_label"], spec["x_label"])
+    plt.close(fig)
+    assert picture_of(ctx.ws, key).name.endswith(f".v{chart_image.DRAWING}.png")  # a new drawing is not served stale

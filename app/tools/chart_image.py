@@ -21,6 +21,7 @@ from .workspace import Workspace
 
 log = logging.getLogger(__name__)
 SUFFIX = ".chart.json"
+DRAWING = 2  # raised when the drawing changes: every cached picture is drawn again (2: a box chart's axis titles)
 
 SERIES = ["#5a51c7", "#e07b26", "#1f9e74", "#d9468f", "#1f8fcf", "#d64545"]
 DATA, SOFT, INK, LINE = "#5a51c7", "#8f8f8f", "#1d1d1f", "#e3e3e8"
@@ -68,7 +69,7 @@ def picture_of(ws: Workspace, key: str) -> Path | None:
     """The chart file drawn as a PNG (for a document, a slide or a download), cached beside it until the chart
     changes; None when it can't be drawn."""
     source = ws.path(key)
-    cached = ws.zen / "cache" / f"{key}.png"
+    cached = ws.zen / "cache" / f"{key}.v{DRAWING}.png"
     if cached.exists() and cached.stat().st_mtime >= source.stat().st_mtime:
         return cached
     try:
@@ -119,12 +120,14 @@ def _style(ax, a: dict) -> None:
     for side in ("left", "bottom"):
         ax.spines[side].set_color(LINE)
     ax.tick_params(colors=SOFT, labelsize=8)
-    ax.grid(axis="y", color=LINE, linewidth=0.8)
+    sideways = a.get("chart") == "box"  # drawn lying down, as on the page: the values run along the bottom
+    ax.grid(axis="x" if sideways else "y", color=LINE, linewidth=0.8)
     ax.set_axisbelow(True)
+    groups, values = ax.set_ylabel if sideways else ax.set_xlabel, ax.set_xlabel if sideways else ax.set_ylabel
     if a.get("x_label"):
-        ax.set_xlabel(str(a["x_label"]), color=SOFT, fontsize=9)
+        groups(str(a["x_label"]), color=SOFT, fontsize=9)
     if a.get("y_label"):
-        ax.set_ylabel(str(a["y_label"]) + (f" ({a['unit']})" if a.get("unit") else ""), color=SOFT, fontsize=9)
+        values(str(a["y_label"]) + (f" ({a['unit']})" if a.get("unit") else ""), color=SOFT, fontsize=9)
     if len(ax.get_legend_handles_labels()[0]) > 1:
         ax.legend(frameon=False, fontsize=8)
 

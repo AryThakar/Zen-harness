@@ -4,7 +4,7 @@
 // and saved by the user, a Python file run with typed input, its output and the files it made shown below)
 // and uploads (drop, paste or pick), each showing its progress.
 
-import { api, itemUrl, KEYS, rowsUrl, send, state, uploadFile } from "./api.js";
+import { api, itemUrl, KEYS, pngUrl, rowsUrl, send, state, uploadFile } from "./api.js";
 import { chartCard } from "./charts.js";
 import { openViewer, viewerOpen } from "./viewer.js";
 import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
@@ -98,8 +98,9 @@ export async function openItem(item, from) {
   const bytes = fv.text != null ? new Blob([fv.text]).size : item.bytes;
   $("#fvMeta").textContent = [whose(item), kind === "table" ? `${count(fv.table.total_rows)} rows × ${fv.table.columns.length} columns` : fileSize(bytes), editable(item) ? "editable" : "view only"].filter(Boolean).join(" · ");
   const link = $("#fvDownload");
-  link.href = itemUrl(item.id);  // the file itself - a table too: its CSV or Excel file, every row
-  link.download = (item.name || "").split("/").pop() || item.id;
+  const base = (item.name || "").split("/").pop() || item.id;
+  link.href = kind === "chart" ? pngUrl(item.id) : itemUrl(item.id);  // the file itself (a table: its CSV or Excel file,
+  link.download = kind === "chart" ? base.replace(/\.chart\.json$/i, ".png") : base;  // every row); a chart: its picture
   if (item.versions) fv.versions = await api(`/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/versions`).catch(() => []);
   if (fv.item !== item) return;
   $("#fvActions").hidden = !editable(item);
@@ -351,7 +352,7 @@ export function fillDrawer() {
   const sections = [
     ["Tables", itemsOf("table"), i => row(fileTile(/\.(csv|tsv|xlsx?|xlsm)$/i.test(i.name || "") ? i.name : "table.csv"), i.name, `${count(i.rows)} rows × ${i.columns} columns${from(i)}${kept(i)}`,
       act("View", () => openItem(i)))],
-    ["Charts", itemsOf("file").filter(i => shape(i) === "chart"), i => row(fileTile("chart.csv"), i.title || i.name,
+    ["Charts", itemsOf("file").filter(i => shape(i) === "chart"), i => row(fileTile(i.name), i.title || i.name,
       `${i.name} · drawn live${from(i)}${kept(i)}`, act("View", () => openItem(i)))],
     ["Documents & files", itemsOf("file").filter(i => shape(i) !== "chart"), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
       `${i.passages != null ? `${i.pages ? plural(i.pages, "page") : plural(i.words || 0, "word")} · searchable` : fileSize(i.bytes)}${kept(i)}${i.report ? ` · ${i.report}` : ""}`,
