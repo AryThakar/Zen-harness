@@ -53,8 +53,9 @@ def check(sql: str, existing: frozenset[str] = frozenset(), *, allowed: frozense
     are the tables the query may read."""
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None]
-    except sqlglot.errors.ParseError as exc:
-        raise SqlRejected(f"Could not parse the SQL: {str(exc).splitlines()[0]}") from exc
+    except sqlglot.errors.SqlglotError as exc:  # ParseError, and TokenError (text it can't split into words)
+        hint = (" A quote inside a text is written twice: 'Can''t', not 'Can\\'t'." if "\\'" in sql else "")
+        raise SqlRejected(f"Could not parse the SQL: {str(exc).splitlines()[0]}.{hint}") from exc
     if len(statements) != 1:
         raise SqlRejected("Send exactly one SELECT statement.")
     statement = statements[0]

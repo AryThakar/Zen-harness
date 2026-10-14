@@ -141,14 +141,6 @@ def covers(days_ahead: int) -> Check:
     return check
 
 
-FIRST_PERSON = re.compile(r"\b(I|I'm|my|me|you|your)\b")
-
-
-def third_person(args: dict) -> str | None:
-    words = FIRST_PERSON.findall(str(args.get("content", "")))
-    return f"note written in first person ({', '.join(sorted(set(words)))})" if words else None
-
-
 # ---------------------------------------------------------------- setups
 
 CODE = ("Here is the code:\n\n```python\nimport numpy as np\nx = np.linspace(-5, 5, 100)\nprint((x ** 2).max())\n```")
@@ -189,6 +181,19 @@ def some_files(store: Store, ws_id: str) -> None:
     ws.add_table(pd.DataFrame({"month": ["Jan", "Feb", "Mar"], "sales": [120, 135, 150]}), "sales.csv")
     for n in range(4):
         ws.add_bytes("file", f"draft {n}".encode(), "txt", name=f"draft_{n}.txt")
+
+
+def remembers(pattern: str) -> Check:
+    """main wrote agent.md (files write), and its new text holds the pattern."""
+    def check(s: Seen) -> str | None:
+        wrote = [t for t in s.tools if t["by"] == "main" and t["name"] == "files" and t.get("status") == "ok"
+                 and (t.get("input") or {}).get("mode") == "write"
+                 and re.fullmatch(r"agent\.md", str((t.get("input") or {}).get("name") or ""), re.I)]
+        if not wrote:
+            return f"no files write to agent.md (calls: {', '.join(s.main) or 'none'})"
+        return None if re.search(pattern, str(wrote[-1]["input"].get("content") or ""), re.I) else \
+            f"agent.md's new text lacks {pattern}"
+    return check
 
 
 def files_call(mode: str, check: Callable[[dict], str | None] | None = None) -> Check:
@@ -276,16 +281,13 @@ SUITES: dict[str, list[Case]] = {
         Case("time_tokyo", "what time is it in Tokyo right now?", all_of(answered, says(r"\d{1,2}:\d{2}"))),
         Case("explain", "explain how weather forecasts are made", all_of(no_tool, answered)),
     ],
-    "notes": [
-        Case("fiscal", "remember that our fiscal year starts in April", uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "april")(a))),
-        Case("names", "your name is Zen and my name is Ary, remember that",
-             uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "zen")(a) or field_has("content", "ary")(a)
-                  or third_person(a))),
-        Case("pin", "keep this in view in every chat: always answer in metric units",
-             uses("notes", lambda a: field_has("mode", "save")(a) or field_has("content", "metric")(a))),
+    "memory": [  # agent.md: what main keeps in view in every chat, changed with files write
+        Case("fiscal", "remember that our fiscal year starts in April", remembers(r"april")),
+        Case("names", "your name is Zen and my name is Ary, remember that", remembers(r"\bzen\b|\bary\b")),
+        Case("always", "keep this in view in every chat: always answer in metric units", remembers(r"metric")),
         Case("save_code", "now save this code", files_call("write", field_has("content", r"linspace")),
              history=[("show me code for y = x^2", CODE)]),
-        Case("no_note", "what's 12 times 12?", avoids("notes")),
+        Case("no_note", "what's 12 times 12?", lambda s: "wrote agent.md" if remembers(r".")(s) is None else None),
         Case("your_name", "what is your name", all_of(says(rf"\b{ZEN}\b"),
                                                       never_says(r"don'?t have a (personal )?name"))),
         Case("my_name", "what is my name?", all_of(says(rf"\b{USER}\b"), never_says(rf"your name is {ZEN}"))),
@@ -343,11 +345,11 @@ SUITES: dict[str, list[Case]] = {
         Case("delete", "delete old.txt", all_of(files_call("delete"), asked_for("delete_files")), setup=some_files),
         Case("download", "download this file: https://github.com/psf/requests/blob/main/src/requests/__version__.py",
              all_of(files_call("download"), asked_for("download_file")), setup=some_files),
-        Case("update_whole", "change old.txt so it only says: keep me",
-             all_of(called_with("files", mode="update", content=r"keep me"), asked_for("replace_file")),
+        Case("write_whole", "change old.txt so it only says: keep me",
+             all_of(called_with("files", mode="write", content=r"keep me"), asked_for("replace_file")),
              setup=some_files),
-        Case("update_lines", "in parabola.py, change the linspace line to use 200 points instead of 100",
-             called_with("files", mode="update", content=r"200"), setup=some_files),
+        Case("edit_line", "in parabola.py, change the linspace line to use 200 points instead of 100",
+             called_with("files", mode="edit", new_text=r"200"), setup=some_files),
         Case("rename", "rename old.txt to archive.txt", called_with("files", mode="rename", new_name=r"archive"),
              setup=some_files),
         Case("report", "what does parabola.py do?", all_of(called_with("files", mode="read"), says(r"25|highest|max")),
@@ -357,7 +359,7 @@ SUITES: dict[str, list[Case]] = {
         Case("new_script", "write a python script that prints the first 10 square numbers",
              all_of(uses("analyze_or_code"), saved_file(r"\.py$", "100"), no_pasted_code, answered)),
         Case("change_it", "change squares.py so it prints cubes instead",
-             all_of(called_with("analyze_or_code", file=r"squares"), saved_file(r"^squares\.py$", "1000"), no_pasted_code),
+             all_of(called_with("analyze_or_code", files=r"squares"), saved_file(r"^squares\.py$", "1000"), no_pasted_code),
              setup=coder_made),
         Case("explain_it", "what does squares.py do?", all_of(avoids("analyze_or_code"), says(r"square"), no_pasted_code),
              setup=coder_made),
@@ -418,18 +420,4 @@ def _old_weather() -> None:
                                                                                           "local time"))
 
 
-def _old_notes() -> None:
-    from app.assistant import context
-    from app.assistant.registry import NoteIn
-    real = context.pinned_text
-
-    def old(ws):
-        text = real(ws)
-        start = text.find("Pinned notes (")
-        return text if start < 0 else "Pinned notes (decisions the user approved; follow them):" + text[text.find("\n\n"):]
-    context.pinned_text = old
-    NoteIn.model_fields["content"].description = "the decision, constraint, conclusion or summary, in markdown"
-    NoteIn.model_rebuild(force=True)
-
-
-OLD = {"weather": _old_weather, "notes": _old_notes}
+OLD = {"weather": _old_weather}

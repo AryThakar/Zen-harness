@@ -76,7 +76,7 @@ def test_main_slot_sees_its_tools_and_all_three_helpers_always(ctx):
     """Always all three: with the analyst hidden until a table existed, main couldn't plan 'find data, bring it in,
     analyse it', and the coder looked like the only way."""
     names = set(main_tools(ScriptedProvider([]), ctx))
-    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "plan",
+    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate",
                      "ask_user", "files", "research_web", "ask_knowledge", "analyze_or_code"}
     assert "run_code" not in names  # only inside the analyst-programmer
 

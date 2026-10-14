@@ -9,8 +9,8 @@ computed when the job was set up - never by reading the reply's tone.
 Every job starts from nothing: a new store - its own SQLite database and workspace folder in a temporary
 directory, never the user's data - with data made by the job's set-up from fixed seeds, so no answer can come
 from what a model remembers. Each job chains 3-6 tools and tests a behaviour too: asking when a request is
-ambiguous, a permission refused, a broken file fixed, a picture checked, a plan shown first, a note carried
-into a new chat, a document and a table combined, a live web fact used in exact arithmetic.
+ambiguous, a permission refused, a broken file fixed, a picture checked, a job of several steps
+done in one go, a memory carried into a new chat, a document and a table combined, a live web fact used in exact arithmetic.
 
 Two halves, written together before any was run (2026-10-09): 'dev' is for finding and fixing what fails;
 'holdout' is run once, after the fixes, and reported as it comes - so passing it says the app works, not that
@@ -575,8 +575,8 @@ COMBOS = [
     Combo("plan_forecast_deck", "dev",
           [Step("Plan this first, then do it: find the best month in sales.csv, forecast the next quarter, and save a "
                 "slide deck outlook.pptx with the forecast chart.")],
-          all_of(no_errors, ran("plan", "main"), ran("forecast"), answer_has(r"20\d\d"),
-                 file_made(r"outlook\.pptx", test=pptx_with(2, 1))), monthly_sales, "plan card -> forecast -> slides"),
+          all_of(no_errors, ran("forecast"), answer_has(r"20\d\d"),
+                 file_made(r"outlook\.pptx", test=pptx_with(2, 1))), monthly_sales, "several steps -> forecast -> slides"),
     # ---------------- holdout: run once, after the fixes
     Combo("pricing_changes", "holdout",
           [Step("What changed between old_pricing.md and new_pricing.md? Write the changes to changes.md, then put the "

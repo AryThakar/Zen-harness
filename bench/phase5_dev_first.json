@@ -1,0 +1,740 @@
+[
+ {
+  "case": "percent",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 26.7,
+  "tools": [
+   "calculate({\"expression\": \"3240 * 0.175\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "3240 * 0.175"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "It's **567**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "integral",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.0,
+  "tools": [
+   "calculate({\"expression\": \"integrate(x^2 * sin(x), x)\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "integrate(x^2 * sin(x), x)"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The integral of $x^2 \\sin(x) \\, dx$ is:\n\n$-x^2\\cos(x) + 2x\\sin(x) + 2\\cos(x) + C$",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "compound",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 13.9,
+  "tools": [
+   "calculate({\"expression\": \"50000 * (1 + 0.07)**12\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "50000 * (1 + 0.07)**12"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "It will be **$112,609.58** after 12 years.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "linear",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.0,
+  "tools": [
+   "calculate({\"expression\": \"3*x + 7 = 2*x - 5\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "3*x + 7 = 2*x - 5"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "x = -12",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "attrition",
+  "kind": "stats",
+  "run": 1,
+  "ok": false,
+  "problem": "the helper used no predict (it used: inspect_data, query_data, query_data, query_data, compare, compare, compare, query_data, compare, query_data)",
+  "seconds": 206.0,
+  "tools": [
+   "analyze_or_code({\"files\": [\"staff.csv\"], \"task\": \"Analyze staff.csv to find the main reasons why people leave the company. Compare the characteristics (depa…) ok",
+   "engineer:inspect_data({\"data\": \"staff.csv\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    left, \\n    department, \\n    count(*) as count,\\n    avg(salary_k) as avg_salary,\\n    avg(satisfaction) as avg_satis…) invalid_arguments",
+   "engineer:query_data({\"sql\": \"SELECT \\n    \\\"left\\\",\\n    COUNT(*) as count,\\n    AVG(salary_k) as avg_salary,\\n    AVG(satisfaction) as avg_satisfaction,\\n    A…) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    department, \\n    \\\"left\\\", \\n    COUNT(*) as count\\nFROM \\\"staff.csv\\\"\\nGROUP BY 1, 2\\nORDER BY 1, 2\"}) ok",
+   "engineer:compare({\"columns\": [\"satisfaction\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok",
+   "engineer:compare({\"columns\": [\"salary_k\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok",
+   "engineer:compare({\"columns\": [\"years_at_company\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    \\\"left\\\",\\n    overtime,\\n    COUNT(*) as count\\nFROM \\\"staff.csv\\\"\\nGROUP BY 1, 2\\nORDER BY 1, 2\"}) ok",
+   "engineer:compare({\"columns\": [\"overtime\", \"left\"], \"data\": \"staff.csv\", \"question\": \"association\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    department,\\n    SUM(CASE WHEN \\\"left\\\" = 'yes' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as leave_rate\\nFROM \\\"staff.csv\\…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "staff.csv"
+     ],
+     "task": "Analyze staff.csv to find the main reasons why people leave the company. Compare the characteristics (department, salary_k, overtime, satisfaction, years_at_company) of employees who have 'left' compared to those who stayed."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "staff.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    left, \n    department, \n    count(*) as count,\n    avg(salary_k) as avg_salary,\n    avg(satisfaction) as avg_satisfaction,\n    avg(years_at_company) as avg_years,\n    sum(CASE WHEN overtime = 'yes' THEN 1 ELSE 0 END) as overtime_yes_count,\n    sum(CASE WHEN overtime = 'no' THEN 1 ELSE 0 END) as overtime_no_count\nFROM \"staff.csv\"\nGROUP BY 1, 2"
+    },
+    "status": "invalid_arguments"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    \"left\",\n    COUNT(*) as count,\n    AVG(salary_k) as avg_salary,\n    AVG(satisfaction) as avg_satisfaction,\n    AVG(years_at_company) as avg_years,\n    AVG(CASE WHEN overtime = 'yes' THEN 1 ELSE 0 END) as rate_overtime\nFROM \"staff.csv\"\nGROUP BY 1"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    department, \n    \"left\", \n    COUNT(*) as count\nFROM \"staff.csv\"\nGROUP BY 1, 2\nORDER BY 1, 2"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "satisfaction",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "salary_k",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "years_at_company",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    \"left\",\n    overtime,\n    COUNT(*) as count\nFROM \"staff.csv\"\nGROUP BY 1, 2\nORDER BY 1, 2"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "overtime",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "association"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    department,\n    SUM(CASE WHEN \"left\" = 'yes' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as leave_rate\nFROM \"staff.csv\"\nGROUP BY 1"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Based on the analysis of `staff.csv`, the primary drivers for people leaving are **low satisfaction** and **working overtime**. Interestingly, salary doesn't seem to be the issue.\n\n### Key Drivers of Turnover\n\n| Characteristic | Those who Left | Those who Stayed | Impact |\n| :--- | :--- | :--- | :--- |\n| **Satisfaction (Median)** | **2.0** | **3.0** | **Strong** |\n| **Overtime (Rate)** | **49.5%** | **25.6%** | **Significant** |\n| **Years at Company (Median)** | **8.0 years** | **10.0 years** | Moderate |\n| **Salary (Average)** | 55.2k | 55.8k | Negligible |\n\n### Summary\n*   **Satisfaction & Overtime:** These are the clearest indicators. People who leave are much more likely to be working overtime and reporting lower satisfaction levels.\n*   **Tenure:** Employees who leave tend to stay for about 8 years, compared to 10 years for those who remain.\n*   **Salary:** Since the average salary is nearly identical between the two groups, pay doesn't appear to be the reason people are moving on.\n*   **Departments:** Turnover is relatively consistent across departments, though **Sales** has the highest rate at ~20.7%.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "traffic",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 138.1,
+  "tools": [
+   "analyze_or_code({\"files\": [\"visits.csv\"], \"task\": \"Analyze the trend in visits.csv and forecast the number of visits for the next 8 weeks. The user wants to…) ok",
+   "engineer:inspect_data({\"data\": \"visits.csv\"}) ok",
+   "engineer:clean_data({\"data\": \"visits.csv\", \"steps\": [{\"columns\": [\"week\"], \"op\": \"parse_dates\"}]}) ok",
+   "engineer:forecast({\"data\": \"visits-cleaned.csv\", \"horizon\": 8}) ok",
+   "engineer:forecast({\"agg\": \"sum\", \"data\": \"visits-cleaned.csv\", \"horizon\": 8, \"time_unit\": \"week\"}) ok",
+   "engineer:forecast({\"agg\": \"sum\", \"data\": \"visits-cleaned.csv\", \"time_unit\": \"week\", \"value\": \"visits\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "visits.csv"
+     ],
+     "task": "Analyze the trend in visits.csv and forecast the number of visits for the next 8 weeks. The user wants to know if growth is expected to continue."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "visits.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "clean_data",
+    "input": {
+     "data": "visits.csv",
+     "steps": [
+      {
+       "columns": [
+        "week"
+       ],
+       "op": "parse_dates"
+      }
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "visits-cleaned.csv",
+     "horizon": 8
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "agg": "sum",
+     "data": "visits-cleaned.csv",
+     "horizon": 8,
+     "time_unit": "week"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "agg": "sum",
+     "data": "visits-cleaned.csv",
+     "time_unit": "week",
+     "value": "visits"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "It doesn't look like growth will continue, Ary. Based on the historical data, the visits are expected to remain stable rather than increase.\n\n**8-Week Forecast:**\nThe model predicts visits will level off at approximately **2,150** per week:\n* 2025-12-29: 2150\n* 2026-01-05: 2150\n* 2026-01-12: 2150\n* 2026-01-19: 2150\n* 2026-01-26: 2150\n* 2026-02-02: 2150\n* 2026-02-09: 2150\n* 2026-02-16: 2150\n\nThe analysis showed strong seasonality in your data, but no significant upward or downward trend was detected. Because of this, the most reliable forecast was to assume the numbers will stay at the current level.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "couriers",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 60.7,
+  "tools": [
+   "analyze_or_code({\"files\": [\"deliveries.csv\"], \"task\": \"Compare the delivery days for 'FastShip' and 'ParcelGo' in `deliveries.csv`. Determine if the differe…) ok",
+   "engineer:inspect_data({\"data\": \"deliveries.csv\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT courier, AVG(delivery_days) FROM \\\"deliveries.csv\\\" GROUP BY courier\"}) ok",
+   "engineer:compare({\"columns\": [\"courier\", \"delivery_days\"], \"data\": \"deliveries.csv\", \"question\": \"difference\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "deliveries.csv"
+     ],
+     "task": "Compare the delivery days for 'FastShip' and 'ParcelGo' in `deliveries.csv`. Determine if the difference in their average delivery times is statistically significant or if it could be attributed to chance (noise). Provide the mean delivery days for each and the statistical significance (p-value)."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "deliveries.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT courier, AVG(delivery_days) FROM \"deliveries.csv\" GROUP BY courier"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "courier",
+      "delivery_days"
+     ],
+     "data": "deliveries.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "It's not just noise, Ary. The difference is statistically significant.\n\n**ParcelGo** is consistently faster, averaging about **3.10** days, while **FastShip** averages about **3.76** days. \n\nThe p-value is extremely low (**0.0000028**), which means it's very unlikely this gap is due to random chance. FastShip is indeed slower.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "shopper_types",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 53.5,
+  "tools": [
+   "analyze_or_code({\"files\": [\"shoppers.csv\"], \"task\": \"Group the shoppers in shoppers.csv into a few distinct types based on their shopping behavior (orders, …) ok",
+   "engineer:inspect_data({\"data\": \"shoppers.csv\"}) ok",
+   "engineer:find_patterns({\"columns\": [\"orders\", \"total_spent\", \"avg_basket\", \"days_since_last\"], \"data\": \"shoppers.csv\", \"group\": \"shopper_id\", \"kind\": \"segments\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "shoppers.csv"
+     ],
+     "task": "Group the shoppers in shoppers.csv into a few distinct types based on their shopping behavior (orders, total_spent, avg_basket, and days_since_last). Provide a description of each type and how many shoppers belong to each."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "shoppers.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "find_patterns",
+    "input": {
+     "columns": [
+      "orders",
+      "total_spent",
+      "avg_basket",
+      "days_since_last"
+     ],
+     "data": "shoppers.csv",
+     "group": "shopper_id",
+     "kind": "segments"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The shoppers in `shoppers.csv` fall into two very distinct groups:\n\n1.  **High-Value Frequent Shoppers** (120 shoppers):\n    *   **Behavior**: They shop often (median **16** orders) and spend a lot (median **1098.13**). They are also quite recent customers, having shopped about **17** days ago.\n    *   **Profile**: Your most loyal and valuable segment.\n\n2.  **Infrequent Low-Value Shoppers** (120 shoppers):\n    *   **Behavior**: They have low activity (median **2** orders) and low spend (median **67.16**). They haven't been back in a long time, with a median of **205** days since their last purchase.\n    *   **Profile**: Occasional visitors or customers at risk of churning.\n\nI've saved the segment assignments to `shoppers-segments.csv` if you want to look at the individual data.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "complaints",
+  "kind": "stats",
+  "run": 1,
+  "ok": false,
+  "problem": "analyze_text failed",
+  "seconds": 234.9,
+  "tools": [
+   "analyze_or_code({\"files\": [\"tickets.csv\"], \"task\": \"Identify and summarize the main topics or complaints expressed in the 'message' column of tickets.csv.\"}) partial",
+   "engineer:inspect_data({\"data\": \"tickets.csv\"}) ok",
+   "engineer:analyze_text({\"data\": \"tickets.csv\", \"kind\": \"themes\"}) invalid_arguments",
+   "engineer:analyze_text({\"column\": \"message\", \"data\": \"tickets.csv\", \"kind\": \"themes\"}) failed",
+   "engineer:query_data({\"sql\": \"SELECT message, count(*) as count FROM \\\"tickets.csv\\\" GROUP BY message ORDER BY count DESC\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    SUM(CASE WHEN message IN ('Locked out of my account again', 'Two-factor code is always rejected', 'Password reset emai…) failed",
+   "engineer:query_data({\"sql\": \"SELECT \\n    SUM(CASE WHEN message = 'Locked out of my account again' THEN 1 ELSE 0 END) +\\n    SUM(CASE WHEN message = 'Two-factor…) failed",
+   "engineer:query_data({\"sql\": \"SELECT count(*) FROM \\\"tickets.csv\\\" WHERE message IN ('Locked out of my account again', 'Two-factor code is always rejected', 'Pas…) failed",
+   "engineer:query_data({\"sql\": \"SELECT count(*) FROM \\\"tickets.csv\\\" WHERE message = 'Locked out of my account again'\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT count(*) FROM \\\"tickets.csv\\\" WHERE message = 'Two-factor code is always rejected'\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT count(*) FROM \\\"tickets.csv\\\" WHERE message = 'Password reset email never arrives'\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT count(*) FROM \\\"tickets.csv\\\" WHERE message = 'Can\\\\'t log in after the update'\"}) failed"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "tickets.csv"
+     ],
+     "task": "Identify and summarize the main topics or complaints expressed in the 'message' column of tickets.csv."
+    },
+    "status": "partial"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "tickets.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "analyze_text",
+    "input": {
+     "data": "tickets.csv",
+     "kind": "themes"
+    },
+    "status": "invalid_arguments"
+   },
+   {
+    "by": "engineer",
+    "name": "analyze_text",
+    "input": {
+     "column": "message",
+     "data": "tickets.csv",
+     "kind": "themes"
+    },
+    "status": "failed"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT message, count(*) as count FROM \"tickets.csv\" GROUP BY message ORDER BY count DESC"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    SUM(CASE WHEN message IN ('Locked out of my account again', 'Two-factor code is always rejected', 'Password reset email never arrives', 'Can\\'t log in after the update') THEN count ELSE 0 END) as access_count,\n    SUM(CASE WHEN message IN ('Refund still not received', 'Why did my subscription price go up', 'Invoice shows the wrong amount', 'I was charged twice this month') THEN count ELSE 0 END) as billing_count,\n    SUM(CASE WHEN message IN ('The app is so slow to load', 'Pages take ages to open', 'It freezes when I scroll the list') THEN count ELSE 0 END) as performance_count\nFROM (SELECT message, count(*) as count FROM \"tickets.csv\" GROUP BY message)"
+    },
+    "status": "failed"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    SUM(CASE WHEN message = 'Locked out of my account again' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Two-factor code is always rejected' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Password reset email never arrives' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Can\\'t log in after the update' THEN 1 ELSE 0 END) as access_count,\n    SUM(CASE WHEN message = 'Refund still not received' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Why did my subscription price go up' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Invoice shows the wrong amount' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'I was charged twice this month' THEN 1 ELSE 0 END) as billing_count,\n    SUM(CASE WHEN message = 'The app is so slow to load' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'Pages take ages to open' THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN message = 'It freezes when I scroll the list' THEN 1 ELSE 0 END) as performance_count\nFROM \"tickets.csv\""
+    },
+    "status": "failed"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT count(*) FROM \"tickets.csv\" WHERE message IN ('Locked out of my account again', 'Two-factor code is always rejected', 'Password reset email never arrives', 'Can\\'t log in after the update')"
+    },
+    "status": "failed"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT count(*) FROM \"tickets.csv\" WHERE message = 'Locked out of my account again'"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT count(*) FROM \"tickets.csv\" WHERE message = 'Two-factor code is always rejected'"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT count(*) FROM \"tickets.csv\" WHERE message = 'Password reset email never arrives'"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT count(*) FROM \"tickets.csv\" WHERE message = 'Can\\'t log in after the update'"
+    },
+    "status": "failed"
+   }
+  ],
+  "answer": "People are mostly complaining about three main issues in the tickets:\n\n*   **Account Access & Security (25 tickets):** This is the biggest category, mainly involving account lockouts and issues with two-factor authentication codes or password resets.\n*   **Billing & Refunds (20 tickets):** Users are asking about missing refunds, subscription price increases, and incorrect invoices.\n*   **App Performance & Stability (15 tickets):** Many reports mention the app being slow to load, pages taking a long time to open, or the app freezing during scrolling.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "notice",
+  "kind": "docs",
+  "run": 1,
+  "ok": false,
+  "problem": "called ask_knowledge, ask_knowledge",
+  "seconds": 28.2,
+  "tools": [
+   "ask_knowledge({\"question\": \"What is the notice period required to leave the flat according to the lease agreement?\"}) ok",
+   "ask_knowledge({\"question\": \"What is the required notice period to terminate the tenancy according to the lease agreement?\"}) ok",
+   "files({\"mode\": \"read\", \"name\": \"lease.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is the notice period required to leave the flat according to the lease agreement?"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is the required notice period to terminate the tenancy according to the lease agreement?"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "lease.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "According to your lease, you need to give **two months' notice** in writing to end the tenancy.",
+  "emoji": false,
+  "nudges": [
+   {
+    "nudge": "[App check: your reply says you are about to do something, but it called no tool. Call the",
+    "after": "I'm checking your lease agreement now to find the exact notice period for you, Ary."
+   }
+  ]
+ },
+ {
+  "case": "pinned_pets",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.7,
+  "tools": [],
+  "calls": [],
+  "answer": "Yes, you can, but you'll need to get **written permission** from your landlord first. \n\nAccording to your tenancy agreement for flat 4B, a small cat is usually accepted. 🐾",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "which_files",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.6,
+  "tools": [
+   "files({\"mode\": \"find\", \"query\": \"deposit\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "query": "deposit"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Two of your files mention the deposit:\n\n*   **lease.md**: States the deposit is three months' rent and will be returned within 30 days of moving out.\n*   **moving.md**: Includes a reminder to ask about the deposit return.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "explain",
+  "kind": "talk",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 23.0,
+  "tools": [],
+  "calls": [],
+  "answer": "Overfitting occurs when a machine learning model learns the training data **too well**, capturing noise and random fluctuations as if they were actual patterns.\n\nBecause the model has essentially \"memorized\" the specific examples it was trained on, it fails to generalize to new, unseen data. It performs brilliantly on the data it knows, but fails when faced with anything slightly different.\n\nThink of it like this, Ary: \n\nImagine a student preparing for a math exam. Instead of learning the logic of how to solve equations, they simply memorize every exact question and answer from a practice textbook. When the actual exam arrives with slightly different numbers, the student fails because they didn't learn the underlying concept; they only learned the specific answers from the practice set.\n\nIn technical terms, you can recognize overfitting by these two traits:\n\n* **Low Bias:** The model fits the training data extremely closely.\n* **High Variance:** The model's predictions change wildly when you give it slightly different input data.\n\nTo prevent this, engineers often use techniques like **regularization** (which penalizes complexity), **cross-validation**, or simply providing more diverse data to train on.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "hey",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.1,
+  "tools": [],
+  "calls": [],
+  "answer": "Hey Ary! My day is going great—all systems are running smoothly and I'm ready to help. How are things going with you? 😊",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "thanks",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.5,
+  "tools": [],
+  "calls": [],
+  "answer": "You're very welcome, Ary! I'm glad I could help. 😊",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "coffee",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.8,
+  "tools": [],
+  "calls": [],
+  "answer": "Oh no, Ary! I hope the electronics survived the spill. ☕️🐾",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "weekend",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 21.0,
+  "tools": [],
+  "calls": [],
+  "answer": "Sundays are for recharging, Ary. Depending on exactly how \"lazy\" you're feeling, here are a few different ways to play it:\n\n**Very Low Energy (The \"Don't leave the couch\" option)**\n* **The Movie Marathon:** Pick a trilogy or a series you’ve been meaning to watch and settle in.\n* **The Deep Dive:** Pick a topic you're curious about and get lost in long-form video essays or a great audiobook.\n* **Digital Declutter:** Sit with a tea and slowly clear out old photos or screenshots from your phone. It's strangely satisfying and requires zero physical effort.\n\n**Low Energy (The \"Cozy & Creative\" option)**\n* **Low-Stakes Hobbying:** Try a jigsaw puzzle, some light sketching, or even just coloring. It occupies the hands without stressing the brain.\n* **Kitchen Comforts:** Make something that takes a long time but very little active work, like a slow-simmering stew or something in the oven.\n* **Gentle Movement:** A bit of light stretching or restorative yoga while watching something lighthearted.\n\n**Minimal Effort \"Out and About\"**\n* **The Coffee Shop Wander:** Grab a book and head to a local cafe. You get the \"out of the house\" feeling without actually having to *do* anything.\n* **A Scenic Walk:** A slow, aimless stroll through a park or a quiet neighborhood.\n\nIf any of those spark an interest, let me know and I can help you plan the details—like finding a movie list or a simple recipe. ☕",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "diagnosis",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 33.9,
+  "tools": [],
+  "calls": [],
+  "answer": "I'm sorry to hear that, Ary. It can feel overwhelming at first, but for most people, type 2 diabetes is a very manageable condition with the right routine.\n\n*Please note: I am an AI, not a doctor. All medical decisions and treatment plans should be made in direct consultation with his healthcare provider.*\n\nEssentially, his body is struggling to move sugar (glucose) from the blood into his cells for energy. Management is about keeping those blood sugar levels stable to prevent high spikes or dangerous lows.\n\n### The Three Pillars of Management\n\n*   **Nutrition:** This is often the biggest adjustment. It's less about \"never eating sugar again\" and more about managing **carbohydrates**. Focusing on fiber, lean proteins, and healthy fats helps prevent the rapid sugar spikes that cause issues.\n*   **Movement:** Physical activity helps the body use insulin more effectively. Even a **short walk** after a meal can help lower post-meal blood sugar levels significantly.\n*   **Monitoring:** He will likely need to check his blood glucose levels regularly (using a finger-prick meter or a continuous glucose monitor) to understand how specific foods and activities affect him.\n\n### How You Can Support Him\n\nThe diagnosis can feel isolating. Instead of making it \"his diet,\" try to make healthy choices a **family habit**. Cooking balanced meals together or going for walks together can make the lifestyle changes feel like a shared activity rather than a restriction.\n\nIf he ever seems unusually shaky, confused, or excessively thirsty, encourage him to check his levels and contact his doctor immediately.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "tcp_udp",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 14.9,
+  "tools": [],
+  "calls": [],
+  "answer": "The main difference, Ary, is that **TCP** is built for reliability and order, while **UDP** is built for speed and efficiency.\n\n| Feature | TCP | UDP |\n| :--- | :--- | :--- |\n| **Connection** | Connection-oriented (handshake required) | Connectionless (just sends data) |\n| **Reliability** | Guarantees delivery and correct order | No guarantee of delivery or order |\n| **Speed** | Slower (due to error checking/overhead) | Faster (minimal overhead) |\n| **Error Checking** | Extensive (retransmits lost data) | Basic (discards corrupted data) |\n\n**When to use which:**\n\n*   **TCP** is what you use when you cannot afford to lose a single bit of data. It's used for web browsing (HTTP/HTTPS), email (SMTP), and file transfers (FTP).\n*   **UDP** is used when losing a few packets doesn't matter, but timing does. It's the backbone of online gaming, video streaming, and VoIP calls, where a tiny bit of \"glitchy\" video is better than a long delay while waiting for lost data to arrive.",
+  "emoji": false,
+  "nudges": []
+ }
+]

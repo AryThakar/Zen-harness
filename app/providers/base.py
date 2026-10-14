@@ -55,8 +55,14 @@ def estimate_tokens(system: str, messages: list[dict], tools: list[dict]) -> int
     API that bills by its own count. llama-server counts exactly (LlamaCppProvider.count_tokens).
     An image counts as IMAGE_TOKENS, not as the length of its base64 text."""
     images = sum(len(m.get("images") or []) for m in messages)
-    plain = [{k: v for k, v in m.items() if k != "images"} for m in messages] if images else messages
-    return int(len(json.dumps([system, plain, tools], ensure_ascii=False, default=str)) / 3.5) + 1 + images * IMAGE_TOKENS
+    sent = [{k: m[k] for k in (SENT[m["role"]] if m.get("role") in SENT else m) if k in m} for m in messages]
+    return int(len(json.dumps([system, sent, tools], ensure_ascii=False, default=str)) / 3.5) + 1 + images * IMAGE_TOKENS
+
+
+# What a message sends the model, by its role - a stored message also keeps what isn't sent (a user message's own
+# words beside its stamped content, the time, the files' cards): counted, the user's words counted twice.
+SENT = {"user": ("role", "content"), "tool": ("role", "content", "tool_call_id"),
+        "assistant": ("role", "text", "tool_calls")}
 
 
 def answered_ids(messages: list[dict], index: int) -> set[str]:

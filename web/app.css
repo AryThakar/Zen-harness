@@ -1176,16 +1176,6 @@ img.fav { object-fit: contain; }
 .df-text { min-width: 0; flex: 1; }
 .df-text b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); }
 .df-text small { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
-/* ---------------------------------------------------------------- a plan: a checklist that ticks as its tools end */
-.plan { margin: 10px 0 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 6px; }
-.plan-step { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
-.plan-mark { width: 20px; height: 20px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  box-shadow: inset 0 0 0 1.5px var(--soft); color: transparent; transition: background .25s, box-shadow .25s, color .25s; }
-.plan-mark svg.i { width: 12px; height: 12px; stroke-width: 3; }
-.plan-step.done .plan-mark { background: var(--ok); box-shadow: none; color: #fff; animation: pop .35s ease-out; }
-.plan-step.done > span:nth-child(2) { color: var(--muted); }
-.plan-tool { margin-left: auto; font-size: 12px; color: var(--soft); white-space: nowrap; }
-
 /* ---------------------------------------------------------------- how an answer ran (the developer's view) */
 .trace-part + .trace-part { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .trace-head { font-size: 14px; font-weight: 500; }

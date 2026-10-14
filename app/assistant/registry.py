@@ -86,7 +86,8 @@ class WeatherIn(_In):
 
 
 class ImageIn(_In):
-    prompt: str = Field(description="a detailed visual description of the image")
+    prompt: str = Field(description="a detailed visual description of the image, e.g. 'a red fox asleep in fresh "
+                                    "snow at dawn, soft light, photo'")
     size: Literal["square", "wide", "tall"] = Field("square", description="the picture's shape: wide is 16:9, tall 9:16")
 
 
@@ -104,8 +105,9 @@ class CalcIn(_In):
 
 
 class AskIn(_In):
-    question: str = Field(description="one short question")
-    options: list[str] | None = Field(None, description="choices to show as buttons (the user can also type or skip)")
+    question: str = Field(description="one short question, e.g. 'Which year should the totals cover?'")
+    options: list[str] | None = Field(None, description="choices to show as buttons, e.g. ['2024', '2025'] (the user "
+                                                        "can also type or skip)")
     allow_text: bool = Field(True, description="whether the user may type an answer of their own besides the options")
 
     @field_validator("options", mode="before")
@@ -116,17 +118,6 @@ class AskIn(_In):
             return [re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip() for line in value.splitlines()
                     if line.strip()]
         return value
-
-
-class PlanStep(_In):
-    do: str = Field(description="the step, in a few words, e.g. 'find this year's prices'")
-    tool: str | None = Field(None, description="the tool or helper that does it, e.g. 'research_web'; omit for a "
-                                               "step you do yourself in your answer (summing up, explaining)")
-
-
-class PlanIn(_In):
-    steps: list[PlanStep] = Field(min_length=2, max_length=8, description="2 to 8 steps, in the order they run")
-
 
 
 def _read_page(c: ToolContext, a) -> ToolResult:
@@ -171,21 +162,10 @@ def _run(c: ToolContext, a) -> ToolResult:
     return r
 
 
-def show_plan(steps: list[PlanStep]) -> ToolResult:
-    """The plan as a card; the page ticks a step off when its tool's call ends."""
-    from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
-    names = [*MAIN_DIRECT, *DELEGATES]
-    unknown = sorted({s.tool for s in steps if s.tool} - set(names))
-    if unknown:
-        return ToolResult("invalid_arguments", {"error": {"message": f"No tool {', '.join(unknown)}: each step's tool is "
-                                                                     f"one of {', '.join(n for n in names if n != 'plan')}.",
-                                                          "field": "steps"}})
-    return ok({"plan": f"{len(steps)} steps, shown to the user"},
-              {"type": "plan", "steps": [{"do": " ".join(s.do.split())[:120], "tool": s.tool or None} for s in steps]})
-
-
 class TaskIn(_In):
-    task: str = Field(description="what to do, complete on its own")
+    task: str = Field(description="what the user wants and why, in their words, complete on its own - names, "
+                                  "numbers, dates, e.g. "
+                                  "'Which month of 2024 had the highest revenue? The user is planning stock.'")
 
 
 class WorkTaskIn(TaskIn):
@@ -194,11 +174,12 @@ class WorkTaskIn(TaskIn):
 
 
 class QuestionIn(_In):
-    question: str = Field(description="what to find in the user's files and earlier chats")
+    question: str = Field(description="what to find in the user's files and earlier chats, e.g. 'What notice "
+                                      "period does the flat's lease give?'")
 
 
 class SearchIn(_In):
-    query: str = Field(description="what to look for, in words a page would use")
+    query: str = Field(description="what to look for, in words a page would use, e.g. 'python 3.13 release date'")
     site: str | None = Field(None, description="only this domain, e.g. 'python.org'")
     recent: Literal["day", "week", "month", "year"] | None = Field(
         None, description="only pages from the last day, week, month or year - for news and 'latest' questions")
@@ -246,11 +227,12 @@ class ReaderFilesIn(_In):
 
 class ReadPageIn(_In):
     url: str = Field(description="the page's address, e.g. from a search result or the task")
-    find: str | None = Field(None, description="for a long page: words to look for; the parts about them are shown")
+    find: str | None = Field(None, description="for a long page: words to look for, e.g. 'pricing'; the parts "
+                                               "about them are shown")
 
 
 class FilesQueryIn(_In):
-    query: str = Field(description="what to look for, in words the document would use")
+    query: str = Field(description="what to look for, in words the chat would have used, e.g. 'forecast horizon'")
 
 
 class DataIn(_In):
@@ -299,12 +281,13 @@ class CompareIn(_In):
     question: Literal["difference", "correlation", "association", "ab"] = Field(
         description="difference: a number across groups; correlation: two numbers; association: two categories; "
                     "ab: an A/B test - 2 variants and their outcome (yes/no or a number)")
-    columns: list[str] = Field(min_length=2, max_length=2, description="the two columns; for ab: [variant, outcome]")
+    columns: list[str] = Field(min_length=2, max_length=2, description="the two columns, e.g. ['region', 'amount']; "
+                                                                       "for ab: [variant, outcome]")
 
 
 class PredictIn(_In):
     data: str = Field(description=TABLE_ID)
-    target: str = Field(description="the column to predict (a number, yes/no, or a few classes)")
+    target: str = Field(description="the column to predict (a number, yes/no, or a few classes), e.g. 'churned'")
     features: list[str] | None = Field(None, description="columns to learn from; omit for all usable ones")
     time_column: str | None = Field(None, description="a date column: the model is tested on the latest rows, "
                                                       "learned from the earlier ones (omit: the table's one date "
@@ -315,7 +298,7 @@ class PredictIn(_In):
 
 class ForecastIn(_In):
     data: str = Field(description=TABLE_ID)
-    value: str | None = Field(None, description="number column; omit to forecast the row count")
+    value: str | None = Field(None, description="the number column, e.g. 'amount'; omit to forecast the row count")
     date: str | None = Field(None, description="the date column's name (not a date); omit for the table's date "
                                                "column. Year + quarter (or month) columns are combined for you")
     by: str | None = Field(None, description="a category column: one forecast per group (the 5 largest)")
@@ -379,143 +362,173 @@ FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Searchi
                     "pin": ("Pinning a file", "Pinned a file"), "unpin": ("Unpinning a file", "Unpinned a file")}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in [
-    Tool("get_weather", "Weather where the user is - found automatically, don't ask them - or in a named place: now "
-       "(temperature, UV, air quality, the local time there), and with days a daily forecast (days=1 covers "
-       "tomorrow). Use it when the user asks about the weather, rain, heat, air or what to wear or carry outside, "
-       "or the time in another place.",
+    # Each description in one order (docs/REBUILD_PLAN.md, section 3): what it does, in the words a user or a task
+    # would use; what it returns; when to use it; when not, and which tool instead.
+    Tool("get_weather", "Weather and air quality where the user is - found automatically, don't ask them - or in a "
+       "named place. Returns the weather now (temperature, feels-like, rain, wind, UV, air quality) and the local "
+       "time there; with days, a daily forecast too (days=1 covers tomorrow). Use it for the weather, rain, heat, the "
+       "air, what to wear or carry outside, and the time in another place. Not for past weather or a place's climate "
+       "(research_web).",
        WeatherIn, lambda c, a: weather.get_weather(a.location, a.days),
        labels=("Checking the weather", "Checked the weather")),
-    Tool("generate_image", "Generate one picture - a scene, art or a photo-like image - from a detailed description; the user sees "
-       "it. Not for anything that must be exact or labelled (an image model draws labels and numbers wrong): how "
-       "something works or is built goes to draw_diagram; a chart of a table's numbers, a plot of a formula or a "
-       "simulation to analyze_or_code.",
+    Tool("generate_image", "Generate one new picture - a scene, art, a photo-like image - from a detailed "
+       "description. Returns the picture, shown to the user. Use it when the user asks for a picture to be made. Not "
+       "for anything that must be exact or labelled (an image model draws text and numbers wrong): how something "
+       "works or is built goes to draw_diagram; a chart of numbers, a plot of a formula or a change to a picture the "
+       "user has to analyze_or_code.",
        ImageIn, lambda c, a: image.generate_image(c.ws, a.prompt, a.size, look=c.look),
        labels=("Creating an image", "Created an image")),
-    Tool("draw_diagram", "Draw a diagram from Mermaid code, in the kind that fits: flowchart (steps and decisions), sequence "
-       "(messages between parties, in order), class, state (the states something moves through), ER (data and "
-       "its relations), gantt (tasks on dates), pie (a few shares), mindmap or timeline. Use it to show how "
-       "something works or is built, or when the user asks for a visual explanation. Not for a table's numbers "
-       "or a plot of a formula (analyze_or_code charts and plots them).",
+    Tool("draw_diagram", "Draw a diagram from Mermaid code, in the kind that fits: flowchart (steps and decisions), "
+       "sequence (messages between parties, in order), class, state (the states something moves through), ER (data "
+       "and its relations), gantt (tasks on dates), pie (a few shares), mindmap or timeline. Returns the drawn "
+       "diagram, shown to the user. Use it to show how something works or is built, or when the user asks for a "
+       "visual explanation. Not for a table's numbers or a plot of a formula (analyze_or_code), or a picture of a "
+       "scene (generate_image).",
        DiagramIn, lambda c, a: diagram.draw_diagram(a.mermaid, a.title),
        labels=("Drawing a diagram", "Drew a diagram")),
-    Tool("calculate", "Exact maths: use it for every number you work out - even a sum or an average - instead of "
-       "doing it in your head. Arithmetic, and maths: equations (solve, or 'lhs = rhs'; nsolve for a number), "
-       "derivatives (diff), integrals (integrate; a definite integral's number: Integral(f, (x, a, b)).evalf()), "
-       "limits, sums, matrices. A maths problem is yours: solve it step by step, every number from here - a helper "
-       "only for maths that needs a program (a simulation, many cases). Not for a table's numbers (analyze_or_code).",
+    Tool("calculate", "Exact maths with SymPy: arithmetic and percentages, equations (solve, or 'lhs = rhs'; nsolve "
+       "for a number), derivatives (diff), integrals (integrate; a definite integral's number: Integral(f, (x, a, "
+       "b)).evalf()), limits, sums, matrices. Returns the exact result (and its decimal value). Use it for every "
+       "number you work out - even a sum or an average - instead of doing it in your head; a maths problem is yours: "
+       "solve it step by step, every number from here. Not for a table's numbers, or maths that needs a program - a "
+       "simulation, many cases (analyze_or_code).",
        CalcIn, lambda c, a: calc.calculate(a.expression),
        labels=("Calculating", "Calculated")),
-    Tool("plan", "Show the user your plan before a job of several steps that build on each other (find data, then "
-       "analyse it, then make a file): one short line per step, with the tool or helper that does it. The user sees it "
-       "as a checklist that ticks off as the tools finish. Not for a single step or a plain answer.",
-       PlanIn, lambda c, a: show_plan(a.steps),
-       labels=("Planning", "Planned")),
-    Tool("ask_user", "Ask the user one question, only when the request could reasonably mean different things "
-       "with different results. When one reading can be answered as it stands (e.g. a record, a top or a total), "
-       "answer that one and say which reading you took instead. Never ask about preferences that don't change the "
-       "answer.",
+    Tool("ask_user", "Ask the user one question, with choices as buttons, and wait. Returns their answer (or that "
+       "they skipped it). Use it only when the request could reasonably mean different things with different "
+       "results. Not when one reading can be answered as it stands (e.g. a record, a top or a total): answer that one "
+       "and say which reading you took. Never ask about preferences that don't change the answer.",
        AskIn, lambda c, a: ask.ask_user(a.question, a.options, a.allow_text),
        labels=("Asking you", "Asked you")),
     # worker tools
-    Tool("web_search", "Search the web: titles, links and short snippets - enough to choose pages, not to answer "
-       "from: read the best ones with read_webpage.",
+    Tool("web_search", "Search the web. Returns titles, links and short snippets - enough to choose pages, not to "
+       "answer from. Use it to find the pages to read, then read the best ones with read_webpage. Not for a page whose "
+       "link you have (read_webpage).",
        SearchIn, lambda c, a: web.web_search(a.query, a.site, recent=a.recent,
                                              embedder=getattr(c.index, "embedder", None)),
        labels=("Searching the web", "Searched the web")),
-    Tool("read_webpage", "Read the text of one web page (HTML, text, or a PDF, Word or PowerPoint file; a data file "
-       "shows its columns and first rows). A YouTube link gives the video's title, channel, length, date and "
-       "description (not what is said in it).", ReadPageIn,
+    Tool("read_webpage", "Read one web page: HTML, text, or a PDF, Word or PowerPoint file; a data file shows its "
+       "columns and first rows; a YouTube link gives the video's title, channel, length, date and description (not "
+       "what is said in it). Returns the page's text - for a long page, the parts about find - with its date when it "
+       "has one and the number to cite it by. Use it on the best search results and on a link the task gives. A site "
+       "that refuses reading (a bot check) says so: reading it again gets the same answer.", ReadPageIn,
        lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
-    Tool("files", "The workspace's files: what the user has, and the files you make. Use it when the user asks what "
-       "files they have or what is in them, or to open, write, change, rename, delete or bring in one. list: everything, "
-       "a page at a time; find: which files match a query - by name and by what is in them (a document's passages, "
+    Tool("files", "The workspace's files - the user's and the ones you make - by name. Modes: list: everything, a "
+       "page at a time; find: which files match a query - by name and by what is in them (a document's passages, "
        "code, a chart, a table's columns and values, what a picture shows), each with the part that matched - one "
-       "call answers 'which' and 'how many'; read: a file's report (what a helper did with it), or its text "
-       "from line start on (an image or a table says which tool reads it); write: a new file - text, Markdown, CSV, "
-       "JSON, code, and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading "
-       "starts a slide; a line that is only ![caption](charts/sales.chart.json) puts in that picture or chart) - or the whole "
-       "new text of a file that is there (its version before is kept); edit: change one passage - old_text exactly as "
-       "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
-       "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
-       "one. agent.md is your memory for this project, always in view: to remember something (\"remember ...\", "
-       "\"from now on ...\") write it: content = what it holds plus the new line. pin: keep a file in view in this chat - "
-       "the parts of it that match each message come with every turn (the user pins files too); unpin: stop. "
-       "Not for running code (analyze_or_code) or "
-       "finding where something is on the web (research_web). Delete, "
-       "download and changing the user's own file ask the user with a button - call it straight away, don't ask "
-       "first in words.",
+       "call answers 'which' and 'how many'; read: a file's text from line start on, with its report (what a helper "
+       "did with it) - an image or a table says which tool reads it; write: a new file, or the whole new text of one "
+       "(its version before is kept) - text, Markdown, CSV, JSON, code, and documents: a Word .docx or slides .pptx "
+       "are made from Markdown (for slides each # heading starts a slide; a line that is only "
+       "![caption](charts/sales.chart.json) puts in that picture or chart); edit: change one passage - old_text "
+       "exactly as in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or "
+       "a data table (CSV, Excel) from any public link - a repository's or folder's page lists its files, to pick "
+       "one; pin: keep a file in view in this chat - the parts of it that match each message come with every turn "
+       "(the user pins files too); unpin: stop. agent.md is your memory for this project, always in view: to "
+       "remember something (\"remember ...\", \"from now on ...\") write it: content = what it holds plus the new "
+       "line. Returns what was asked: the list, the matches, the text, or what was written. Use it when the user asks "
+       "what files they have or what is in them, for a quick lookup (which files, one passage), and to make, change, "
+       "rename, delete, bring in or pin one. Not for reading many or long documents (ask_knowledge), running code or "
+       "a table's numbers (analyze_or_code), or the web (research_web). Delete, download and changing the user's own "
+       "file ask the user with a button - call it straight away, don't ask first in words.",
        FilesIn, _files,
        labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
-    Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
+    Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view. "
+       "Returns the passages that match, each with its chat. Use it for what was said, asked or decided before. Not "
+       "for the user's files (files, mode='find').",
        FilesQueryIn,
        lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since),
        labels=("Searching earlier chats", "Searched earlier chats")),
-    Tool("inspect_data", "First look at a table: columns, types, missing values, duplicates, outliers, suggested "
-       "cleaning steps and questions only the user can answer.", DataIn,
+    Tool("inspect_data", "First look at a table. Returns its columns with their types and roles (the date, order, "
+       "item, customer and money columns), missing values, duplicates, outliers, sample rows, suggested cleaning "
+       "steps and questions only the user can answer. Use it first on every table, before anything is computed on "
+       "it. Not for a number from it (query_data).", DataIn,
        lambda c, a: inspect_data.inspect_data(c.ws, a.data),
        labels=("Looking at the table", "Looked at the table")),
-    Tool("clean_data", "Apply cleaning steps to a table; saves a new table and a log. Nothing is changed without a step.",
+    Tool("clean_data", "Apply cleaning steps to a table, in order: parse numbers and dates, drop duplicates or rows, "
+       "fill or drop missing values, tidy text, flag or remove outliers, rename or drop columns. Returns the new "
+       "table's name - use it from then on - with the rows before and after and a log of each step; the table it "
+       "came from stays as it was. Use it with the steps inspect_data suggests, all in one call. Nothing is changed "
+       "without a step.",
        CleanIn, lambda c, a: clean_data.clean_data(c.ws, a.data, a.steps),
        labels=("Cleaning the table", "Cleaned the table")),
-    Tool("query_data", "Exact numbers with one read-only SQL query: totals, rankings, filters, group-bys - and "
-       "plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100.",
+    Tool("query_data", "Exact numbers with one read-only SQL query (DuckDB): totals, counts, averages, rankings, "
+       "shares, filters, group-bys - and plain arithmetic, which needs no table: SELECT (1410 - 1250) / 1250 * 100. "
+       "Returns the result's columns and rows (the first ones, with the total count); with save, the full result as "
+       "a new table. Use it for any number from a table, and to make a table another tool needs (a target column, a "
+       "subset). Not for a chart (make_chart) or a test, forecast or model (compare, forecast, predict).",
        SqlIn, lambda c, a: query_data.query_data(c.ws, a.sql, a.save),
        labels=("Querying the data", "Queried the data")),
-    Tool("make_chart", "Draw a chart of a table, computed from all its rows, kept as a chart file in charts/ (its "
-       "name comes back as chart_file: a document or slide takes it as a picture): line (over time; by = one line "
-       "per group), area (a line filled; by = stacked groups), bar (by category; by = grouped or stacked), scatter "
-       "(two numbers, with a trend line), histogram (how one number spreads; by = one spread per group, e.g. the "
-       "ages of survivors and the rest), box (a number's spread per group), heatmap (two categories, e.g. weekday x "
-       "hour) or pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with "
-       "query_data first. The chart the user needs is drawn here, not in a script.",
+    Tool("make_chart", "Draw a chart of a table, computed from all its rows: line (over time; by = one line per "
+       "group), area (a line filled; by = stacked groups), bar (by category; by = grouped or stacked), scatter (two "
+       "numbers, with a trend line), histogram (how one number spreads; by = one spread per group, e.g. the ages of "
+       "survivors and the rest), box (a number's spread per group), heatmap (two categories, e.g. weekday x hour) or "
+       "pie (shares, up to 5 slices). It groups and sums (agg) itself: no need to aggregate with query_data first. "
+       "Returns the numbers drawn and chart_file, the chart file kept in charts/ - a document or slide takes it as a "
+       "picture. Use it for every chart the user needs. Not for a chart only a program can compute (a script's "
+       "chart()).",
        ChartIn, lambda c, a: make_chart.make_chart(c.ws, a.data, a.type, a.x, a.y, a.by, a.agg, a.time_unit, a.top,
                                                    a.stacked, a.title),
        labels=("Drawing a chart", "Drew a chart")),
-    Tool("compare", "Is a difference, correlation, association or A/B result real, or chance? The test is chosen "
-       "from the columns; the result gives the size of the effect with a 95% range.",
+    Tool("compare", "Statistical test: is a difference, correlation, association or A/B result real, or chance? The "
+       "test is chosen from the columns - Mann-Whitney or Kruskal-Wallis for a number across groups, Spearman for two "
+       "numbers, chi-square or Fisher for two categories, a two-proportion z-test or Welch's t-test for an A/B test. "
+       "Returns the test, the p-value, the size of the effect with a 95% range and a plain verdict. Use it whenever "
+       "the question is whether a gap or a link is real (significant). Not for the size of a gap alone (query_data).",
        CompareIn, lambda c, a: compare.compare(c.ws, a.data, a.question, a.columns),
        labels=("Testing the numbers", "Tested the numbers")),
-    Tool("predict", "Learn a column from the others (who will churn, what a price will be): tested against a "
-       "baseline, with the drivers and their direction (associations, not causes) and leak warnings; saves the "
-       "table with the predictions (and new_data's) as a new table.", PredictIn,
+    Tool("predict", "Train and test a machine-learning model that learns a column from the others (who will churn, "
+       "what a price will be): classification or regression; logistic or ridge regression against gradient boosting, "
+       "the better kept; tested on the latest rows (with a date) or by 5-fold cross-validation, always against a "
+       "baseline. Returns the score and verdict, the drivers - permutation importance and their direction "
+       "(associations, not causes) - leak warnings, and the table with the predictions (and new_data's) saved as a "
+       "new table. Use it for what predicts or drives a column and for predictions for rows. Not for a value's "
+       "future over time (forecast).", PredictIn,
        lambda c, a: ml.predict(c.ws, a.data, a.target, a.features, a.time_column, a.new_data),
        labels=("Learning to predict", "Learned to predict")),
-    Tool("forecast", "A value over time: is it really rising or falling (trend test), its seasonal pattern "
-       "(e.g. peak month), the latest period vs a year earlier, and the next periods with an 80% range - "
-       "tested against a simple baseline; by = one forecast per group.", ForecastIn,
+    Tool("forecast", "Time series: a value over time - is it really rising or falling (Mann-Kendall trend test), its "
+       "seasonal pattern (e.g. the peak month), the latest period against a year earlier, and the next periods with "
+       "an 80% range, from exponential smoothing or Theta tested against a seasonal baseline; by = one forecast per "
+       "group. Returns those, with how reliable the forecast is, and a chart file. Use it for trends, seasons and "
+       "what comes next. Not for one period's total (query_data).", ForecastIn,
        lambda c, a: forecast.forecast(c.ws, a.data, a.date, a.value, a.horizon, a.time_unit, a.agg, a.by),
        labels=("Forecasting", "Made a forecast")),
-    Tool("find_patterns", "Patterns no single query shows: segments (groups of similar customers or rows, what "
-       "sets each apart), unusual (days or periods far from their trend and season, or extreme rows) or together "
-       "(items bought in the same order more often than chance). Saves a table of the result.", PatternsIn,
+    Tool("find_patterns", "Patterns no single query shows: segments (clustering - k-means groups of similar "
+       "customers or rows, what sets each apart), unusual (anomalies - days or periods far from their trend and "
+       "season, or extreme rows) or together (items bought in the same order more often than chance: lift, with a "
+       "test). Returns each group, anomaly or pair with how clear it is, and saves a table of the result. Not for a "
+       "ranking or a total (query_data).", PatternsIn,
        lambda c, a: find_patterns.find_patterns(c.ws, a.data, a.kind, a.group, a.columns, a.value, a.by, a.basket,
                                                 a.item, a.time_unit),
        labels=("Looking for patterns", "Looked for patterns")),
     Tool("analyze_text", "What a text column says, by meaning (local embeddings): themes (groups with their words "
        "and examples - you name them), classify (into the user's labels; good on labels with a clear meaning, about "
-       "half right on a business's own categories) or similar (rows most like a phrase). Saves the table with each row's theme or label.", TextIn,
+       "half right on a business's own categories) or similar (rows most like a phrase). Returns the themes, labels "
+       "or matches with their shares and examples, and saves the table with each row's theme or label. Not for "
+       "counting exact words or values (query_data).", TextIn,
        lambda c, a: analyze_text.analyze_text(c.ws, a.data, a.kind, a.column, a.labels, a.query, a.count, a.value,
                                               embedder=c.index.embedder),
        labels=("Reading the texts", "Read the texts")),
-    Tool("view_image", "Look at an image (attached, generated, or drawn by a script) and answer a question about "
-       "it: what it shows, whether a detail is there, what its text says. Use it when the user attaches or asks about "
-       "an image - you can't see images otherwise: look before you describe one. Rough for exact numbers.",
+    Tool("view_image", "Look at an image in the workspace (attached, generated, or drawn by a script) and answer a "
+       "question about it: what it shows, whether a detail is there, what its text says. Returns the answer. Use it "
+       "when the user attaches or asks about an image - you can't see images otherwise: look before you describe "
+       "one. Rough for exact numbers.",
        ViewImageIn,
        lambda c, a: vision.view_image(c.ws, a.image, a.question, c.look),
        labels=("Looking at the image", "Looked at the image")),
     Tool("run", "Run a Python file of the workspace - write it with files first, change it with files edit, run it "
-       "again. It runs in the workspace's folder, so files open by their names: pd.read_csv('sales.csv'), "
-       "Image.open('panda.jpg'), open('notes.md'); table('sales.csv') gives a table with its dates and numbers "
-       "already read. Files it writes are kept in the workspace (.csv / .parquet become tables, pictures are shown "
-       "to you); writing again a file the assistant made changes it (its version before is kept); the user's own "
-       "files are never changed - write under a new name. A chart from a program: chart('line', x=[...], y=[...], "
-       "title='...') (line, area, bar, scatter, histogram, pie; series=[{'name': ..., 'y': [...]}] for several) - "
-       "drawn live like make_chart's; matplotlib only for pictures that aren't charts. A failed run shows the lines "
-       "around the error. It runs "
-       "on Windows: fonts by file name, e.g. ImageFont.truetype('segoeui.ttf', 96) (arial, georgia, segoeui, times, "
-       "verdana ...). No internet: a file from the web must be in the workspace first. "
-       "Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunIn,
+       "again. Returns what it printed, the files it wrote, and for a failed run the lines around the error. Use it "
+       "for programs, simulations, conversions, picture edits and what no data tool does. The environment: it runs "
+       "in the workspace's folder, so files open by their names: pd.read_csv('sales.csv'), Image.open('panda.jpg'), "
+       "open('notes.md'); table('sales.csv') gives a table with its dates and numbers already read. Files it writes "
+       "are kept in the workspace (.csv / .parquet become tables, pictures are shown to you); writing again a file "
+       "the assistant made changes it (its version before is kept); the user's own files are never changed - write "
+       "under a new name. A chart from a program: chart('line', x=[...], y=[...], title='...') (line, area, bar, "
+       "scatter, histogram, pie; series=[{'name': ..., 'y': [...]}] for several) - drawn live like make_chart's; "
+       "matplotlib only for pictures that aren't charts. Windows: fonts by file name, e.g. "
+       "ImageFont.truetype('segoeui.ttf', 96) (arial, georgia, segoeui, times, verdana ...). No internet: a file "
+       "from the web must be in the workspace first. Libraries: " + ", ".join(sandbox.INSTALLED) + ".", RunIn,
        lambda c, a: _run(c, a),
        labels=("Running code", "Ran code")),
 ]}
@@ -606,7 +619,7 @@ def typed_optionals(schema) -> None:
 
 
 def _inline_refs(schema: dict) -> dict:
-    """Nested models written in place of their '$ref's (plan's steps): a chat template renders a parameter from
+    """Nested models written in place of their '$ref's: a chat template renders a parameter from
     its own keys, and has no '$defs' to look one up in."""
     defs = schema.pop("$defs", {})
 
@@ -638,20 +651,22 @@ def _strip_titles(schema) -> None:
 
 # A helper's own version of a tool main also has: the same name and handler, the modes it may use.
 HELPER_TOOLS: dict[str, Tool] = {
-    "files": Tool("files", "The workspace's files, by name. find: which files match a query - by name and by what "
-                  "is in them - each with the part that matched; read: a file's text from "
-                  "line start on, with its report (an image or a table says what reads it); write: a new file, or "
-                  "the whole new text of one (its version before is kept) - a program is written here, then run "
-                  "with run; edit: change one passage - old_text exactly as in the file (line numbers as read may "
-                  "stay), new_text to put instead - then run it again. A file the user brought is changed only if "
-                  "they allow it: they are asked.", HelperFilesIn,
+    "files": Tool("files", "The workspace's files, by name. Modes: find: which files match a query - by name and "
+                  "by what is in them - each with the part that matched; read: a file's text from line start on, "
+                  "with its report (an image or a table says what reads it); write: a new file, or the whole new "
+                  "text of one (its version before is kept) - a program is written here, then run with run; edit: "
+                  "change one passage - old_text exactly as in the file (line numbers as read may stay), new_text to "
+                  "put instead - then run it again. Returns the matches, the text, or what was written. Not for a "
+                  "table's numbers (the data tools). A file the user brought is changed only if they allow it: they "
+                  "are asked.", HelperFilesIn,
                   lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, content=a.content,
                                               old_text=a.old_text, new_text=a.new_text, query=a.query, helper=True),
                   labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
     # the knowledge helper reads and never writes: files with find and read only
-    "files:read": Tool("files", "The user's files. find: which files match a query - by name and by what is in them "
-                       "(documents, code, charts, tables, pictures) - each with the passage that matched, best first, "
-                       "then pages read in earlier research (dated); read: one file's text from line start on.",
+    "files:read": Tool("files", "The user's files. Modes: find: which files match a query - by name and by what is "
+                       "in them (documents, code, charts, tables, pictures) - each with the passage that matched, best "
+                       "first, then pages read in earlier research (dated); read: one file's text from line start on. "
+                       "Find first; read a file when the task wants all of it. Not for earlier chats (recall).",
                        ReaderFilesIn,
                        lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, query=a.query,
                                                    helper=True),

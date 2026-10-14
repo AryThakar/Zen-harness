@@ -17,7 +17,7 @@ before kept.
 
 The workspace is the boundary (the user's rule): an audit hook in the script refuses reading outside
 the workspace and Python's own installation, listing other folders, writing anywhere but the workspace's
-files, changing a file the user brought (that is files(update), which asks them), deleting or moving a
+files, changing a file the user brought (that is files edit or write, which asks them), deleting or moving a
 workspace file (files(delete) asks; files(rename) moves), starting programs or listing drives, and the
 network - DNS lookups and connections, except a loopback connection to a temporary port (a socket pair
 inside the process, e.g. an event loop on Windows); the model server and the app listen on low ports and
@@ -131,7 +131,7 @@ def _keep(p):
 
 def _own(p):
     return _not_here(p, f"{{_os.path.basename(p)}} is the user's own file: a script never changes it - write the "
-                        "result to a new file. Changing the user's file goes through files(update), which asks them.")
+                        "result to a new file. To change the user's file, use files with mode='edit' or mode='write': the user is asked.")
 
 def _guard(event, args):
     global _checking

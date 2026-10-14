@@ -50,6 +50,12 @@ def test_query_is_read_only_and_scoped(ws, sales):
     assert r.status == "invalid_arguments" and "DuckDB error" in r.result["error"]["message"]
 
 
+def test_sql_that_cannot_be_read_is_refused_saying_how_to_quote(ws, sales):
+    """Measured on the 26B: 'Can\\'t' (a backslash before the quote) crashed query_data as an internal error."""
+    r = query_data(ws, f"SELECT count(*) FROM {sales} WHERE region = 'Can\\'t'")
+    assert r.status == "invalid_arguments" and "written twice: 'Can''t'" in r.result["error"]["message"]
+
+
 def test_query_save_makes_a_table(ws, sales):
     r = query_data(ws, f"SELECT date_trunc('month', date) AS month, sum(amount) AS revenue FROM {sales} GROUP BY 1",
                    save=True)

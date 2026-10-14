@@ -414,7 +414,7 @@ def save_text(ws_id: str, item_id: str, body: TextBody, request: Request) -> dic
     ws = _item(request, ws_id, item_id)
     _, index = _store(request).open(ws_id)
     e = ws.entry(item_id)
-    if e["kind"] != "file" or not filetypes.editable_as_text(e["name"]):  # the same rule as files(update)
+    if e["kind"] != "file" or not filetypes.editable_as_text(e["name"]):  # the same rule as files write and edit
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only text files can be edited here.")
     try:
         done = file_ops.replace_file(ws, index, item_id, body.text)

@@ -1,13 +1,12 @@
-// What a turn shows besides its text: tables, pictures, diagrams, weather, notes, files, reports, code
+// What a turn shows besides its text: tables, pictures, diagrams, weather, files, reports, code
 // runs and sources. They sit in the answer itself; the chart artifacts are in charts.js.
 
 import { api, iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
 import { canView, openItem } from "./files.js";
-import { stepLabel } from "./steps.js";
-import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, noteTile, plural, polish, svg } from "./util.js";
+import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, plural, polish, svg } from "./util.js";
 
-export const CARD_TYPES = new Set(["chart", "image", "diagram", "weather", "note", "file", "report", "plan"]);
+export const CARD_TYPES = new Set(["chart", "image", "diagram", "weather", "file", "report"]);
 const stickHooks = [];
 export const onDrawn = fn => stickHooks.push(fn);  // the thread keeps to the bottom as late drawings land
 const drawnLate = () => stickHooks.forEach(fn => fn());
@@ -180,30 +179,6 @@ function chartSpot(img) {
   return spot;
 }
 
-/* ═══ A plan ════════════════════════════════════════════════════════════ */
-// main's plan for a job of several steps, as a checklist: a step is ticked when a call of its tool ends well
-// (tick(name)), so what is ticked is what ran - not what the model says it did; a step main does itself in its
-// answer (no tool) is ticked when the answer is finished (answered())
-function planCard(a) {
-  const steps = (a.steps || []).map(s => ({ ...s, done: false,
-    el: h("li", { class: "plan-step" }, h("span", { class: "plan-mark", html: svg("check") }), h("span", {}, s.do),
-      h("span", { class: "plan-tool" }, s.tool ? stepLabel(s.tool, false).replace(/…$/, "") : "in the answer")) }));
-  const { el } = card("Plan", plural(steps.length, "step"));
-  el.classList.add("plan-card");
-  el.append(h("ol", { class: "plan" }, steps.map(s => s.el)));
-  const mark = s => {
-    s.done = true;
-    s.el.classList.add("done");
-    el.querySelector(".sub-t").textContent = `${steps.filter(s => s.done).length} of ${steps.length} done`;
-  };
-  el.tick = name => {
-    const next = steps.find(s => !s.done && s.tool === name);
-    if (next) mark(next);
-  };
-  el.answered = () => steps.filter(s => !s.done && !s.tool).forEach(mark);
-  return el;
-}
-
 /* ═══ Weather ═══════════════════════════════════════════════════════════ */
 const WX = {
   sun: '<circle cx="12" cy="12" r="4.5" fill="var(--sun)"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" stroke="var(--sun)" stroke-width="1.6" stroke-linecap="round"/>',
@@ -246,15 +221,10 @@ function weatherCard(a) {
   return el;
 }
 
-/* ═══ Notes, files, reports, code ═══════════════════════════════════════ */
+/* ═══ Files, reports, code ═══════════════════════════════════════ */
 const answerBlock = text => { const el = h("div", { class: "answer report", html: markdown(text || "") }); polish(el); return el; };
 const lineCount = s => (s || "").trimEnd().split("\n").length;
 
-function noteCard(a) {
-  return h("div", { class: "card slim enter" }, noteTile(),
-    h("div", { class: "what", html: `${a.action === "updated" ? "Updated" : "Saved"} the note <b>${escapeHtml(a.title || "")}</b>` +
-      "<small>Pinned · one of the 5 notes Zen keeps in view in every chat</small>" }));
-}
 // A card's button: its word, or on a phone just its icon (so a file's two actions keep to one line)
 const action = (tag, icon, label, props) => h(tag, { class: "btn-s", title: label, "aria-label": label, ...props },
   h("span", { class: "btn-ic", html: svg(icon) }), h("span", { class: "btn-lbl" }, label));
@@ -346,8 +316,8 @@ export function codeCard(a) {
 }
 
 export function artifactCard(a) {
-  const make = { chart: chartCard, image: imageCard, diagram: diagramCard, weather: weatherCard, note: noteCard,
-                 table: tableCard, code: codeCard, file: fileCard, report: reportCard, plan: planCard }[a.type];
+  const make = { chart: chartCard, image: imageCard, diagram: diagramCard, weather: weatherCard,
+                 table: tableCard, code: codeCard, file: fileCard, report: reportCard }[a.type];
   return make ? make(a) : null;
 }
 

@@ -1,0 +1,556 @@
+[
+ {
+  "case": "power",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 30.3,
+  "tools": [
+   "calculate({\"expression\": \"2^20 / 365\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "2^20 / 365"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "2^20 divided by 365 is approximately **2872.81**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "derivative",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 10.9,
+  "tools": [
+   "calculate({\"expression\": \"diff(ln(x^2 + 1), x)\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "diff(ln(x^2 + 1), x)"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The derivative of $\\ln(x^2 + 1)$ is:\n\n$$\\frac{2x}{x^2 + 1}$$",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "interest",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 19.1,
+  "tools": [
+   "calculate({\"expression\": \"(200000 * 9 * 3) / 100\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "(200000 * 9 * 3) / 100"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "You will pay **54,000** in interest.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "cubic",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 13.2,
+  "tools": [
+   "calculate({\"expression\": \"x^3 - 6*x**2 + 11*x - 6 = 0\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "x^3 - 6*x**2 + 11*x - 6 = 0"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The roots of $x^3 - 6x^2 + 11x - 6 = 0$ are **1**, **2**, and **3**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "house_prices",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 84.7,
+  "tools": [
+   "analyze_or_code({\"files\": [\"homes.csv\"], \"task\": \"Identify which features in homes.csv (area_m2, bedrooms, location, year_built) are the primary drivers of …) ok",
+   "engineer:inspect_data({\"data\": \"homes.csv\"}) ok",
+   "engineer:predict({\"data\": \"homes.csv\", \"target\": \"price\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT location, AVG(price) as avg_price FROM \\\"homes.csv\\\" GROUP BY location ORDER BY avg_price DESC\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "homes.csv"
+     ],
+     "task": "Identify which features in homes.csv (area_m2, bedrooms, location, year_built) are the primary drivers of the price. Provide a summary of the relationship between these features and the price."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "homes.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "predict",
+    "input": {
+     "data": "homes.csv",
+     "target": "price"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT location, AVG(price) as avg_price FROM \"homes.csv\" GROUP BY location ORDER BY avg_price DESC"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The main driver for price in `homes.csv` is **area (area_m2)**, which accounts for nearly **80%** of the price variation.\n\nHere is the breakdown of what matters most:\n\n* **Area (area_m2):** The strongest factor. As the size increases, the price goes up significantly.\n* **Location:** The second most important factor (about **15%** influence). The **centre** is the most expensive, followed by the **suburb**, and then the **outskirts**.\n* **Bedrooms:** A minor factor (about **5%** influence), where more bedrooms generally mean a higher price.\n* **Year Built:** This was not a primary driver in this dataset.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "next_quarter",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 82.0,
+  "tools": [
+   "analyze_or_code({\"files\": [\"orders_by_month.csv\"], \"task\": \"Forecast the next three months of orders based on the data in orders_by_month.csv.\"}) ok",
+   "engineer:inspect_data({\"data\": \"orders_by_month.csv\"}) ok",
+   "engineer:clean_data({\"data\": \"orders_by_month.csv\", \"steps\": [{\"columns\": [\"month\"], \"op\": \"parse_dates\"}]}) ok",
+   "engineer:forecast({\"data\": \"orders_by_month-cleaned.csv\", \"horizon\": 3}) ok",
+   "engineer:forecast({\"data\": \"orders_by_month-cleaned.csv\", \"value\": \"orders\"}) ok",
+   "engineer:make_chart({\"data\": \"orders_by_month-cleaned.csv\", \"type\": \"line\", \"x\": \"month\", \"y\": \"orders\"}) ok",
+   "engineer:forecast({\"data\": \"orders_by_month-cleaned.csv\", \"horizon\": 3, \"value\": \"orders\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "orders_by_month.csv"
+     ],
+     "task": "Forecast the next three months of orders based on the data in orders_by_month.csv."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "orders_by_month.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "clean_data",
+    "input": {
+     "data": "orders_by_month.csv",
+     "steps": [
+      {
+       "columns": [
+        "month"
+       ],
+       "op": "parse_dates"
+      }
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "horizon": 3
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "value": "orders"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "make_chart",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "type": "line",
+     "x": "month",
+     "y": "orders"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "horizon": 3,
+     "value": "orders"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The forecast for the next three months, based on the historical data in `orders_by_month.csv`, is as follows:\n\n*   **January 2025:** **1,332.12** orders (range: 1,268.10 to 1,396.14)\n*   **February 2025:** **1,315.54** orders (range: 1,251.53 to 1,379.56)\n*   **March 2025:** **1,522.10** orders (range: 1,458.08 to 1,586.12)\n\nThe model used (Exponential Smoothing) identified a strong seasonal pattern and a rising trend of approximately **12.45** orders per month.\n\n**Caveats:**\nThe reliability is considered strong, but please note that the error margin (80% range) increases as the forecast moves further into the future.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "methods",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 60.9,
+  "tools": [
+   "analyze_or_code({\"files\": [\"scores.csv\"], \"task\": \"Determine if the two teaching methods in 'method' column lead to significantly different 'exam_score' res…) ok",
+   "engineer:inspect_data({\"data\": \"scores.csv\"}) ok",
+   "engineer:compare({\"columns\": [\"method\", \"exam_score\"], \"data\": \"scores.csv\", \"question\": \"difference\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "scores.csv"
+     ],
+     "task": "Determine if the two teaching methods in 'method' column lead to significantly different 'exam_score' results in 'scores.csv'. Please provide the statistical test used, the result, and a conclusion."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "scores.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "method",
+      "exam_score"
+     ],
+     "data": "scores.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Yes, Ary, the two methods do result in different exam scores.\n\nThe difference is **statistically significant** ($p = 0.0026$). Students who used the **project** method had a higher median score (**71.5**) than those who used the **lecture** method (**65.0**).\n\nThe statistical test used was the Mann-Whitney U test, which was chosen to compare the two independent groups.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "bought_together",
+  "kind": "stats",
+  "run": 1,
+  "ok": false,
+  "problem": "the helper used no find_patterns (it used: inspect_data, files, run)",
+  "seconds": 48.9,
+  "tools": [
+   "analyze_or_code({\"files\": [\"baskets.csv\"], \"task\": \"Find which items are most frequently bought together in the same order_id. Provide a list of the top ite…) ok",
+   "engineer:inspect_data({\"data\": \"baskets.csv\"}) ok",
+   "engineer:files({\"content\": \"from itertools import combinations\\nimport pandas as pd\\n\\ndef find_top_pairs(file_path, top_n=10):\\n    \\\"\\\"\\\"\\n    Finds the …) ok",
+   "engineer:run({\"file\": \"scripts/top_item_pairs.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "baskets.csv"
+     ],
+     "task": "Find which items are most frequently bought together in the same order_id. Provide a list of the top item pairs."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "baskets.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "files",
+    "input": {
+     "content": "from itertools import combinations\nimport pandas as pd\n\ndef find_top_pairs(file_path, top_n=10):\n    \"\"\"\n    Finds the most frequent pairs of items bought together in the same order.\n    \"\"\"\n    df = pd.read_csv(file_path)\n    \n    # Group items by order_id and create lists of items per order\n    orders = df.groupby('order_id')['item'].apply(list)\n    \n    pair_counts = {}\n    \n    for items in orders:\n        if len(items) < 2:\n            continue\n        \n        # Sort items to ensure (item1, item2) is the same as (item2, item1)\n        # and use combinations to get unique pairs within an order\n        unique_items = sorted(list(set(items)))\n        for pair in combinations(unique_items, 2):\n            pair_counts[pair] = pair_counts.get(pair, 0) + 1\n            \n    # Sort pairs by count descending\n    sorted_pairs = sorted(pair_counts.items(), key=lambda x: x[1], reverse=True)\n    \n    return sorted_pairs[:top_n]\n\nif __name__ == \"__main__\":\n    top_pairs = find_top_pairs('baskets.csv')\n    print(\"Top Item Pairs Bought Together:\")\n    for pair, count in top_pairs:\n        print(f\"{pair[0]} and {pair[1]}: {count}\")\n",
+     "mode": "write",
+     "name": "scripts/top_item_pairs.py"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "run",
+    "input": {
+     "file": "scripts/top_item_pairs.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The most frequent item pairs in `baskets.csv` are:\n\n1. **bread** and **butter**: 138 times\n2. **bread** and **rice**: 47 times\n3. **bread** and **eggs**: 46 times\n4. **bread** and **tea**: 44 times\n5. **apples** and **bread**: 39 times\n6. **bread** and **milk**: 39 times\n7. **bread** and **pasta**: 39 times\n8. **butter** and **rice**: 39 times\n9. **bread** and **coffee**: 37 times\n10. **butter** and **tea**: 36 times",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "feedback_themes",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 69.1,
+  "tools": [
+   "analyze_or_code({\"files\": [\"feedback.csv\"], \"task\": \"Analyze the feedback in 'feedback.csv' and group them into logical themes. Provide a summary of the the…) ok",
+   "engineer:inspect_data({\"data\": \"feedback.csv\"}) ok",
+   "engineer:analyze_text({\"column\": \"feedback\", \"data\": \"feedback.csv\", \"kind\": \"themes\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "feedback.csv"
+     ],
+     "task": "Analyze the feedback in 'feedback.csv' and group them into logical themes. Provide a summary of the themes and a breakdown of the feedback for each theme."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "feedback.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "analyze_text",
+    "input": {
+     "column": "feedback",
+     "data": "feedback.csv",
+     "kind": "themes"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The feedback in `feedback.csv` falls into three main themes:\n\n| Theme | Share | Count | Key Topics |\n| :--- | :--- | :--- | :--- |\n| **Battery & Physical Issues** | 44.2% | 23 | Battery death, overheating, screen issues, and physical drops |\n| **Camera Focus Issues** | 34.6% | 18 | Difficulty focusing, specifically blurry photos in low light |\n| **Battery Life After Update** | 21.2% | 11 | Reduced battery life following software updates |\n\nI've saved the full breakdown to `feedback-themes.csv` if you need to look at the individual rows assigned to each theme.\n\nNote that there is some overlap between the battery issues, as many users mentioned battery life specifically in relation to software updates.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "water",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 12.5,
+  "tools": [
+   "files({\"mode\": \"read\", \"name\": \"policy.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "policy.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Yes, Ary, you are covered for a burst pipe, provided the water escapes **suddenly**.\n\nYour policy covers the \"sudden escape of water from pipes or appliances\" up to **20,000**. However, please note that gradual leaks, damp, or flooding from outside are specifically **not covered**. \n\nIf you do make a claim, there is a **250** excess to pay.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "pinned_bake",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 3.8,
+  "tools": [],
+  "calls": [],
+  "answer": "It goes in at 230 °C for **35 minutes**, or until it sounds hollow when tapped.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "warranty",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.9,
+  "tools": [
+   "files({\"mode\": \"find\", \"query\": \"warranty\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "query": "warranty"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The file `tv_receipt.md` mentions that the manufacturer's warranty for the 55 inch TV runs for **2 years** from the purchase date (2 March 2025).",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "list_tuple",
+  "kind": "talk",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 19.4,
+  "tools": [],
+  "calls": [],
+  "answer": "The main difference is **mutability**. A list can be changed after it is created, while a tuple cannot.\n\n| Feature | List | Tuple |\n| :--- | :--- | :--- |\n| **Mutability** | **Mutable** (can be edited) | **Immutable** (cannot be edited) |\n| **Syntax** | Uses square brackets `[]` | Uses parentheses `()` |\n| **Performance** | Slightly slower | **Faster** and more memory-efficient |\n| **Use Case** | Collections that change | Fixed collections/data records |\n\n**When to use each, Ary:**\n\n*   Use a **list** when you need to add, remove, or modify elements, such as a list of tasks or a queue of items.\n*   Use a **tuple** when the data should remain constant throughout the program, such as geographic coordinates `(latitude, longitude)` or settings that must not be accidentally changed. Because they are immutable, tuples can also be used as keys in a dictionary, whereas lists cannot.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "morning",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.5,
+  "tools": [],
+  "calls": [],
+  "answer": "Good morning, Ary! I am **ready** whenever you are. What's on the agenda today?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "nailed",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.1,
+  "tools": [],
+  "calls": [],
+  "answer": "That's wonderful news, Ary! Huge congratulations on passing your driving test! 🎉",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "rainy",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 19.4,
+  "tools": [],
+  "calls": [],
+  "answer": "Rainy evenings can definitely feel a bit **stagnant**, Ary.\n\nIf you want to shake off the boredom, I could:\n* Find some **recommendations** (movies, books, or music) for a rainy day.\n* Explore a **new topic** or curiosity you've had lately.\n* Help you make some **progress** on a project or something you've been meaning to do.\n\nWhat are you in the mood for?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "movie",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 18.7,
+  "tools": [],
+  "calls": [],
+  "answer": "Depending on what you mean by \"light,\" here are a few different directions you could take tonight, Ary:\n\n*   **Pure Joy**: *Paddington 2* — Incredibly heartwarming and almost impossible to watch without smiling.\n*   **Feel-Good Food**: *Chef* — An upbeat, colorful journey about rediscovering passion through cooking.\n*   **Whimsical & Calm**: *My Neighbor Totoro* — A gentle Studio Ghibli masterpiece that is perfect for decompressing.\n*   **Witty & Fun**: *Palm Springs* — A clever, fast-paced romantic comedy with a fun sci-fi twist.\n\nDoes one of those sound like the right vibe, or should I look for something else?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "job_loss",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.8,
+  "tools": [],
+  "calls": [],
+  "answer": "I am so sorry, Ary. That is incredibly heavy news to process, especially on a Wednesday evening.\n\nFirst, please allow yourself to just breathe. You don't need to solve your entire future tonight. When something this sudden happens, the adrenaline and shock can make it hard to think clearly, so give yourself permission to step away from \"problem-solving mode\" for a few hours.\n\nWhen you feel ready—whether that is tomorrow or later this week—I am here to help you navigate the practical side. We can work through things step by step, such as:\n\n*   **Organizing documentation:** Reviewing severance agreements, benefits, and final pay details.\n*   **Financial check-in:** Looking at your budget and \"runway\" to see what your timeline looks like.\n*   **Career transition:** Updating your CV, optimizing your LinkedIn, or mapping out your next move.\n\nTake tonight for yourself. I'll be here whenever you're ready to start.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "sql_index",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 21.9,
+  "tools": [],
+  "calls": [],
+  "answer": "An index speeds up queries by providing a shortcut to the data, preventing the database from having to scan every single row in a table.\n\nThink of it like a book:\n* **Without an index**: To find a specific topic, you have to read the book page by page from the beginning. In database terms, this is a **Full Table Scan**.\n* **With an index**: You go to the alphabetical index at the back, find your keyword, and jump directly to the correct page.\n\nMost databases use a structure called a **B-Tree** to organize this index. This structure allows the computer to find information using **logarithmic search** rather than linear search. For example, in a table with a million rows, a full scan might require a million checks, whereas a B-Tree search might find the result in only about 20 steps.\n\nHowever, there is a trade-off to keep in mind:\n* **Storage**: Indexes are separate data structures that require **extra disk space**.\n* **Write Performance**: Every time you `INSERT`, `UPDATE`, or `DELETE` data, the database must also update the index, which can slightly slow down those specific operations.",
+  "emoji": false,
+  "nudges": []
+ }
+]

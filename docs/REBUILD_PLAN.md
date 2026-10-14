@@ -336,3 +336,31 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
   prompt limit follows /props: 16,384 with 4,096 for the reply); generation speed unchanged (45-59 tokens/s).
   Tests: 595 pass. Moved to phase 5: a check that every mode and field a description or prompt names exists
   in that tool's schema - the agent.md failures were all instructions naming the wrong mode or field.
+- **Phase 5 - descriptions and prompts: done (2026-10-14).** Every tool description in one order (what it does,
+  in a user's words with method names; what it returns; when to use it; when not, and which tool instead; run:
+  its environment), fields with examples; main's prompt has the routing list, a small visual touch (bold; an emoji
+  rarely, never in serious or technical answers), and passes a helper's caveats and sources on as the helper named
+  them; the web helper reads one other page for a site that refuses, and says so. The plan tool and its card are
+  removed (and the note card notes left). A test reads everything each model reads - prompt, the app's hidden
+  messages, agent.md's lines, tools and fields, and every string a tool returns - and checks that each tool, mode
+  and field it names is one that model has (it found the sandbox still saying files(update)). Main reads 4,208
+  tokens before any message (3,773 before), the analyst-programmer 5,800 (5,146).
+  Fixed on the way (system, not wording): a turn whose tool results grew was sent over the prompt limit - now older
+  results, then older calls' long texts, then the newest results are shortened, and past that the turn stops
+  plainly; the pinned files' snapshot counts toward the limit; the token estimate counted a user's words twice;
+  query_data crashed on a backslash-escaped quote (now: how to quote); analyze_text refused a table's only text
+  column; ask_knowledge's description contradicted itself ("a file that may cover it: ask here").
+  Acceptance on the 26B (bench/phase5.py; dev and held-out written together, different data, none of phase 7's):
+  dev 16/19 at first; the held-out set once, after the fixes: 18/19 - maths 4/4 with calculate, statistics 4/5
+  (predict, forecast, compare, analyze_text), documents 3/3 (files find or read; a pinned file answered with no
+  tool), talk 1/1; emoji in 1 of 4 casual replies and 0 of 2 serious ones. The dev ticket and held-out feedback
+  tables were rewritten with varied texts before the held-out run (11 and 8 distinct texts, under the 20 themes
+  need: the data's fault, not routing).
+  Flagged as the model's limits, not prompted around (a third wording round had begun to echo a probe's own
+  words, and was taken back): main writes a method into a helper's task ("analyze correlations between left and
+  ..."), and the helper then tests columns one pair at a time instead of predict - 2 of 2 runs, the answer right;
+  main sends a one-file question to ask_knowledge before reading the file itself - 2 of 2, the answer right, one
+  helper call more; the helper counted item pairs in a script instead of find_patterns - held-out, its list is
+  popularity (bread with everything) where find_patterns on the same table finds the one real pair. If the tools
+  keep being skipped, the library door from scripts (section 7) is the system's answer, not more wording.
+  Tests: 605 pass.

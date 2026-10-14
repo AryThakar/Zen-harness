@@ -36,10 +36,10 @@ FINISH = "finish"  # the engineer's
 MAX_ASKS = 2  # questions a helper may ask the user in one task
 
 
-HELPER_ASK = ("Ask the user one question and wait for the answer - you keep your work and go on. Only when the "
-              "task leaves a choice that changes the result (which chart, which table or column, which of two "
-              "readings, a file format) and the task doesn't already say it. Give the choices as options, the "
-              "recommended one first; at most 2 questions a task.")
+HELPER_ASK = ("Ask the user one question and wait - you keep your work and go on. Returns their answer, or that "
+              "they skipped it. Use it only when the task leaves a choice that changes the result (which chart, which "
+              "table or column, which of two readings, a file format) and the task doesn't already say it. Give the "
+              "choices as options, the recommended one first; at most 2 questions a task.")
 
 
 class _Out(BaseModel):
@@ -146,35 +146,35 @@ class Delegate:
 # Each says what the helper does, what it gives back, when to use it and when not (with the tool instead):
 # main knows its helpers only by these.
 DELEGATES = {
-    "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches, reads pages and returns "
-                     "a cited answer, dated for 'latest' questions, how each cited page was read, the pages it could not "
-                     "read and why, and the links of files the task asks for (a dataset, a script) for you to download. "
-                     "Use it for what is current or what you don't know - news, releases, prices, people, events - to "
-                     "find a public file or dataset, and to read a page the user links to. Not for the user's own files "
-                     "(ask_knowledge), or for bringing in a file whose link you have (files, mode='download').",
-                             "Web researcher", ("Researching on the web", "Researched on the web")),
-    "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own files and earlier conversations, "
-                      "with sources: a helper finds and reads them in its own context. Use it for reading many or long "
-                      "documents (a summary of a long report, a comparison across files) and for what was said or "
-                      "decided in earlier chats. The user's own files come first: when one may cover the question "
-                      "(judge by its name and title), ask here before research_web. A quick lookup - which files, one "
-                      "passage, a pinned file - is yours with files (find, read). Not for computing on a table "
-                      "(analyze_or_code).",
-                              "Knowledge", ("Looking through your files and chats", "Looked through your files and chats")),
-    "analyze_or_code": Delegate("engineer", WorkTaskIn, "Give a task to the analyst-programmer, who works on the "
-                     "workspace's files with tested data and machine-learning tools and with Python files it writes, runs "
-                     "and edits. Say what the user wants and why - the result, not how to compute it: it picks the tools "
-                     "itself. Name the files the task is about in files. It returns its answer and caveats, what it ran, "
-                     "and the files it made or changed - the user sees them in the chat; answer from what it says, never "
-                     "retype code. A helper starts each task fresh: it doesn't remember earlier tasks - what it did is in "
-                     "that earlier result. Use it for the numbers in the user's tables - cleaning, exact figures, charts, "
-                     "statistical tests (is a difference, a link or an A/B result real), trends and forecasts, "
-                     "machine-learning models (what predicts a column, predictions), customer segments, unusual days, "
-                     "items bought together, themes in text - and for programs: a script it runs and tests, a simulation, "
-                     "a game, a conversion, editing a picture, a file in another language. Not for maths typed in the "
-                     "chat (calculate), documents - Word, slides, Markdown (files, mode='write', with its charts' "
-                     "pictures by name) - or anything on the web: it has no internet, so a web file is brought in first "
+    "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches and reads pages. "
+                     "Returns a cited answer - dated for 'latest' questions - with its caveats, how each cited page was "
+                     "read, the pages it could not read and why, and the links of files the task asks for (a dataset, a "
+                     "script) for you to download. Use it for what is current or what you don't know - news, releases, "
+                     "prices, people, events - to find a public file or dataset, and to read a page the user links to. "
+                     "Not for the user's own files (files, ask_knowledge), or for bringing in a file whose link you have "
                      "(files, mode='download').",
+                             "Web researcher", ("Researching on the web", "Researched on the web")),
+    "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own files and earlier "
+                      "conversations: a helper finds and reads them in its own context. Returns an answer with its "
+                      "sources. Use it for reading many or long documents (a summary of a long report, a comparison "
+                      "across files) and for what was said or decided in earlier chats. Not for a quick lookup - "
+                      "which files, one passage, a pinned file: that is yours with files (find, read) - or computing "
+                      "on a table (analyze_or_code).",
+                              "Knowledge", ("Looking through your files and chats", "Looked through your files and chats")),
+    "analyze_or_code": Delegate("engineer", WorkTaskIn, "Give a task to the analyst-programmer: a helper that "
+                     "works on the workspace's files with tested data and machine-learning tools and with Python files "
+                     "it writes, runs and edits. Say what the user wants and why - the result, not how to compute it: "
+                     "it picks the tools itself; name the files the task is about in files. Returns its answer and "
+                     "caveats, what it ran, and the files it made or changed - the user sees them in the chat: answer "
+                     "from what it says, never retype code. It starts each task fresh: what it did before is in that "
+                     "earlier result. Use it for the numbers in the user's tables - cleaning, exact figures, charts, "
+                     "statistical tests (is a difference, a link or an A/B result real), trends and forecasts, machine "
+                     "learning (classification or regression: what predicts or drives a column, predictions), "
+                     "clustering customers into segments, unusual days, items bought together, themes in text - and "
+                     "for programs: a script it runs and tests, a simulation, a game, a conversion, editing a picture, "
+                     "a file in another language. Not for maths typed in the chat (calculate), documents - Word, "
+                     "slides, Markdown (files, mode='write', with its charts' pictures by name) - or anything on the "
+                     "web: it has no internet, so a web file is brought in first (files, mode='download').",
                              "Analyst & coder", ("Working on it", "Worked on it")),
 }
 
@@ -182,5 +182,4 @@ DELEGATES = {
 DELEGATE_OF = {d.profile: name for name, d in DELEGATES.items()}  # helper -> main's tool for it
 
 
-MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "plan", "ask_user",
-               "files")
+MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "ask_user", "files")

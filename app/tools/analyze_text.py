@@ -98,6 +98,8 @@ def _text_column(ws, data, df) -> str:
         return role
     text = [str(c) for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])
             and not pd.api.types.is_datetime64_any_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])]
+    if len(text) == 1:  # the table's only text column is the one meant (measured: refused, though it named it)
+        return text[0]
     raise ToolError("Give column: the text column to read" + (f" ({', '.join(text)})." if text else
                     "; this table has no text columns."), field="column")
 

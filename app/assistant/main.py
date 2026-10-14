@@ -68,7 +68,8 @@ from app.tools.workspace import Workspace, present
 
 from .checks import SAMPLE_DATA, invented_numbers, nudge_for, repeated_failure, this_turn
 from . import snapshot
-from .context import (counter, cut_turns, message_context, prompt_limit, shorten_tool_results, standing_instructions,
+from .context import (counter, cut_turns, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
+                      standing_instructions,
                       without_notes)
 from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN
 from .registry import ToolContext, execute, split_confirm
@@ -147,6 +148,7 @@ class Turn:
     visible_since: str | None = None  # the first turn main still sees, when older ones were cut
     live: Live | None = None  # the turn's events, for a helper's question asked in place
     shortened: int = 0  # this turn's older tool results shown shortened (context.shorten_tool_results)
+    cut: int = 0  # this turn's older calls whose long texts are shown cut (context.shorten_call_args)
     snapshot: str | None = None  # the pinned and pointed-at files for this turn's message (snapshot.py), made once
 
     def setup(self, stream) -> None:
@@ -225,7 +227,8 @@ def _agent(state: TurnState, config) -> dict:
     # The fixed prompt, then agent.md as it is now - never in the history; the workspace travels on the user's
     # messages (context.py)
     system = f"{MAIN}\n\n{agent_md.in_view(t.ws)}" if agent_md.key(t.ws) else MAIN
-    limit, count = prompt_limit(t.main), counter(t.main, system, specs)
+    limit, exact = prompt_limit(t.main), counter(t.main, system, specs)
+    count = lambda messages: exact(t.with_snapshot(messages))  # the snapshot rides on this turn's message: it counts
     visible, dropped, fits = cut_turns(history, limit, count, t.dropped)
     if dropped != t.dropped:
         if dropped > t.dropped:  # turns were cut: the prompt's start changed anyway, so a fresh snapshot
@@ -235,6 +238,13 @@ def _agent(state: TurnState, config) -> dict:
     t.visible_since = visible[0].get("at") if dropped and visible else None  # recall reaches what was cut
     if t.shortened or not fits:  # this turn alone outgrew the slot: its older tool results are shortened
         visible, t.shortened = shorten_tool_results(visible, limit, count, t.shortened)
+    if t.cut or count(visible) > limit:  # then its older calls' long texts (a file's whole text: the file keeps it)
+        visible, t.cut = shorten_call_args(visible, limit, count, t.cut)
+    if count(visible) > limit:  # then the newest results too
+        visible, _ = shorten_tool_results(visible, limit, count, 0, keep_last=0)
+    if count(visible) > limit:  # nothing left to shorten: never sent over the limit (the server would refuse it)
+        raise ProviderError("This turn grew too long for the model's context, even with its older results "
+                            "shortened. Ask for less at once, or start a new chat.")
     visible = t.with_snapshot(visible)  # the pinned and pointed-at files, for this turn only
     last = state["rounds"] >= MAX_ROUNDS
     started = time.perf_counter()

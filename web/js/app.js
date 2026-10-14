@@ -401,7 +401,6 @@ function assistantView() {
   thread.append(root);
   let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
   const stats = [], web = new Map(), passages = [], traces = [];
-  let plan = null;  // the plan card, ticked as its steps' tools end
   let finished = false, traceBtn = null;
   // How the reply ran (the server's trace of each part of the turn): one small button beside the answer's
   // copy and read-aloud, opening the developer's view
@@ -487,7 +486,6 @@ function assistantView() {
         activity.end(d);
       }
       if (step?.delegate) { promote(step); if (current === step) current = null; }
-      if (plan && ["ok", "partial"].includes(d.status)) plan.tick(d.name);
     },
     artifact(a) {
       if (a.type === "question") {
@@ -502,7 +500,6 @@ function assistantView() {
       } else if (CARD_TYPES.has(a.type) || !current) {
         const el = artifactCard(a);
         if (a.type === "file" && current && el) current.fileCard = el;
-        if (a.type === "plan") plan = el;
         show(el);
       } else {  // a helper's working: shown in its step; its result tables and last code also as cards
         activity.evidence(current, a);
@@ -543,7 +540,6 @@ function assistantView() {
       paint();
       finishAnswer(answer);  // only once finished: a half-written diagram would fail to draw
       if (current) { promote(current); current = null; }
-      if (plan && final != null && text.trim()) plan.answered?.();  // the steps main does in its answer
       activity.finish(timing?.seconds);
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));

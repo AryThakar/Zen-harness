@@ -56,11 +56,20 @@ def test_classify_and_similar(ws):
     assert r.result["matches"][0]["first_row"] >= 1
 
 
+def test_a_tables_only_text_column_is_read_without_being_named(ws):
+    data = ws.add_table(reviews().drop(columns=["topic"]), "reviews")
+    r = analyze_text(ws, data, "themes", count=3, embedder=HashEmbedder())
+    assert r.status == "ok" and r.result["column"] == "review"
+
+
 def test_text_tool_mistakes_say_what_to_give(ws):
     data = ws.add_table(reviews(), "reviews")
     labels_only = ws.add_table(pd.DataFrame({"code": ["a1", "b2"] * 20, "n": range(40)}), "codes")
     message = analyze_text(ws, labels_only, "themes", embedder=HashEmbedder()).result["error"]["message"]
-    assert message == "Give column: the text column to read (code)."
+    assert message == "'code' has no text."  # its only text column is read: short codes, not text
+    two = ws.add_table(pd.DataFrame({"code": ["a1", "b2"] * 20, "note": ["x", "y"] * 20}), "two")
+    message = analyze_text(ws, two, "themes", embedder=HashEmbedder()).result["error"]["message"]
+    assert message == "Give column: the text column to read (code, note)."
     r = analyze_text(ws, data, "classify", column="review", labels=["one"], embedder=HashEmbedder())
     assert "Give labels" in r.result["error"]["message"]
     r = analyze_text(ws, data, "similar", column="review", embedder=HashEmbedder())

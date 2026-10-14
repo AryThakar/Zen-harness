@@ -108,5 +108,5 @@ def by_path(ws: Workspace, sql: str) -> str:
 def _referenced(sql: str) -> set[str]:
     try:
         return {t.name.lower() for s in sqlglot.parse(sql, read="duckdb") if s for t in s.find_all(exp.Table)}
-    except sqlglot.errors.ParseError:
+    except sqlglot.errors.SqlglotError:
         return set()  # sql_guard reports the parse error

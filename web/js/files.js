@@ -65,7 +65,7 @@ export async function openItem(item, from) {
   fv.item = item; fv.mode = "preview"; fv.text = fv.table = null; fv.editing = false; fv.output = null; fv.versions = [];
   if (fv.blob) { URL.revokeObjectURL(fv.blob); fv.blob = null; }
   const name = item.name || item.title || item.id;
-  const icon = item.kind === "note" ? noteTile() : fileTile(item.kind === "table" ? `${name}.csv`.replace(/\.csv\.csv$/, ".csv") : name);
+  const icon = fileTile(item.kind === "table" ? `${name}.csv`.replace(/\.csv\.csv$/, ".csv") : name);
   $("#fvIcon").replaceWith(Object.assign(icon, { id: "fvIcon" }));
   $("#fvName").textContent = name;
   $("#fvMeta").textContent = "Loading…";
