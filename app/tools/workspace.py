@@ -533,6 +533,11 @@ class Workspace:
         if self.kind(key) != kind:
             raise ToolError(f"{self.label(key)} is {_a(self.kind(key))}, not {_a(kind)}.", field="id")
 
+    def free_path(self, path: str, own: str | None = None) -> str:
+        """A path a file can move to: tidied, and unique - 'name (2).ext' when another file has it (own: the file
+        moving, whose own path doesn't count)."""
+        return self._free(clean_path(path, strict=False), own=own)
+
     @_locked
     def _free(self, path: str, own: str | None = None) -> str:
         """``path``, or 'name (2).ext' ... when another file has it (any case) or something is already there."""

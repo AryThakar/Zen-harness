@@ -82,9 +82,10 @@ class Run:
     def files(self, pattern: str, kind: str = "file") -> list[str]:
         return [i for i in self.ws.ids(kind) if re.search(pattern, self.ws.entry(i)["name"], re.I)]
 
-    def notes_text(self) -> str:
-        from app.tools.notes import body
-        return "\n".join(body(self.ws, i) for i in self.ws.ids("note"))
+    def remembered(self) -> str:
+        """What agent.md holds - the project's memory (notes before it)."""
+        from app.tools.agent_md import body
+        return body(self.ws)
 
 
 @dataclass
@@ -232,8 +233,9 @@ def pptx_with(slides: int, pictures: int) -> Callable[[Run, str], str | None]:
 
 
 def note_has(pattern: str) -> Check:
+    """The project's memory (agent.md) holds the pattern."""
     def check(r: Run) -> str | None:
-        return None if re.search(pattern, r.notes_text(), re.I) else f"no note with {pattern}"
+        return None if re.search(pattern, r.remembered(), re.I) else f"agent.md doesn't hold {pattern}"
     return check
 
 

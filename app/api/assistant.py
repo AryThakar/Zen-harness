@@ -48,7 +48,7 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import agent_md, file_ops, filetypes
+from app.tools import agent_md, caption, file_ops, filetypes
 from app.tools import run as run_tool
 from app.tools import files as files_tool
 from app.tools import web
@@ -318,6 +318,12 @@ def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
     if kept.get("same"):  # the same bytes are here already: that file, not a copy
         kept["note"] = f"Already in this workspace as {kept['name']}."
+    elif kept["kind"] == "image":  # a pasted image.png is named from what it shows (caption.py)
+        worker = request.app.state.assistant_worker
+        sees = getattr(worker, "sees_images", lambda: False)()
+        named = caption.name_from_caption(ws, kept["id"], getattr(worker, "look", None) if sees else None)
+        if named:
+            kept.update(named)
     _store(request).sync_items(ws_id)  # searchable by what it shows, holds or says
     return kept
 
