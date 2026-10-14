@@ -89,10 +89,10 @@ def delete(ws: Workspace, index: SearchIndex | None, items: list[str]) -> ToolRe
     for item in items:
         if item not in ws.ids():
             continue
-        kind = ws.delete(item)["kind"]
-        if index is not None:  # its passages: a document's, a note's, a picture's or a table's, and its report's
-            index.remove({"note": "note", "image": "image", "table": "table"}.get(kind, "document"), item)
-            index.remove("report", item)
+        ws.delete(item)
+        if index is not None:  # its passages, whatever it was (a document, code, a chart, a picture, a table), and its report's
+            for source in ("document", "code", "chart", "image", "table", "report"):
+                index.remove(source, item)
         gone.append(item)
     return ok({"deleted": gone, "summary": f"Deleted {', '.join(gone) or 'nothing'}."})
 

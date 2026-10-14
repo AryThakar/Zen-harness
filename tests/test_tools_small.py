@@ -1,15 +1,16 @@
-"""save_note, ask_user and draw_diagram - direct tests."""
+"""agent.md, ask_user and draw_diagram - direct tests."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import json
 
 import pytest
 
-from app.tools import notes
+from app.tools import agent_md
 from app.tools.ask import answer_result, ask_user
 from app.tools.diagram import draw_diagram
-from app.tools.notes import pinned, pinned_text, save_note
+from app.tools.file_ops import files
+from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
 
@@ -18,69 +19,42 @@ def ws(tmp_path):
     return Workspace(tmp_path / "ws")
 
 
-# ---------------------------------------------------------------- save_note
+# ---------------------------------------------------------------- agent.md
 
-def test_same_title_updates_instead_of_duplicating(ws):
-    a = save_note(ws, "Revenue column", "Use net_sales as revenue.").result
-    b = save_note(ws, "revenue  COLUMN", "Use net_sales as revenue; exclude refunds.").result
-    assert a["note"] == b["note"] == "note_1" and b["action"] == "updated"
-    assert ws.ids("note") == ["note_1"]
-    assert "exclude refunds" in ws.path("note_1").read_text("utf-8")
-
-
-def test_the_five_latest_notes_are_pinned_oldest_first(ws):
-    for n in range(7):
-        save_note(ws, f"Fact {n}", f"Fact number {n}.")
-    save_note(ws, "Fact 1", "Fact number 1, corrected.")  # an update makes it the latest again
-    assert [p["title"] for p in pinned(ws)] == ["Fact 3", "Fact 4", "Fact 5", "Fact 6", "Fact 1"]
-    text = pinned_text(ws)
-    assert "a later one supersedes an earlier one" in text and "Fact number 1, corrected." in text
-    assert "Fact number 0" not in text and "Fact 2" not in text
-    long = save_note(ws, "Long", "y" * (notes.PINNED_CHARS + 50)).result["note"]
-    assert next(p for p in pinned(ws) if p["id"] == long)["text"].endswith(" ...")  # cut in view, whole in search
+def test_agent_md_is_made_once_and_remembering_is_an_edit(ws, tmp_path):
+    """'Remember X' is an edit of one file always in view (measured with notes: a standing preference fell out of
+    view after 5 newer notes)."""
+    index = SearchIndex(tmp_path / "s.sqlite", None)
+    key = agent_md.ensure(ws)
+    assert agent_md.ensure(ws) == key and ws.label(key) == "agent.md" and agent_md.body(ws) == ""
+    assert "(nothing yet)" in agent_md.in_view(ws)
+    done = files(ws, index, "edit", name="agent.md", old_text="2,000 characters.\n",
+                 new_text="2,000 characters.\n\n- The user's name is Ary.\n- Never discount more than 15%.\n")
+    assert done.status == "ok" and done.artifact["type"] != "question"  # its own: changed without asking
+    assert agent_md.body(ws) == "- The user's name is Ary.\n- Never discount more than 15%."
+    view = agent_md.in_view(ws)
+    assert view.startswith("[agent.md - your standing memory") and "Never discount more than 15%." in view
 
 
-def test_notes_are_pruned_oldest_first_past_the_limits(ws, monkeypatch):
-    monkeypatch.setattr(notes, "MAX_NOTES", 10)
-    for n in range(10):
-        save_note(ws, f"Fact {n}", f"Fact number {n}.")
-    assert len(ws.ids("note")) == 10
-    r = save_note(ws, "Fact 10", "Fact number 10.").result  # past the count: 20% freed, oldest first
-    assert r["pruned"] == "3 oldest note(s) removed to make room"
-    assert [ws.entry(i)["meta"]["title"] for i in ws.ids("note")] == [f"Fact {n}" for n in range(3, 11)]
-    monkeypatch.setattr(notes, "MAX_NOTES_CHARS", 100)
-    save_note(ws, "Big", "z" * 60)  # past the total length
-    assert sum(len(notes.body(ws, i)) for i in ws.ids("note")) <= 80
-    later = datetime.now() + notes.MAX_AGE + timedelta(days=1)
-    save_note(ws, "New", "Fresh.", now=later)  # a year later every other note is too old
-    assert [ws.entry(i)["meta"]["title"] for i in ws.ids("note")] == ["New"]
+def test_agent_md_is_capped_and_stays(ws, tmp_path):
+    index = SearchIndex(tmp_path / "s.sqlite", None)
+    agent_md.ensure(ws)
+    too_long = files(ws, index, "write", name="agent.md", content=agent_md.HEADER + "x" * agent_md.MAX_CHARS)
+    assert too_long.status == "invalid_arguments" and "at most 2,000 characters" in too_long.result["error"]["message"]
+    assert "under notes/" in too_long.result["error"]["message"]
+    for mode, extra in (("delete", {}), ("rename", {"new_name": "memory.md"})):
+        r = files(ws, index, mode, name="agent.md", **extra)
+        assert r.status == "invalid_arguments" and "can't be deleted or renamed" in r.result["error"]["message"]
+    assert ws.files / "agent.md" in ws.protected()  # scripts may read it, never change it
 
 
-def test_notes_are_listed_newest_first_and_deleted_only_after_the_user_allows_it(ws):
-    """'What do you remember?' and 'forget that' - before, the AI could only save."""
-    from app.tools.approval import carry_out
-    base = datetime(2026, 10, 1, 9, 0)
-    for n, title in enumerate(["Fiscal year", "Revenue column", "Favourite colour"]):
-        save_note(ws, title, f"Note number {n}.", now=base + timedelta(minutes=n))
-    listed = notes.notes(ws, "list").result
-    assert [n["title"] for n in listed["notes"]] == ["Favourite colour", "Revenue column", "Fiscal year"]
-    assert listed["total"] == 3 and all(n.get("pinned") for n in listed["notes"])
-    asked = notes.notes(ws, "delete", "favourite COLOUR")  # a title in any case, or the id
-    assert asked.status == "ok" and asked.artifact["type"] == "question" and asked.artifact["options"] == ["Delete", "Cancel"]
-    target = asked.artifact["approval"]["items"]
-    assert len(ws.ids("note")) == 3  # nothing deleted until the user clicks
-    carry_out(ws, None, asked.artifact["approval"], ["Delete", "Cancel"], "Delete")
-    assert target[0] not in ws.ids("note") and len(ws.ids("note")) == 2
-    missing = notes.notes(ws, "delete", "Birthday")
-    assert missing.status == "invalid_arguments" and "Fiscal year" in missing.result["error"]["message"]
-    assert notes.notes(ws, "rename").status == "invalid_arguments"
-
-
-def test_note_arguments(ws):
-    assert save_note(ws, "", "x").status == "invalid_arguments"
-    assert save_note(ws, "t", "   ").status == "invalid_arguments"
-    assert save_note(ws, "t", "x" * (notes.MAX_NOTE + 1)).status == "invalid_arguments"
-    assert "a few lines" in save_note(ws, "t", "x" * (notes.MAX_NOTE + 1)).result["error"]["message"]
+def test_notes_of_the_first_design_are_dropped(tmp_path):
+    root = tmp_path / "old"
+    (root / ".zen").mkdir(parents=True)
+    (root / ".zen" / "registry.json").write_text(json.dumps({"next": {"note": 2}, "items": {
+        "note_1": {"kind": "note", "name": "Names", "file": ".zen/notes/note_1.md", "by": "assistant"}}}), "utf-8")
+    ws = Workspace(root)
+    assert ws.ids() == [] and "note_1" not in json.loads((root / ".zen" / "registry.json").read_text("utf-8"))["items"]
 
 
 # ---------------------------------------------------------------- ask_user

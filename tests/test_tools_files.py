@@ -9,8 +9,7 @@ import pytest
 
 from app.tools import approval
 from app.tools.file_ops import PAGE, files, markdown_docx
-from app.tools.files import search_files
-from app.tools.notes import save_note
+from app.tools.files import find_files
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -29,27 +28,25 @@ def run(ws, index, mode, **kw):
     return files(ws, index, mode, **kw)
 
 
-def test_list_pages_newest_first_without_notes(ws, index):
+def test_list_pages_newest_first(ws, index):
     assert run(ws, index, "list").result["items"] == [] and "empty" in run(ws, index, "list").result["note"]
     for n in range(PAGE + 2):
         ws.add_bytes("file", b"x", "txt", name=f"f{n}.txt")
-    save_note(ws, "Plan", "A note is not a file.")
     first = run(ws, index, "list").result
     assert first["total"] == PAGE + 2 and first["page"] == "1 of 2" and first["items"][0].startswith(f"f{PAGE + 1}.txt: ")
     assert first["next"] == "more: files(mode='list', page=2)"
     last = run(ws, index, "list", page=2).result
     assert len(last["items"]) == 2 and last["next"] == "end of list"
-    assert not any("note" in line for line in first["items"] + last["items"])
     assert run(ws, index, "list", page=3).status == "invalid_arguments"
 
 
-def test_find_by_name_or_id_and_close_names_for_a_wrong_one(ws, index):
+def test_find_by_name_and_close_names_for_a_wrong_one(ws, index):
     ws.add_bytes("file", b"print(1)", "py", name="parabola.py")
-    assert run(ws, index, "find", name="Parabola.PY").result["found"] is True
-    assert run(ws, index, "find", name="parabola.py").result["item"].startswith("parabola.py: ")
-    near = run(ws, index, "find", name="parabol.py").result
-    assert near["found"] is False and "Did you mean: parabola.py?" in near["note"]
-    assert "Here: parabola.py." in run(ws, index, "find", name="zzz.doc").result["note"]
+    found = run(ws, index, "find", query="Parabola.PY").result
+    assert found["found"] == 1 and found["files"][0]["path"] == "parabola.py" and found["files"][0]["match"].startswith("its name")
+    near = run(ws, index, "find", query="parabla.py").result  # misspelt: no word of it is in a name
+    assert near["found"] == 0 and "Did you mean: parabola.py?" in near["note"]
+    assert run(ws, index, "find", name="parabola.py").status == "invalid_arguments"  # find takes query
     wrong = run(ws, index, "read", name="parabol.py")  # the closest names, never a listing line to copy back
     assert wrong.status == "invalid_arguments" and "Did you mean: parabola.py?" in wrong.result["error"]["message"]
 
@@ -87,7 +84,7 @@ def test_read_in_lines_with_the_next_step(ws, index):
 def test_write_new_files_by_kind(ws, index):
     md = run(ws, index, "write", name="report", content="# Sales\n\nRevenue grew in **March**.").result
     assert md["name"] == "report.md" and md["kind"] == "document"  # no suffix: Markdown, and searchable
-    assert search_files(index, "revenue grew").result["passages"]
+    assert find_files(ws, index, "revenue grew").result["files"][0]["path"] == "report.md"
     csv = run(ws, index, "write", name="list.csv", content="item,qty\npens,4\n").result
     assert csv["kind"] == "table" and ws.table(csv["file"])["qty"].tolist() == [4]
     code = run(ws, index, "write", name="hello.rs", content='fn main() { println!("hi"); }')
@@ -105,7 +102,7 @@ def test_a_docx_is_made_from_markdown(ws, index):
     assert [p.text for p in doc.paragraphs][:4] == ["Title", "Some bold text.", "one", "two"]
     assert doc.paragraphs[1].runs[1].bold and doc.tables[0].cell(1, 1).text == "2"
     made = run(ws, index, "write", name="summary.docx", content="# Summary\n\nAll good.").result
-    assert made["kind"] == "document" and search_files(index, "all good").result["passages"]
+    assert made["kind"] == "document" and find_files(ws, index, "all good").result["files"]
 
 
 def test_write_makes_a_file_or_gives_one_its_whole_new_text(ws, index):
@@ -145,7 +142,7 @@ def test_rename_keeps_the_suffix_and_refuses_a_taken_name(ws, index):
     ws.add_bytes("file", b"x", "txt", name="other.txt")
     done = run(ws, index, "rename", name="draft.md", new_name="final")
     assert done.result["renamed"] == "draft.md -> final.md" and ws.entry("file_1")["name"] == "final.md"
-    assert search_files(index, "ship in may").result["passages"][0]["source"].startswith("final.md")
+    assert find_files(ws, index, "ship in may").result["files"][0]["path"] == "final.md"
     taken = run(ws, index, "rename", name="final.md", new_name="other.txt")
     assert taken.status == "invalid_arguments" and "already a file here" in taken.result["error"]["message"]
     assert run(ws, index, "rename", name="final.md").result["error"]["field"] == "new_name"
@@ -160,13 +157,13 @@ def test_reports_are_read_first_listed_and_searchable(ws, index):
     assert "How it works" in read["report"] and read["next"].endswith("start=1)")
     assert "np.pi" in run(ws, index, "read", name="pi.py", start=1).result["text"]  # the content, on request
     assert run(ws, index, "list").result["items"][0].endswith("| Prints pi with numpy")
-    hit = search_files(index, "how it works np.pi").result["passages"][0]
-    assert hit["source"] == "the report on pi.py"
+    hit = find_files(ws, index, "how it works, one call").result["files"][0]  # words only its report has
+    assert hit["path"] == "pi.py" and hit["match"].startswith("its report: ")
     ws.set_report("file_1", "# Prints pi to 3 places")  # the latest only
     assert ws.report("file_1") == "# Prints pi to 3 places" and ws.lines()["file_1"].endswith("| Prints pi to 3 places")
     report_file = ws.root / ws.entry("file_1")["report"]["file"]
     approval.delete(ws, index, ["file_1"])
-    assert not report_file.exists() and not search_files(index, "np.pi").result.get("passages")
+    assert not report_file.exists() and not find_files(ws, index, "np.pi").result["files"]
 
 
 def test_delete_and_download_ask_first(ws, index, monkeypatch):

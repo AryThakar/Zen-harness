@@ -1,6 +1,9 @@
 """files(): the one tool for the workspace's files - for main and for the helpers (who get find, read, write and
 edit): list, find, read, write, edit, rename, delete, download.
 
+    find    which files match a query - by path, and by what is in them (files.find_files: documents, code, charts,
+            tables, pictures by caption and by what they show), each once with the passage that matched
+
     write   a new file - or, for a file that is there, its whole new text (the version before is kept)
     edit    one passage changed: old_text exactly as it is in the file -> new_text (a file shown with line numbers
             may be quoted with them: they are the reader's, not the file's)
@@ -27,14 +30,15 @@ import re
 import tempfile
 from pathlib import Path, PurePath
 
-from . import approval, read_file
+from . import agent_md, approval, read_file
 from .core import ToolError, ToolResult, ok, tool
+from .files import find_files
 from .filetypes import BINARY, FROM_MARKDOWN, is_code, suffix
 from .search_index import SearchIndex
 from .workspace import Workspace, clean_path
 
 PAGE = 15  # items per list page
-KINDS = ("table", "image", "file")  # everything but notes
+KINDS = ("table", "image", "file")
 MAX_WRITE = 1_000_000  # characters
 MODES = ("list", "find", "read", "write", "edit", "rename", "delete", "download")
 HELPER_MODES = ("find", "read", "write", "edit")  # a helper's files: what it reads and makes; asking is main's
@@ -46,7 +50,7 @@ HELPER_MODES = ("find", "read", "write", "edit")  # a helper's files: what it re
 def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | None = None, page: int = 1,
           start: int | None = None, content: str | None = None, old_text: str | None = None,
           new_text: str | None = None, new_name: str | None = None, link: str | None = None,
-          helper: bool = False) -> ToolResult:
+          query: str | None = None, helper: bool = False) -> ToolResult:
     mode = str(mode).strip().lower()
     modes = HELPER_MODES if helper else MODES
     if mode not in modes:
@@ -55,9 +59,10 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
         return _list(ws, page)
     if mode == "download":
         return _download(_need(link, "link", "download needs link: a GitHub file's link, or a data file's link"))
-    name = _need(name, "name", f"{mode} needs name: a file's name, e.g. 'report.md'")
     if mode == "find":
-        return _find(ws, name)
+        return find_files(ws, index, _need(query, "query", "find needs query: what to look for - words in a file's "
+                                                            "name or text, what a picture shows, a table's columns"))
+    name = _need(name, "name", f"{mode} needs name: a file's name, e.g. 'report.md'")
     if mode == "read":
         return _read(ws, _resolve(ws, name), start, helper)
     if mode == "write":
@@ -69,8 +74,12 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
                                                                                "to change, exactly as in the file"),
                      str(new_text))
     if mode == "rename":
-        return _rename(ws, index, _resolve(ws, name), _need(new_name, "new_name", "rename needs new_name"))
-    return approval.delete_request(ws, [_resolve(ws, name)])
+        item = _resolve(ws, name)
+        agent_md.refuse_move(ws.label(item))
+        return _rename(ws, index, item, _need(new_name, "new_name", "rename needs new_name"))
+    item = _resolve(ws, name)
+    agent_md.refuse_move(ws.label(item))
+    return approval.delete_request(ws, [item])
 
 
 # ---------------------------------------------------------------- list, find, read
@@ -85,16 +94,6 @@ def _list(ws: Workspace, page: int) -> ToolResult:
     shown = lines[(page - 1) * PAGE:page * PAGE]
     more = f"more: files(mode='list', page={page + 1})" if page < pages else "end of list"
     return ok({"total": len(lines), "page": f"{page} of {pages}", "items": shown, "next": more})
-
-
-def _find(ws: Workspace, name: str) -> ToolResult:
-    item = _exact(ws, name)
-    if item:
-        return ok({"found": True, "item": ws.lines()[item]})
-    try:
-        _resolve(ws, name)
-    except ToolError as missing:  # the closest items, as 'id (name)'
-        return ok({"found": False, "note": missing.message})
 
 
 def _read(ws: Workspace, item: str, start: int | None, helper: bool = False) -> ToolResult:
@@ -189,6 +188,7 @@ def _fits(content: str) -> None:
 
 def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str) -> ToolResult:
     from .files import store_file
+    agent_md.check(name, content)
     data = _bytes(name, content, ws)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / PurePath(name).name  # kept under its whole path, folder and all
@@ -203,6 +203,7 @@ def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: s
     """Replace a stored file's content (and its search passages, for a document)."""
     from .files import reindex
     name = ws.entry(item)["name"]
+    agent_md.check(name, content)
     data = _bytes(name, content, ws)
     ws.replace_bytes(item, data)
     if index is not None and "passages" in ws.entry(item).get("meta", {}):

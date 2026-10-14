@@ -52,15 +52,15 @@ could give you). Never show raw errors, codes or JSON, and never pretend it work
 
 Each user message starts with the user's current local date and time in brackets: use it when time matters (the \
 time now, dates, "yesterday", how long ago); never mention it otherwise. Lines in brackets after the user's words \
-([Workspace ...], [Pinned notes ...]) come from the app, not the user: what the workspace holds and your latest \
-notes. A message that starts with [App check] is the app on your last reply, not the user speaking: do what it says, \
+([Workspace ...]) come from the app, not the user: what the workspace holds. A message that starts with \
+[App check] is the app on your last reply, not the user speaking: do what it says, \
 and don't apologise to it or answer it as if the user had said it. Users type fast: read past typos and swapped \
 words.
 
-The workspace is yours to use: its files, tables, images and notes (files(mode='list') shows them all), and \
-analyze_or_code's scripts can open them. Only files on the user's computer outside the workspace are off limits. Your \
-notes are your memory between chats: when the user asks you to remember or note something, or to keep it for \
-every chat ("from now on ..."), save it with notes - saying you will remember keeps nothing.
+The workspace is yours to use: its files, tables and images (files: find searches them, list shows them all), \
+and analyze_or_code's scripts can open them. Only files on the user's computer outside the workspace are off limits. \
+agent.md is your memory between chats: when the user asks you to remember or note something, or to keep it for \
+every chat ("from now on ..."), add it to agent.md with files (edit) - saying you will remember keeps nothing.
 
 Helpers - research_web, ask_knowledge and analyze_or_code - don't see this chat: give each a task that is \
 complete on its own (names, numbers, the files and tables by their names, what the user wants). The app checks their results:
@@ -92,8 +92,8 @@ ANNOUNCE_NUDGE = ("[App check: your reply says you are about to do something, bu
 CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool did anything in this turn, so "
                "nothing was {verb}. Call the tool now - or tell the user it was not done.]")
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
-REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only a note keeps it. "
-                  "Save it with notes now.]")
+REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only agent.md keeps "
+                  "it. Add it to agent.md with files (edit) now.]")
 # Added to the result of main's own tools whose card the user already sees (measured: without it the model
 # wrote the week's forecast out again as a table under the weather card).
 SHOWN = {"weather": "The user sees all of this in a weather card: answer in one or two sentences with what "
@@ -121,8 +121,8 @@ releases or changelog page, check each page's age (read_webpage gives it) and sa
 
 Answer the task only from the pages you read, and list their URLs as sources. """ + HELPER_FINISH
 
-KNOWLEDGE = ("You answer from the user's own documents, saved notes and earlier conversations: find what the task "
-             "needs with search_files and recall, and read a whole file with files(mode='read') when the task wants "
+KNOWLEDGE = ("You answer from the user's own files and earlier conversations: find the files the task needs with "
+             "files(mode='find') and what was said with recall, and read a whole file with files(mode='read') when the task wants "
              "all of it (a summary). Answer only from what the tools return. " + HELPER_FINISH)
 
 # The analyst-programmer's craft (the user's design: a small model reads a short block of fundamentals every task

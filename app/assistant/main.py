@@ -5,10 +5,11 @@ LangGraph graph - agent -> tools -> agent ... -> END - streamed through LangGrap
 and every message is saved to the store as it happens (the store is the history; no checkpointer).
 
 What the main model gets at each step:
-    system   main's fixed prompt (prompts.MAIN: its persona, then how it works). It never changes: the
-             workspace, the pinned notes and the time travel on the user's messages (context.py) -
-             a minute that changed in the system prompt made llama.cpp process the whole prompt
-             again (measured: 5,673 of 5,878 tokens).
+    system   main's fixed prompt (prompts.MAIN: its persona, then how it works), then agent.md as it is now
+             (agent_md.py: in view every turn, never in the history). Nothing else goes there: the
+             workspace and the time travel on the user's messages (context.py) - a minute that changed in
+             the system prompt made llama.cpp process the whole prompt again (measured: 5,673 of 5,878
+             tokens); agent.md changes rarely.
     history  the chat through the rolling window (cut_turns; the cut is kept in chats.dropped so the
              prompt stays the same turn after turn; a turn that alone outgrows the slot has its older
              tool results shortened). Each user message starts with its local time,
@@ -55,6 +56,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from app.providers.base import Cancelled, Provider, ProviderError
+from app.tools import agent_md
 from app.tools.approval import carry_out
 from app.tools.ask import answer_result
 from app.tools.clean_data import clean_data
@@ -195,7 +197,9 @@ def _agent(state: TurnState, config) -> dict:
     t.setup(get_stream_writer())
     specs = [tool.spec() for tool in t.tools.values()]
     history = [m for m in state["messages"] if m["role"] in ("user", "assistant", "tool")]
-    system = MAIN  # never changes: the workspace and notes travel on the user's messages (context.py)
+    # The fixed prompt, then agent.md as it is now - never in the history; the workspace travels on the user's
+    # messages (context.py)
+    system = f"{MAIN}\n\n{agent_md.in_view(t.ws)}" if agent_md.key(t.ws) else MAIN
     limit, count = prompt_limit(t.main), counter(t.main, system, specs)
     visible, dropped, fits = cut_turns(history, limit, count, t.dropped)
     if dropped != t.dropped:
@@ -261,7 +265,7 @@ def _stopped(t: Turn, name: str) -> dict:
     if trace is None:
         return out
     from .workers.runner import _ran
-    made = [k for k in t.ws.ids() if k not in trace.existing and t.ws.kind(k) != "note"]
+    made = [k for k in t.ws.ids() if k not in trace.existing]
     changed = [k for k, sha in trace.stamps.items() if k in t.ws.ids() and t.ws.entry(k).get("sha", "") != sha]
     out["ran"] = _ran(trace)
     if made or changed:
@@ -329,7 +333,7 @@ def _tools(state: TurnState, config) -> dict:
 
 
 def _snapshot_on_newest(t: Turn, history: list[dict], visible: list[dict], dropped: int) -> list[dict]:
-    """Old turns were cut: the newest user message gets a fresh snapshot of the workspace and notes,
+    """Old turns were cut: the newest user message gets a fresh snapshot of the workspace,
     with the user's standing instructions from the cut turns. Stored, so later turns send the same
     prompt (the cache works again from here)."""
     newest = next((i for i in range(len(visible) - 1, -1, -1) if visible[i]["role"] == "user"
@@ -404,7 +408,7 @@ def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider
         return
 
     def record(put: Callable[[dict], None]) -> str:
-        # What the workspace holds and the pinned notes, as changed since the last message (context.py).
+        # What the workspace holds, as changed since the last message (context.py).
         ws, _ = store.open(chat["workspace_id"])
         before = next((m["seen"] for m in reversed(store.messages(chat_id, for_model=True))
                        if m["role"] == "user" and m.get("seen") is not None), None)

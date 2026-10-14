@@ -1,15 +1,18 @@
 """What every model call gets without having to ask, and how long histories fit a slot.
 
-What the workspace holds (each file's path and size - never content) and the pinned notes are built by
-code, so a small model never has to remember to pass them on. None of it is in main's system
-prompt: llama.cpp reuses a prompt only up to its first changed token, and a minute that changed
-early in the prompt made it reprocess 5,673 of 5,878 tokens (measured; the same prompt again: 1).
-So main's system prompt never changes, and this goes on the user's messages instead, append-only
+What the workspace holds (each file's path and size - never content) is built by code, so a small model
+never has to remember to pass it on. It is not in main's system prompt: llama.cpp reuses a prompt only up
+to its first changed token, and a minute that changed early in the prompt made it reprocess 5,673 of
+5,878 tokens (measured; the same prompt again: 1). So it goes on the user's messages instead, append-only
 (message_context): the chat's first message carries a snapshot, later ones only what changed since
 the message before (most carry nothing), and a message sent when old turns had to be dropped
 carries a fresh snapshot with the user's standing instructions from the dropped turns. Older
 messages never change, so the cached prompt always matches up to the newest message. A worker's
 task is one short conversation: its opening message carries context_block.
+
+agent.md (agent_md.py) is the one thing in main's system prompt besides the fixed prompt: it is in view every
+turn as it is now, never stored in the history and never cut with old turns; it changes rarely, and only then is
+the prompt processed again.
 
 Fitting a slot is measured, not guessed: ``count`` gives the exact size of the whole prompt -
 system, tool declarations and messages as the model's chat template renders them - from the
@@ -40,7 +43,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from app.providers.base import estimate_tokens
-from app.tools.notes import pinned, pinned_text
+from app.tools import agent_md
 from app.tools.workspace import ITEM_REF, Workspace
 
 SLOT_TOKENS = 16_384  # context of each llama-server slot (main = 0, worker = 1)
@@ -57,8 +60,8 @@ def now_line(now: datetime | None = None) -> str:
 
 
 def context_block(ws: Workspace) -> str:
-    """A worker task's view: the workspace and the pinned notes."""
-    return "\n\n".join(p for p in (ws.listing(), pinned_text(ws)) if p)
+    """A worker task's view: the workspace and agent.md."""
+    return "\n\n".join(p for p in (ws.listing(), agent_md.in_view(ws)) if p)
 
 
 SNAPSHOT_ITEMS = 5  # newest items in a snapshot; files(mode='list') shows them all
@@ -69,7 +72,7 @@ MAX_STANDING = 3
 
 def seen_state(ws: Workspace) -> dict:
     """What a message told main about the workspace - kept on the message, never sent to the model."""
-    return {"items": ws.lines(), "pinned": [[n["id"], n["text"]] for n in pinned(ws)]}
+    return {"items": ws.lines()}
 
 
 def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
@@ -84,8 +87,6 @@ def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
         shown = "\n".join(lines[-SNAPSHOT_ITEMS:]) or "empty (no files attached yet)"
         more = f"\n({len(lines) - SNAPSHOT_ITEMS} more: files(mode='list'))" if len(lines) > SNAPSHOT_ITEMS else ""
         parts = [f"[Workspace now:\n{shown}{more}]"]
-        if now["pinned"]:
-            parts.append(f"[{pinned_text(ws)}]")
         if dropped:  # after a cut the chat's first stamp is out of view: when it began is said here
             began = f" This chat started {started}." if started else ""
             parts.append(f"[{dropped} earlier turn(s) of this chat are not shown; find them with ask_knowledge.{began}]")
@@ -98,14 +99,13 @@ def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
     changes += [f"~ {line}" for i, line in now["items"].items() if i in old and old[i] != line]
     changes += [f"- {old[i].split(': ', 1)[0]} (removed)" for i in old if i not in now["items"]]
     parts = ["[Workspace changes since the last message:\n" + "\n".join(changes) + "]"] if changes else []
-    if now["pinned"] != before.get("pinned"):
-        parts.append(f"[{pinned_text(ws)}]" if now["pinned"] else "[Pinned notes: none now.]")
     return "\n".join(parts), now
 
 
 # The app's notes, as message_context writes them. A small model copies them into its reply (measured:
 # "[Workspace now: data_1 sales.csv ..." at the end of an answer), as it copied the time stamp.
-NOTE = re.compile(r"\[(?:Workspace now:|Workspace changes since|Pinned notes|The user's standing instructions|"
+NOTE = re.compile(r"\[(?:Workspace now:|Workspace changes since|agent\.md - your standing memory|"
+                  r"The user's standing instructions|"
                   r"\d+ earlier turn\(s\) of this chat).*?\](?=[ \t]*(?:\n|$))\s*", re.S)
 
 

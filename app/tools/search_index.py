@@ -1,6 +1,7 @@
-"""One search engine for documents, notes, past conversations and pictures: SQLite FTS5 + embeddings.
+"""One search engine for the files (documents, code, charts, pictures, tables), past conversations and pages read:
+SQLite FTS5 + embeddings.
 
-Every passage is stored once with its source ('document', 'report', 'note', 'chat', 'image', 'table',
+Every passage is stored once with its source ('document', 'code', 'chart', 'report', 'chat', 'image', 'table',
 'web' - a page the web helper read). A search
 runs two rankings over the sources asked for - keywords (FTS5's BM25, Porter-stemmed) and meaning
 (cosine similarity of the embedding model's vectors: EmbeddingGemma 2 on llama-server, or bge-small
@@ -15,7 +16,8 @@ too: its name, size, columns and a few example values (files.index_items keeps b
 Each vector records its model; vectors of two models can't be compared, so search uses only the
 current model's, and reindex() gives the others new ones (a new model = a full re-index).
 
-search_files (documents, reports, pictures + notes) and recall (chat) are thin tools over this index.
+files(mode='find') (documents, code, charts, pictures, tables, reports), the per-turn snapshot of pinned files
+(search within given files: refs) and recall (chat) are thin tools over this index.
 """
 
 from __future__ import annotations
@@ -95,7 +97,7 @@ class SearchIndex:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.embedder = embedder
         self._lock = threading.Lock()
-        self._vectors: dict[tuple, tuple[int, np.ndarray, np.ndarray]] = {}
+        self._vectors: dict[tuple, tuple] = {}
         self._version = 0
         with self._db() as db:
             db.executescript(SCHEMA)
@@ -178,11 +180,13 @@ class SearchIndex:
 
     # ------------------------------------------------------------------ searching
 
-    def search(self, query: str, sources: tuple[str, ...], k: int = 5) -> tuple[list[Hit], bool]:
-        """Top k passages from these sources; returns (hits, whether meaning was used). Relevance alone
-        picks them; where it ties, the newest and the oldest come first (_ends_first)."""
-        keyword = self._keyword(query, sources)
-        meaning, used_meaning = self._meaning(query, sources)
+    def search(self, query: str, sources: tuple[str, ...], k: int = 5,
+               refs: tuple[str, ...] | None = None) -> tuple[list[Hit], bool]:
+        """Top k passages from these sources (and only these items' passages, with refs); returns (hits, whether
+        meaning was used). Relevance alone picks them; where it ties, the newest and the oldest come first
+        (_ends_first)."""
+        keyword = self._keyword(query, sources, refs)
+        meaning, used_meaning = self._meaning(query, sources, refs)
         fused: dict[int, float] = defaultdict(float)
         for ranking in (keyword, meaning):
             for rank, rowid in enumerate(ranking):
@@ -197,30 +201,34 @@ class SearchIndex:
         kw, mn = set(keyword), set(meaning)
         return [Hit(*rows[i][1:], score=fused[i], keyword=i in kw, meaning=i in mn) for i in best if i in rows], used_meaning
 
-    def _keyword(self, query: str, sources: tuple[str, ...]) -> list[int]:
+    def _keyword(self, query: str, sources: tuple[str, ...], refs: tuple[str, ...] | None = None) -> list[int]:
         words = [w for w in re.findall(r"\w+", query.lower()) if w not in STOPWORDS]
-        if not words:
+        if not words or refs == ():
             return []
         match = " OR ".join(f'"{w}"' for w in dict.fromkeys(words))  # quoted: no FTS syntax from user text
+        only = f" AND p.ref IN ({_marks(refs)})" if refs else ""
         sql = ("SELECT p.id, bm25(passages_fts) FROM passages_fts f JOIN passages p ON p.id = f.rowid "
-               f"WHERE passages_fts MATCH ? AND p.source IN ({_marks(sources)}) ORDER BY bm25(passages_fts), p.id {{}} "
+               f"WHERE passages_fts MATCH ? AND p.source IN ({_marks(sources)}){only} ORDER BY bm25(passages_fts), p.id {{}} "
                "LIMIT ?")
         # Fetched from both ends of a tie: a word every passage shares scores the same in all of them,
         # and SQLite returns a tied run oldest first - past the limit the newest would be unreachable
         # (Unsloth's measured failure, solved the same way: half the candidates from each end).
         with self._db() as db:
-            oldest = db.execute(sql.format("ASC"), (match, *sources, CANDIDATES - CANDIDATES // 2)).fetchall()
-            newest = db.execute(sql.format("DESC"), (match, *sources, CANDIDATES // 2)).fetchall()
+            oldest = db.execute(sql.format("ASC"), (match, *sources, *(refs or ()), CANDIDATES - CANDIDATES // 2)).fetchall()
+            newest = db.execute(sql.format("DESC"), (match, *sources, *(refs or ()), CANDIDATES // 2)).fetchall()
         return _ends_first(list(dict(oldest + newest).items()))
 
-    def _meaning(self, query: str, sources: tuple[str, ...]) -> tuple[list[int], bool]:
+    def _meaning(self, query: str, sources: tuple[str, ...], refs: tuple[str, ...] | None = None) -> tuple[list[int], bool]:
         if self.embedder is None:
             return [], False
         try:
             q = self.embedder.embed_query(query)
         except EmbedderUnavailable:
             return [], False
-        ids, matrix, pictures = self._matrix(sources)
+        ids, matrix, pictures, owners = self._matrix(sources)
+        if refs is not None:
+            keep = np.isin(owners, list(refs))
+            ids, matrix, pictures = ids[keep], matrix[keep], pictures[keep]
         if not len(ids):
             return [], True
         sims = matrix @ q
@@ -229,19 +237,21 @@ class SearchIndex:
         floors = np.where(pictures, getattr(self.embedder, "min_similarity_pictures", text_floor), text_floor)
         return [int(ids[j]) for j in np.argsort(-sims)[:CANDIDATES] if sims[j] >= floors[j]], True
 
-    def _matrix(self, sources: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Vectors of these sources (and which rows are pictures), cached until the index changes."""
+    def _matrix(self, sources: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Vectors of these sources, which rows are pictures and whose each row is (its ref), cached until the index
+        changes."""
         cached = self._vectors.get(sources)
         if cached and cached[0] == self._version:
             return cached[1:]
         with self._db() as db:
-            rows = db.execute(f"SELECT id, vector, source FROM passages WHERE vector IS NOT NULL AND model = ? "
+            rows = db.execute(f"SELECT id, vector, source, ref FROM passages WHERE vector IS NOT NULL AND model = ? "
                               f"AND source IN ({_marks(sources)})", (self.embedder.name, *sources)).fetchall()
         ids = np.array([r[0] for r in rows], dtype=np.int64)
         matrix = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in rows]) if rows else np.zeros((0, 1), np.float32)
         pictures = np.array([r[2] == PICTURE for r in rows], dtype=bool)
-        self._vectors[sources] = (self._version, ids, matrix, pictures)
-        return ids, matrix, pictures
+        owners = np.array([r[3] for r in rows], dtype=object)
+        self._vectors[sources] = (self._version, ids, matrix, pictures, owners)
+        return ids, matrix, pictures, owners
 
     def _embed(self, texts: list[str], titles: list[str | None]) -> tuple[np.ndarray | None, str | None]:
         if self.embedder is None:

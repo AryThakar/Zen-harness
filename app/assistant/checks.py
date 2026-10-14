@@ -18,7 +18,7 @@ main itself, each from a measured failure in the user's own test chat (found in 
                         now.", "**Action:** ...") with no tool call gets one hidden nudge: act now, or say
                         plainly what can't be done (9 times in one chat)
     asked to remember   the user asked to remember or note something and the reply saved nothing (no
-                        notes(save) or files call): one hidden nudge to save it with notes ("I will remember
+                        files write or edit): one hidden nudge to add it to agent.md ("I will remember
                         that" with no note, after main's prompt already said to save it)
     claimed, not done   a reply claiming an action ("I saved a note", "has been downloaded") in a turn
                         where no tool did anything gets one hidden nudge to do it or correct the reply
@@ -169,9 +169,8 @@ def nudge_for(text: str, turn: list[dict]) -> str | None:
     if any(m.get("check") for m in turn if m["role"] == "user"):
         return None
     said = next((str(m.get("text") or m.get("content") or "") for m in turn if m["role"] == "user"), "")
-    kept = any(c["name"] == "files" or (c["name"] == "notes" and isinstance(c.get("input"), dict)
-                                        and c["input"].get("mode") == "save")
-               for m in turn if m["role"] == "assistant" for c in m.get("tool_calls") or [])
+    kept = any(c["name"] == "files" and isinstance(c.get("input"), dict) and c["input"].get("mode") in ("write", "edit")
+               for m in turn if m["role"] == "assistant" for c in m.get("tool_calls") or [])  # agent.md, or a file
     if asked_to_remember(said) and not kept:
         return REMEMBER_NUDGE
     if announced(text):

@@ -16,7 +16,7 @@
     POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
     POST   /assistant/chats/{chat}/answer     {answer|null}   answer the waiting question - events
     POST   /assistant/chats/{chat}/stop                       stop its running turn (the Stop button)
-    GET    /assistant/workspaces/{ws}/items                   files, tables, images, the 5 pinned notes
+    GET    /assistant/workspaces/{ws}/items                   files (agent.md first), tables, images
     POST   /assistant/workspaces/{ws}/files   (upload)        a table, a document (indexed) or a file
     GET    /assistant/workspaces/{ws}/items/{item}/file       the stored file (images inline)
     GET    /assistant/workspaces/{ws}/items/{item}/rows       a table's first rows
@@ -47,10 +47,9 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import file_ops, filetypes
+from app.tools import agent_md, file_ops, filetypes
 from app.tools import run as run_tool
 from app.tools import files as files_tool
-from app.tools import notes as notes_tool
 from app.tools import web
 from app.tools.core import ToolError, jsonable
 
@@ -60,7 +59,7 @@ log = logging.getLogger(__name__)
 SAFE = {"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
         "X-Content-Type-Options": "nosniff"}
 ID = re.compile(r"^[0-9a-f]{12}$")
-ITEM = re.compile(r"^(data|image|file|note)_\d+(?:_\w+)?$")
+ITEM = re.compile(r"^(data|image|file)_\d+(?:_\w+)?$")
 
 
 class NameIn(BaseModel):
@@ -262,24 +261,17 @@ def _sse(event: dict) -> str:
 def list_items(ws_id: str, request: Request) -> list[dict]:
     _workspace(request, ws_id)
     ws, _ = _store(request).open(ws_id)
-    keep = ("pages", "words", "passages", "title", "width", "height")
-    shown = {n["id"]: n["saved"] for n in notes_tool.pinned(ws)}  # notes: only the 5 the AI keeps in view
+    keep = ("pages", "words", "passages", "title", "width", "height", "caption")
+    memory = agent_md.key(ws)
     out = []
-    for i in ws.ids():
+    for i in sorted(ws.ids(), key=lambda k: k != memory):  # agent.md first: the project's memory heads the panel
         e = ws.entry(i)
-        if e["kind"] == "note":
-            if i not in shown:
-                continue
-            e = {**e, "meta": {**e.get("meta", {}), "pinned": True, "saved": shown[i]}}
-            meta_keys = keep + ("pinned", "saved")
-        else:
-            meta_keys = keep
-        meta = {k: v for k, v in e.get("meta", {}).items() if k in meta_keys and not isinstance(v, (dict, list))}
+        meta = {k: v for k, v in e.get("meta", {}).items() if k in keep and not isinstance(v, (dict, list))}
         size = {"rows": e["rows"], "columns": len(e.get("columns", []))} if "rows" in e else {"bytes": e.get("bytes")}
         report = {"report": e["report"]["line"]} if e.get("report") else {}  # what a worker did with it
-        kept = {"versions": len(ws.versions(i))} if e["kind"] != "note" else {}
         out.append({"id": i, "kind": e["kind"], "name": e.get("name"), "parent": e.get("parent"), "by": e.get("by"),
-                    "bytes": e.get("bytes"), **size, **meta, **report, **kept})
+                    "bytes": e.get("bytes"), **size, **meta, **report, "versions": len(ws.versions(i)),
+                    **({"memory": True} if i == memory else {})})
     return out
 
 

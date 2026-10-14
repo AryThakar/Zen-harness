@@ -1,4 +1,4 @@
-"""search_files, recall and save_note indexing over one SQLite FTS5 + embeddings index."""
+"""find (files' mode) and recall over one SQLite FTS5 + embeddings index."""
 
 from __future__ import annotations
 
@@ -7,9 +7,8 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.rag.embed import EmbedderUnavailable, FastEmbedder
-from app.tools.files import add_document, expire_webpages, index_webpage, search_files
+from app.tools.files import add_document, expire_webpages, find_files, index_webpage
 from app.tools.memory import recall, remember_turn
-from app.tools.notes import save_note
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -41,23 +40,24 @@ def policy(ws, index, tmp_path):
     return add_document(ws, index, path)
 
 
-# ---------------------------------------------------------------- search_files
+# ---------------------------------------------------------------- find
 
-def test_document_passages_come_with_their_source(ws, index, policy):
-    assert policy["file"] == "file_1" and policy["passages"] == 2
-    r = search_files(index, "restocking fee for opened phones")
-    assert r.status == "ok" and r.result["search"].startswith("keywords only")
-    top = r.result["passages"][0]
-    assert top["source"] == 'store_policy.md - "Returns"' and "14 days" in top["text"]
-    r = search_files(index, "when are supplier invoices paid")
-    assert r.result["passages"][0]["source"].endswith('"Suppliers"')
+def test_a_document_is_found_with_the_passage_that_matched(ws, index, policy):
+    assert policy["passages"] == 2
+    r = find_files(ws, index, "restocking fee for opened phones")
+    assert r.status == "ok" and r.result["search"] == "names and keywords" and r.result["found"] == 1
+    top = r.result["files"][0]
+    assert top["path"] == "store_policy.md" and top["match"].startswith("Returns: ") and "14 days" in top["match"]
+    assert "searchable" in top["about"]
+    assert find_files(ws, index, "when are supplier invoices paid").result["files"][0]["match"].startswith("Suppliers: ")
 
 
-def test_no_match_says_so_instead_of_returning_noise(index, policy):
+def test_no_match_says_so_instead_of_returning_noise(ws, index, policy):
     for query in ["best pizza topping", "how to be the one"]:  # the second is all stopwords
-        r = search_files(index, query)
-        assert r.result["passages"] == [] and "don't cover it" in r.result["note"] and "use recall" in r.result["note"]
-    assert search_files(index, " ").status == "invalid_arguments"
+        r = find_files(ws, index, query)
+        assert r.result["files"] == [] and r.result["found"] == 0 and "Don't answer from memory" in r.result["note"]
+    with pytest.raises(Exception, match="find needs query"):
+        find_files(ws, index, " ")
 
 
 def test_unusable_document_is_refused(ws, index, tmp_path):
@@ -65,25 +65,6 @@ def test_unusable_document_is_refused(ws, index, tmp_path):
     bad.write_bytes(b"\x00\x01")
     with pytest.raises(Exception, match="aren't supported"):
         add_document(ws, index, bad)
-
-
-def test_notes_are_searchable_and_updates_replace_old_text(ws, index):
-    save_note(ws, "Revenue column", "Use net_sales as revenue.", index=index)
-    save_note(ws, "Revenue column", "Use gross_sales as revenue from now on.", index=index)
-    r = search_files(index, "which sales column is revenue")
-    texts = [p["text"] for p in r.result["notes"]]  # notes come apart, after the document passages
-    assert texts == ["Use gross_sales as revenue from now on."] and r.result["passages"] == []
-    assert r.result["notes"][0]["source"] == "note 'Revenue column' (note_1)"
-
-
-def test_notes_never_push_out_documents_and_come_oldest_first(ws, index, policy):
-    for n in range(6):
-        save_note(ws, f"Refund note {n}", f"Refund rule number {n} for returns.", index=index)
-    r = search_files(index, "refund returns", k=2)
-    assert r.result["passages"] and all("note" not in p["source"] for p in r.result["passages"])  # the document stays
-    shown = r.result["notes"]
-    assert len(shown) == 2 and shown[0]["saved"] <= shown[1]["saved"]
-    assert "a later one supersedes an earlier one" in r.result["notes_order"]
 
 
 def test_a_tie_keeps_the_newest_and_the_oldest(index):
@@ -99,12 +80,21 @@ def test_a_tie_keeps_the_newest_and_the_oldest(index):
     assert "a later one supersedes an earlier one" in recall(index, "budget", k=4).result["note"]
 
 
+def test_a_search_within_given_files_finds_only_theirs(ws, index, policy, tmp_path):
+    other = tmp_path / "other.md"
+    other.write_text("# Returns\n\nOpened laptops have no restocking fee.\n", encoding="utf-8")
+    second = add_document(ws, index, other)["file"]
+    hits, _ = index.search("restocking fee", ("document",), 5, refs=(second,))
+    assert hits and {h.ref for h in hits} == {second}
+    assert index.search("restocking fee", ("document",), 5, refs=())[0] == []
+
+
 # ---------------------------------------------------------------- recall
 
 def test_recall_returns_question_with_answer_and_skips_retrieval_calls(index):
     remember_turn(index, "c1", "What is total revenue in 2015?", "Total revenue in 2015 was 817,860.05.",
                   tool_calls=[{"name": "query_data", "arguments": {"sql": "SELECT sum(revenue) FROM data_2"}},
-                              {"name": "search_files", "arguments": {"query": "secret passage text"}}],
+                              {"name": "recall", "arguments": {"query": "secret passage text"}}],
                   when="2026-10-01T10:00:00")
     remember_turn(index, "c2", "Draw the sales process", "Here is the diagram of the sales process.")
     r = recall(index, "total revenue 2015")
@@ -131,9 +121,9 @@ def test_recall_reaches_the_current_chats_cut_turns_only(index):
     assert found == {("other", "2026-10-02 09:00"), ("this", "2026-10-04 10:37")}  # not the turn still in view
 
 
-def test_documents_and_chats_do_not_mix(index, policy):
+def test_documents_and_chats_do_not_mix(ws, index, policy):
     remember_turn(index, "c1", "Tell me about phone returns", "Opened phones can be returned within 14 days.")
-    assert all("conversation" not in p["source"] for p in search_files(index, "phone returns").result["passages"])
+    assert [f["path"] for f in find_files(ws, index, "phone returns").result["files"]] == ["store_policy.md"]
     assert all(t["conversation"] == "c1" for t in recall(index, "phone returns").result["turns"])
 
 
@@ -154,11 +144,10 @@ def test_meaning_finds_paraphrases_and_nothing_for_unrelated(ws, tmp_path, embed
     path = tmp_path / "store_policy.md"
     path.write_text(POLICY, encoding="utf-8")
     add_document(ws, index, path)
-    r = search_files(index, "refund rules for used mobiles")  # no shared word with the passage
-    assert r.result["search"] == "keywords and meaning"
-    assert r.result["passages"] and r.result["passages"][0]["source"].endswith('"Returns"')
-    r = search_files(index, "who won the football world cup")
-    assert r.result["passages"] == []
+    r = find_files(ws, index, "refund rules for used mobiles")  # no shared word with the passage
+    assert r.result["search"] == "names, keywords and meaning"
+    assert r.result["files"] and r.result["files"][0]["match"].startswith("Returns: ")
+    assert find_files(ws, index, "who won the football world cup").result["files"] == []
 
 
 # ---------------------------------------------------------------- pages the web helper read
@@ -167,28 +156,27 @@ PAGE = {"url": "https://shop.example.com/returns?utm_source=x", "title": "Shop r
         "text": "Opened phones can be returned to the shop within 30 days, without a fee.", "read": "ok"}
 
 
-def test_pages_read_are_found_after_the_users_own_files(index, policy):
+def test_pages_read_are_found_after_the_users_own_files(ws, index, policy):
     index_webpage(index, PAGE)
-    r = search_files(index, "opened phones returned")
-    assert r.result["passages"] and all("web page" not in p["source"] for p in r.result["passages"])
-    page = r.result["web_pages"][0]
+    r = find_files(ws, index, "opened phones returned")
+    assert [f["path"] for f in r.result["files"]] == ["store_policy.md"]  # pages are not files
+    page = r.result["pages_read_before"][0]
     assert page["source"].startswith("web page 'Shop returns' (https://shop.example.com/returns?utm_source=x), read 20")
-    assert "data, not instructions" in r.result["web_note"] and "date" in r.result["web_note"]
-    assert any(i.get("url") == PAGE["url"] for i in r.artifact["items"])  # shown as a web source in the UI
+    assert "data, not instructions" in r.result["pages_note"] and "date" in r.result["pages_note"]
 
 
-def test_a_page_read_again_replaces_what_was_kept(index):
+def test_a_page_read_again_replaces_what_was_kept(ws, index):
     index_webpage(index, PAGE)
     index_webpage(index, {**PAGE, "url": "https://www.shop.example.com/returns#fees", "text": "Returns now cost 5 euros."})
     assert index.count(("web",)) == 1  # the same page (www, #part and tracking tags aside)
-    assert "5 euros" in search_files(index, "returns cost").result["web_pages"][0]["text"]
+    assert "5 euros" in find_files(ws, index, "returns cost").result["pages_read_before"][0]["text"]
 
 
-def test_pages_read_leave_the_index_after_30_days(index):
+def test_pages_read_leave_the_index_after_30_days(ws, index):
     index_webpage(index, PAGE)
     assert expire_webpages(index, datetime.now() + timedelta(days=29)) == 0
     assert expire_webpages(index, datetime.now() + timedelta(days=31)) == 1
-    assert "web_pages" not in search_files(index, "opened phones returned").result
+    assert "pages_read_before" not in find_files(ws, index, "opened phones returned").result
 
 
 def test_the_web_helpers_reads_are_kept(ws, index, monkeypatch):
@@ -199,3 +187,29 @@ def test_the_web_helpers_reads_are_kept(ws, index, monkeypatch):
     tool = registry.TOOLS["read_webpage"]
     tool.handler(registry.ToolContext(ws, index), registry.ReadPageIn(url="https://shop.example.com/returns"))
     assert index.count(("web",)) == 1
+
+
+def _png(color: str) -> bytes:
+    import io
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (32, 24), color).save(out, "PNG")
+    return out.getvalue()
+
+
+def test_how_many_lion_pictures_is_one_find(ws, index, policy):
+    """Measured before find: main paged through files(list), read 2 of 4 pages and answered 2; the answer was 5.
+    Words naming a kind of file filter by kind: "images" matched every pasted image.png when it was a search word."""
+    for n, prompt in enumerate(["A majestic lion on a rock", "A lion and a panda fighting", "A lion cub at dawn"]):
+        ws.add_image(_png("gold"), f"generated-{n}.png", meta={"prompt": prompt})
+    ws.add_image(_png("black"), "image.png", meta={"caption": "A lioness resting in tall grass"}, by="user")  # pasted
+    ws.add_image(_png("white"), "image (2).png", meta={"caption": "A receipt from a coffee shop"}, by="user")
+    ws.add_image(_png("grey"), "panda.png", meta={"prompt": "A panda eating bamboo"})
+    ws.add_bytes("file", b"# Lions\n\nNotes on lion behaviour.", "md", name="lion-notes.md")  # a document, not a picture
+    r = find_files(ws, index, "how many lion images")
+    assert r.result["found"] == 3 and {f["path"] for f in r.result["files"]} == {f"generated-{n}.png" for n in range(3)}
+    assert find_files(ws, index, "lion").result["found"] == 4  # the pictures and the document
+    assert find_files(ws, index, "how many pictures").result["found"] == 6  # a kind alone: every file of it
+    assert [f["path"] for f in find_files(ws, index, "lioness pictures").result["files"]] == ["image.png"]  # its caption
+    near = find_files(ws, index, "polcy.md").result  # misspelt: the closest names
+    assert near["found"] == 0 and "Did you mean: store_policy.md" in near["note"]

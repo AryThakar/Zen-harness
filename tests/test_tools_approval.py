@@ -16,8 +16,7 @@ from app.assistant.main import reply, send
 from app.assistant.store import Store
 from app.tools import approval, web
 from app.tools.core import ToolError
-from app.tools.files import search_files
-from app.tools.notes import save_note
+from app.tools.files import find_files
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -154,11 +153,12 @@ def test_an_allowed_download_is_kept_by_what_it_is(ws, index):
         kept[name], _ = approval.carry_out(ws, index, ask["approval"], ask["options"], "yes", http=http, resolve=public)
     assert kept["avg.py"]["kind"] == "file" and ws.path(kept["avg.py"]["id"]).read_bytes() == PY
     assert kept["sales.csv"]["kind"] == "table"
-    assert kept["README.md"]["kind"] == "document" and search_files(index, "refunds").result["passages"]
+    assert kept["README.md"]["kind"] == "document" and find_files(ws, index, "refunds").result["files"]
 
 
 def test_delete_asks_then_removes_items_and_their_passages(ws, index):
-    note = save_note(ws, "Plan", "Forecast six months ahead.", index=index).result["note"]
+    from app.tools.file_ops import files
+    note = files(ws, index, "write", name="plan.md", content="# Plan\n\nForecast six months ahead.").result["file"]
     table = ws.add_table(pd.DataFrame({"a": [1]}), "t.csv")
     with pytest.raises(ToolError, match="No file file_9"):
         approval.delete_request(ws, ["file_9"])
@@ -167,8 +167,9 @@ def test_delete_asks_then_removes_items_and_their_passages(ws, index):
     assert "can't be undone" in ask["question"] and ws.ids() == [note, table]  # nothing deleted yet
     result, _ = approval.carry_out(ws, index, ask["approval"], ask["options"], "Delete")
     assert result["deleted"] == [note, table] and ws.ids() == []
-    assert not (ws.files / "t.csv").exists() and not (ws.zen / "cache" / f"{table}.parquet").exists()
-    assert not search_files(index, "forecast").result.get("passages")
+    assert not (ws.files / "t.csv").exists() and not (ws.files / "plan.md").exists()
+    assert not (ws.zen / "cache" / f"{table}.parquet").exists()
+    assert not find_files(ws, index, "forecast").result["files"]
 
 
 # ---------------------------------------------------------------- the turn pauses for it

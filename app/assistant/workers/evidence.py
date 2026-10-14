@@ -87,9 +87,13 @@ class Trace:
                 self.listed[r["url"]] = self.listed.get(r["url"], 0) + 1
             self.last_query = args.get("query") or self.last_query
             self.searches_in_a_row += 1
-        # search_files' notes and pages read before are sources too (forecast's "notes" are plain lines)
-        notes = res.get("notes", []) + res.get("web_pages", []) if name == "search_files" else []
-        for p in res.get("passages", []) + notes + res.get("turns", []):
+        # find's files and the pages read before are sources (forecast's "notes" are plain lines)
+        if name == "files" and args.get("mode") == "find" and result.status == "ok":
+            for f in res.get("files", []):
+                self.sources.add(f["path"])
+                self.passages.append((f["path"], f.get("match", "")))
+        found = res.get("pages_read_before", []) if name == "files" else []
+        for p in found + res.get("turns", []):
             source = p.get("source") or f"conversation {p.get('conversation')}"
             self.sources.add(source)
             self.passages.append((source, p.get("text", "")))

@@ -6,7 +6,7 @@ result instead of raw pages or tables - one shape for all three: answer (what ma
 sources, report, files (id, name, kind of what it saved or made) and the briefing below.
 
     web        web_search, read_webpage, ask_user                          -> submit_result: answer, sources (page numbers)
-    knowledge  search_files, recall, files (find, read)                    -> submit_result: answer, sources
+    knowledge  files (find, read), recall                                  -> submit_result: answer, sources
     engineer   the 9 data tools, files (find, read, write, edit), run,     -> finish: answer, caveats
                ask_user                                                       (+ the report kept on its table)
 (A program is a file in the workspace: written, run, edited - app/tools/run.py. Each helper's craft - how an

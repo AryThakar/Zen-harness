@@ -60,7 +60,7 @@ def test_a_turn_with_a_direct_tool_is_saved_remembered_and_named(store, chat):
     first = main.requests[0]
     assert first["system"].startswith(MAIN) and "Now:" not in first["system"]  # no clock in the system prompt
     assert {t["name"] for t in first["tools"]} == {"get_weather", "generate_image", "view_image", "draw_diagram",
-                                                    "calculate", "notes", "plan", "ask_user", "files", "research_web",
+                                                    "calculate", "plan", "ask_user", "files", "research_web",
                                                     "ask_knowledge", "analyze_or_code"}
     assert store.chat(chat["id"])["title"] == "What is 15% of 2400?"
     _, index = store.open(chat["workspace_id"])
@@ -102,14 +102,14 @@ def test_a_chain_of_questions_is_not_cut_by_the_round_limit(store, chat):
 def test_a_plan_is_shown_as_a_card_and_names_only_real_tools(store, chat):
     main = ScriptedProvider([
         tools_turn(call("plan", steps=[{"do": "work it out", "tool": "calculate"}, {"do": "draw it", "tool": "make_chart"}])),
-        tools_turn(call("plan", steps=[{"do": "work it out", "tool": "calculate"}, {"do": "keep it", "tool": "notes"}])),
+        tools_turn(call("plan", steps=[{"do": "work it out", "tool": "calculate"}, {"do": "keep it", "tool": "files"}])),
         answer("Planned.")])
     events = run(send(store, chat["id"], "Plan it.", main, ScriptedProvider([])))
     ends = [e for e in events if e["type"] == "tool_end"]
     assert ends[0]["status"] == "invalid_arguments" and "No tool make_chart" in ends[0]["summary"]  # a helper's tool
     cards = [e["artifact"] for e in events if e["type"] == "artifact"]
     assert cards == [{"tool": "plan", "type": "plan", "steps": [{"do": "work it out", "tool": "calculate"},
-                                                                  {"do": "keep it", "tool": "notes"}]}]
+                                                                  {"do": "keep it", "tool": "files"}]}]
     assert "start on its first step" in ends[1]["summary"]  # the card is said to be on show
 
 
@@ -151,20 +151,25 @@ def test_the_workspace_travels_on_the_message(store, chat):
     assert "t.csv: table, 2 rows" in main.requests[0]["messages"][-1]["content"]  # the workspace, on the message
 
 
-def test_the_system_prompt_never_changes_and_context_is_appended(store, chat):
-    from app.tools.notes import save_note
+def test_the_system_prompt_changes_only_with_agent_md_and_context_is_appended(store, chat):
+    """The system prompt is the fixed prompt and agent.md as it is now: the same turn after turn (llama.cpp reuses the
+    prompt up to its first change) until agent.md changes; what the workspace holds travels on the messages."""
+    from app.tools import agent_md
+    from app.tools.file_ops import files
     ws, index = store.open(chat["workspace_id"])
     main = ScriptedProvider([answer("one"), answer("two"), answer("three")])
     run(send(store, chat["id"], "first", main, ScriptedProvider([])))
     ws.add_table(pd.DataFrame({"a": [1, 2]}), name="sales.csv")
-    save_note(ws, "Fiscal year", "The fiscal year starts in April.", index=index)
     run(send(store, chat["id"], "second", main, ScriptedProvider([])))
+    files(ws, index, "write", name="agent.md", content=agent_md.HEADER + "\n- The fiscal year starts in April.\n")
     run(send(store, chat["id"], "third", main, ScriptedProvider([])))
-    assert len({r["system"] for r in main.requests}) == 1 and main.requests[0]["system"] == MAIN
+    systems = [r["system"] for r in main.requests]
+    assert systems[0] == systems[1] and systems[0].startswith(MAIN) and "(nothing yet)" in systems[0]
+    assert systems[2].startswith(MAIN) and systems[2].endswith("- The fiscal year starts in April.]")
     first, second, third = (r["messages"][-1]["content"] for r in main.requests)
-    assert "[Workspace now:\nempty" in first and "Pinned" not in first  # a snapshot opens the chat
-    assert "+ sales.csv: table, 2 rows" in second and "fiscal year starts in April" in second  # only the changes
-    assert third.endswith("third")  # nothing changed: nothing added
+    assert "[Workspace now:\n" in first and "agent.md" in first  # a snapshot opens the chat (agent.md is a file)
+    assert "+ sales.csv: table, 2 rows" in second and "fiscal year" not in second  # only the changes
+    assert "fiscal year" not in third and "~ agent.md" in third  # agent.md's text is in the system prompt only
     earlier = main.requests[2]["messages"]
     assert [m["content"] for m in earlier if m["role"] == "user"][:2] == [first, second]  # history never rewritten
 
@@ -178,7 +183,8 @@ def test_a_failed_turn_keeps_its_error_in_the_trace(store, chat):
 
 
 def test_a_copy_of_the_apps_notes_never_reaches_the_user(store, chat):
-    echoed = "Saved plan.md.\n\n[Workspace now:\ndata_1  sales.csv - 3 rows]\n[Pinned notes (your 5 latest notes):\n- A (03 Oct): b]"
+    echoed = ("Saved plan.md.\n\n[Workspace now:\ndata_1  sales.csv - 3 rows]\n[agent.md - your standing memory for "
+              "this project, in view in every chat; to remember something, change it with files:\n- b]")
     main = ScriptedProvider([answer(echoed)])
     events = run(send(store, chat["id"], "save my plan", main, ScriptedProvider([])))
     assert events[-1]["answer"] == "Saved plan.md." and store.messages(chat["id"], for_model=True)[-1]["text"] == "Saved plan.md."
@@ -193,7 +199,7 @@ def test_the_rolling_window_cut_is_kept_between_turns(store, chat):
     dropped = store.chat(chat["id"])["dropped"]
     assert dropped > 0
     last = main.requests[-1]
-    assert last["system"] == MAIN
+    assert last["system"].startswith(MAIN)
     cut_at = next(m["content"] for m in last["messages"] if "earlier turn(s) of this chat are not shown" in m["content"])
     assert "[Workspace now:" in cut_at and "standing instructions" in cut_at and "always answer in metric" in cut_at
     first = store.messages(chat["id"])[0]["said"][:19]  # '[Sat 04 Oct 2026, 10:37]': the chat's own first stamp

@@ -50,7 +50,7 @@ class Settings:
     # Empty: no browser.
     playwright_mcp: str = os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", "")
     browser_channel: str = os.environ.get("ASSISTANT_BROWSER", "msedge")
-    # Search by meaning (documents, notes, chats and pictures): EmbeddingGemma 2 served by llama-server
+    # Search by meaning (files, chats and pictures): EmbeddingGemma 2 served by llama-server
     # (app/rag/embed_server.py) - the model file (its GGUF), its picture projector, where the server listens,
     # and the llama-server the app starts itself (empty: one started by hand at that address is used).
     # No model file: fastembed's small CPU model (text only, downloaded once).

@@ -6,7 +6,7 @@
                 pending  - an ask_user question waiting for its answer (JSON), or NULL
     messages    id, chat_id -> chats (ON DELETE CASCADE), role, body (the message as JSON), created_at
 
-A workspace's files, tables, images, notes, sandbox and search index (documents, notes, past chats) live
+A workspace's files (agent.md among them), tables, images, sandbox and search index (files, past chats) live
 in its own folder, <root>/workspaces/<id>/. Deleting a workspace deletes its rows - its chats and
 their messages go with it by cascade - and then the folder, after checking that the folder really
 is inside <root>/workspaces. Deleting a chat also takes its turns out of the search index, so
@@ -37,7 +37,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from app.tools import files
+from app.tools import agent_md, files
 from app.tools.search_index import PICTURE, TABLE, SearchIndex
 from app.tools.workspace import Workspace
 
@@ -150,12 +150,13 @@ class Store:
         return self.root / "workspaces" / ws_id
 
     def open(self, ws_id: str) -> tuple[Workspace, SearchIndex]:
-        """The workspace's files and its search index (documents, notes, past chats)."""
+        """The workspace's files and its search index (files, past chats); agent.md is made the first time."""
         with self._lock:
             first = ws_id not in self._open
             if first:
                 folder = self.folder(ws_id)
                 self._open[ws_id] = (Workspace(folder), SearchIndex(folder / "search.sqlite", self.embedder))
+                agent_md.ensure(self._open[ws_id][0])
             opened = self._open[ws_id]
         if first and self.embedder is not None:
             self.refresh(ws_id)

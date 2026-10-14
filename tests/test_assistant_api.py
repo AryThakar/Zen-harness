@@ -14,7 +14,7 @@ from app.api import assistant as assistant_api
 from app.assistant.store import Store
 from app.main import create_app
 from app.rag.embed import HashEmbedder
-from app.tools.notes import pinned_text, save_note
+from app.tools import agent_md
 
 
 class Slots:
@@ -173,21 +173,31 @@ def test_upload_size_is_limited(app_and_slots):
     assert r.status_code == 413
 
 
-def test_the_latest_notes_are_pinned_and_only_they_are_listed(app_and_slots):
+def test_remembering_edits_agent_md_which_is_in_view_and_never_in_the_history(app_and_slots):
+    """'Remember X' is an edit of agent.md (no approval step); the next turn's system prompt holds it as it is now,
+    and no stored message carries it - it is never in the history (the user's design: in view every turn, stripped
+    from the history)."""
     client, slots, store = app_and_slots
     ws_id, chat_id = workspace_and_chat(client)
-    slots.main.turns = [ModelTurn(text="", tool_calls=[call("notes", mode="save", title="Revenue", content="Use net_sales.")],
+    items = client.get(f"/assistant/workspaces/{ws_id}/items").json()
+    assert items[0]["name"] == "agent.md" and items[0]["memory"] is True  # made with the workspace, first in the panel
+    slots.main.turns = [ModelTurn(text="", tool_calls=[call("files", mode="edit", name="agent.md",
+                                                            old_text="2,000 characters.\n",
+                                                            new_text="2,000 characters.\n\n- Revenue is net_sales.\n")],
                                   stop="tool_use"),
-                        ModelTurn(text="Saved.", stop="end")]
+                        ModelTurn(text="Noted in agent.md.", stop="end"),
+                        ModelTurn(text="Revenue is net_sales.", stop="end")]
     stream = events(client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Remember: revenue is net_sales"}))
-    assert any(k == "artifact" and d["artifact"]["type"] == "note" for k, d in stream)
+    assert not any(k == "question" for k, _ in stream)  # changed without asking
     ws, _ = store.open(ws_id)
-    assert "Use net_sales." in pinned_text(ws)  # pinned at once: no approval step
-    for n in range(6):
-        save_note(ws, f"Fact {n}", f"Fact number {n}.")
-    notes = [i for i in client.get(f"/assistant/workspaces/{ws_id}/items").json() if i["kind"] == "note"]
-    assert [i["title"] for i in notes] == [f"Fact {n}" for n in range(1, 6)] and all(i["pinned"] for i in notes)
-    assert client.post(f"/assistant/workspaces/{ws_id}/notes/note_1/pin", json={"pin": True}).status_code == 404
+    assert agent_md.body(ws) == "- Revenue is net_sales."
+    events(client.post(f"/assistant/chats/{chat_id}/messages", json={"text": "Which column is revenue?"}))
+    assert "- Revenue is net_sales." in slots.main.requests[-1]["system"]  # in view, as it is now
+    assert "(nothing yet)" in slots.main.requests[0]["system"]  # the first turn saw it as it was then
+    stored = json.dumps(store.messages(chat_id), ensure_ascii=False)
+    assert "your standing memory" not in stored  # never in the history
+    edit = client.put(f"/assistant/workspaces/{ws_id}/items/{items[0]['id']}/text", json={"text": "x" * 2001})
+    assert edit.status_code == 422 and "at most 2,000 characters" in edit.json()["detail"]  # the user's edit too
 
 
 def test_web_icons_are_served_sandboxed(app_and_slots, monkeypatch):

@@ -9,7 +9,7 @@ content). A file's report - what a helper did with it - comes first: for main al
 without start (the report answers most questions), for a helper beside the first lines.
 
 What isn't text says which tool reads it: an image -> view_image, a table -> its tools (a helper's
-script: table('data_1')). search_files finds passages that match a question; this reads in order.
+script: table('data_1')). files(mode='find') finds the files that match a question; this reads in order.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ HELPER_CHARS = 12_000
 # Line numbers help to talk about code (filetypes.CODE); in data or prose they would be copied as if they were
 # content.
 MAX_FILE = 10 * 1024 * 1024
-KINDS = ("file", "note", "image", "table")
+KINDS = ("file", "image", "table")
 
 
 @tool
@@ -46,7 +46,7 @@ def read(ws: Workspace, item: str, start: int | None, budget: int, tool: str = "
     report = ws.report(item) if not start or start <= 1 else None
     if report and report_alone and start is None:  # what a helper did with it: enough for most questions
         return ok({"file": item, "name": name, "report": report, "next": _call(tool, name, 1)})
-    if kind != "file" and kind != "note":
+    if kind != "file":
         return ok({"file": item, "name": name, **_not_text(ws, item, e, tool)})
     start = max(1, start or 1)  # start=0: counting from zero means the first line
     path = ws.path(item)

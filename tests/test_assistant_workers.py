@@ -61,20 +61,22 @@ def test_artifacts_go_to_the_ui(ctx):
     assert ctx.seen and ctx.seen[0]["tool"] == "draw_diagram" and ctx.seen[0]["type"] == "diagram"
 
 
-def test_a_tool_result_with_plain_notes_is_traced(ctx):
+def test_the_files_a_find_returned_are_sources_and_plain_notes_are_not(ctx):
     from app.assistant.workers import Trace
     from app.tools.core import ok
     trace = Trace()
     trace.add("forecast", {"data": "data_1"}, ok({"notes": ["Dates were made from the 'year' and 'quarter' columns."]}))
-    trace.add("search_files", {"query": "q"}, ok({"passages": [], "notes": [{"source": "note 'A' (note_1)", "text": "x"}]}))
-    assert trace.sources == {"note 'A' (note_1)"}  # only search_files' notes are sources
+    trace.add("files", {"mode": "find", "query": "q"}, ok({"files": [{"path": "handbook.pdf", "match": "page 9: x"}],
+                                                           "pages_read_before": [{"source": "web page 'A' (https://a.example)",
+                                                                                  "text": "y"}]}))
+    assert trace.sources == {"handbook.pdf", "web page 'A' (https://a.example)"}
 
 
 def test_main_slot_sees_its_tools_and_all_three_helpers_always(ctx):
     """Always all three: with the analyst hidden until a table existed, main couldn't plan 'find data, bring it in,
     analyse it', and the coder looked like the only way."""
     names = set(main_tools(ScriptedProvider([]), ctx))
-    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "plan",
+    assert names == {"get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "plan",
                      "ask_user", "files", "research_web", "ask_knowledge", "analyze_or_code"}
     assert "run_code" not in names  # only inside the analyst-programmer
 
@@ -233,13 +235,18 @@ def test_number_grounding(answer, evidence, missing):
 # ---------------------------------------------------------------- knowledge and coder workers
 
 def test_knowledge_sources_must_be_ones_the_tools_returned(ctx):
-    from app.tools.notes import save_note
-    save_note(ctx.ws, "Revenue column", "Use net_sales as revenue.", index=ctx.index)
+    from app.tools.file_ops import files
+    files(ctx.ws, ctx.index, "write", name="data-guide.md", content="# Columns\n\nUse net_sales as revenue.\n")
+    assert set(PROFILES["knowledge"].own_tools()) == {"files", "recall"}  # files: find and read only
     model = ScriptedProvider([
-        tools_turn(call("search_files", query="revenue column")),
-        submit(answer="Use net_sales.", sources=["note 'Revenue column' (note_1)"]),
+        tools_turn(call("files", mode="find", query="revenue column")),
+        submit(answer="Use net_sales.", sources=["data-guide.md"]),
     ])
     assert "warnings" not in run_worker(model, PROFILES["knowledge"], "Which column is revenue?", ctx)
+    writes = ScriptedProvider([tools_turn(call("files", mode="write", name="x.md", content="x")),
+                               submit(answer="x", sources=[])])
+    run_worker(writes, PROFILES["knowledge"], "q", ctx)
+    assert "x.md" not in [ctx.ws.label(k) for k in ctx.ws.ids()]  # it reads, never writes
     model = ScriptedProvider([submit(answer="x", sources=["handbook.pdf, page 9"]),
                               submit(answer="x", sources=["handbook.pdf, page 9"])])
     assert "not a source any tool returned" in run_worker(model, PROFILES["knowledge"], "q", ctx)["warnings"][0]

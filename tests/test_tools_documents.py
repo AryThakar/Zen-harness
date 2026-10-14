@@ -16,7 +16,7 @@ from pptx import Presentation
 from app.rag.embed import HashEmbedder
 from app.tools import chart_image
 from app.tools.file_ops import files, markdown_docx
-from app.tools.files import search_files
+from app.tools.files import find_files
 from app.tools.find_patterns import find_patterns
 from app.tools.forecast import forecast
 from app.tools.make_chart import make_chart
@@ -105,7 +105,7 @@ def test_slides_are_made_from_markdown_with_charts_and_notes(ws, index, sales):
             f"# The trend\n![Revenue by month]({ws.entry(chart)['name']})\n\n## Next steps\n1. Hire\n2. Expand\n")
     r = files(ws, index, "write", name="review.pptx", content=deck)
     assert r.status == "ok" and r.result["kind"] == "document"  # slides are a document: searchable, like Word
-    assert search_files(index, "revenue grew in the North").result["passages"]
+    assert find_files(ws, index, "revenue grew in the North").result["files"][0]["path"] == "review.pptx"
     prs = Presentation(io.BytesIO(ws.path(r.result["file"]).read_bytes()))
     slides = list(prs.slides)
     assert [s.shapes.title.text for s in slides] == ["Q4 sales review", "Highlights", "The trend", "Next steps"]

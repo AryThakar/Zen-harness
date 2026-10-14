@@ -200,9 +200,9 @@ def _key(name):
         return text
     low = text.casefold()
     for k, e in items.items():
-        if e["kind"] != "note" and e["name"].casefold() == low:
+        if e["name"].casefold() == low:
             return k
-    base = [k for k, e in items.items() if e["kind"] != "note" and e["name"].rsplit("/", 1)[-1].casefold() == low]
+    base = [k for k, e in items.items() if e["name"].rsplit("/", 1)[-1].casefold() == low]
     return base[0] if len(base) == 1 else None
 
 def table(name):
@@ -220,7 +220,7 @@ def path(name):
     """Where a workspace file is (e.g. open(path('notes.md'))) - its name works as it is, too."""
     items, k = _items(), _key(name)
     if k is None or items[k]["kind"] == "note":
-        raise KeyError(f"No file {{name!r}}. Files: {{', '.join(e['name'] for e in items.values() if e['kind'] != 'note')}}")
+        raise KeyError(f"No file {{name!r}}. Files: {{', '.join(e['name'] for e in items.values())}}")
     return _os.path.join(_WS, items[k]["file"])
 
 def _open_resolving(file, mode="r", *args, **kwargs):
@@ -336,8 +336,8 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: 
     with _lock(ws.root):  # one run at a time in a workspace: each writes the script and registers what changed
         tmp = run_dir / "tmp"
         tmp.mkdir(parents=True, exist_ok=True)
-        tracked = {k: ws.entry(k)["file"] for k in ws.ids() if ws.kind(k) != "note"}
-        protected = [ws.entry(k)["file"] for k in ws.ids() if ws.kind(k) != "note" and ws.by_user(k)]
+        tracked = {k: ws.entry(k)["file"] for k in ws.ids()}
+        protected = [str(p.relative_to(ws.root)).replace("\\", "/") for p in ws.protected()]  # the user's files, agent.md
         script = str((run_dir / SCRIPT).resolve())
         (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script,
                                                    name=name or script, images=tuple(IMAGES), tracked=tracked,

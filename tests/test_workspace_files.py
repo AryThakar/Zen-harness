@@ -12,7 +12,7 @@ import pytest
 from PIL import Image
 
 from app.assistant.registry import TOOLS, ToolContext, execute
-from app.tools.files import index_items, search_files, store_file
+from app.tools.files import find_files, index_items, store_file
 from app.tools.sandbox import run_python
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import ITEM_REF, Workspace, present
@@ -46,7 +46,7 @@ def test_a_path_is_one_file_for_every_reader(ctx, tmp_path):
     ran = run_python(ctx.ws, "import pandas as pd\nprint(pd.read_csv('sales.csv')['amount'].sum())")
     assert ran.result["output"].strip() == "30"  # a script: the same file, by the same name
     index_items(ctx.ws, ctx.index)
-    assert search_files(ctx.index, "sales region").result["passages"][0]["source"] == "table 'sales.csv'"
+    assert find_files(ctx.ws, ctx.index, "sales region").result["files"][0]["path"] == "sales.csv"
 
 
 def test_an_identical_upload_is_the_file_already_here_and_a_new_one_gets_its_own_name(ctx, tmp_path):
@@ -80,14 +80,14 @@ def test_the_index_follows_the_folder_however_a_file_arrives(ctx):
     execute(ctx, "files", {"mode": "write", "name": "memo.md", "content": "# Memo\n\nThe launch moves to June."})
     run_python(ctx.ws, "open('script_notes.md', 'w').write('# Notes\\n\\nThe budget doubles in July.')")
     index_items(ctx.ws, ctx.index)
-    assert search_files(ctx.index, "budget doubles").result["passages"]  # a document a script wrote
+    assert find_files(ctx.ws, ctx.index, "budget doubles").result["files"][0]["path"] == "script_notes.md"  # a script wrote it
     memo = ctx.ws.find("memo.md")
     ctx.ws.rename(memo, "launch/memo.md")
     index_items(ctx.ws, ctx.index)
-    hit = search_files(ctx.index, "launch moves to June").result["passages"][0]
-    assert hit["source"].startswith("launch/memo.md")
+    hit = find_files(ctx.ws, ctx.index, "launch moves to June").result["files"][0]
+    assert hit["path"] == "launch/memo.md"
     ctx.ws.delete(memo)
-    assert index_items(ctx.ws, ctx.index) == 0 and not search_files(ctx.index, "launch moves to June").result["passages"]
+    assert index_items(ctx.ws, ctx.index) == 0 and not find_files(ctx.ws, ctx.index, "launch moves to June").result["files"]
 
 
 def test_what_a_model_reads_names_files_by_path_and_leaves_data_alone(ctx):
@@ -148,11 +148,10 @@ def test_a_workspace_of_the_first_layout_is_moved_with_nothing_lost(tmp_path):
     ws = Workspace(root)
     paths = {k: ws.label(k) for k in ws.ids()}
     assert paths == {"data_1": "sales.csv", "data_2": "sales - cleaned.csv", "image_1": "a-majestic-lion-with-a-thick-golden-mane.png",
-                     "file_1": "story.txt", "file_2": "avg.py", "note_1": "Names"}
+                     "file_1": "story.txt", "file_2": "avg.py"}  # notes are left behind: agent.md replaced them
     assert ws.table("data_1")["amount"].tolist() == [1, 2] and (ws.files / "sales.csv").exists()
     assert ws.path("file_1").read_bytes() == b"the user's story" and ws.path("image_1").read_bytes() == _png()
     assert [k for k in ws.ids() if ws.by_user(k)] == ["data_1", "file_1"]  # an upload is the user's; made things not
-    assert "The user's name is Ary" in ws.path("note_1").read_text(encoding="utf-8")
     assert ws.report("data_1") == "# Sales\n\n- Table: sales.csv (sales.csv)\n- Tables made: sales - cleaned.csv\n"
     assert (ws.zen / "registry.v1.json").exists() and (ws.zen / "old-sandbox" / "script.py").exists()
     assert not (root / "registry.json").exists() and not list(root.glob("data_*.parquet"))

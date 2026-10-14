@@ -6,6 +6,6 @@
     registry.py  every tool's input schema and description (what the model sees) and how a call runs
     checks.py    main's honesty checks: repeated failures, invented numbers, announced / claimed / asked to
                  remember but nothing done
-    context.py   what travels on the messages (time, workspace, notes) and the rolling window
+    context.py   what travels on the messages (time, workspace, agent.md) and the rolling window
     store.py     workspaces, chats and their messages (SQLite)
 """

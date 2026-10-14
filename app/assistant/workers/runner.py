@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from app.providers.base import Provider, ProviderError
 from app.tools.approval import carry_out
 from app.tools.core import ToolError, ToolResult
-from app.tools.notes import pinned, source
+from app.tools import agent_md
 from app.tools.reports import DATA_SECTIONS, assemble
 from app.tools.vision import prepare
 from app.tools.workspace import ITEM_REF, present
@@ -141,7 +141,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     progress = progress or (lambda event: None)
     system = profile.instructions  # the same for every task of this role, so llama.cpp keeps it cached
     sees = profile.sees_images and bool(getattr(provider, "sees_images", lambda: False)())
-    given = [k for k in (ctx.ws.find(str(f)) for f in files or []) if k and ctx.ws.kind(k) != "note"]
+    given = [k for k in (ctx.ws.find(str(f)) for f in files or []) if k]
     table = next((k for k in given if ctx.ws.kind(k) == "table"), None)
     named = list(dict.fromkeys([k for k in given if ctx.ws.kind(k) == "image"] + (_task_images(ctx, task) if sees else [])))
     # A report or a task written in the first design's words may name files by key: by path, as everywhere.
@@ -156,9 +156,9 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     tool_specs = [t.spec() for t in own.values()] + [finish_spec]
     trace = Trace(existing=set(ctx.ws.ids()), table=table, stamps=_stamps(ctx))
     ctx.trace = trace
-    for n in pinned(ctx.ws):  # the pinned notes in its opening are evidence too: citable like search results
-        trace.sources.add(source(n))
-        trace.passages.append((source(n), n["text"]))
+    if agent_md.body(ctx.ws):  # agent.md, in its opening, is evidence too: citable like a file it read
+        trace.sources.add(agent_md.AGENT_FILE)
+        trace.passages.append((agent_md.AGENT_FILE, agent_md.body(ctx.ws)))
     limit, count = prompt_limit(provider), counter(provider, system, tool_specs)  # exact, from the server
     retried, shortened, cut = False, 0, 0
     progress({"type": "worker_start", "worker": profile.name, "task": task, "limit": limit})
@@ -384,7 +384,7 @@ def _pages_seen(ctx: ToolContext, profile: Profile) -> str:
 
 def _stamps(ctx: ToolContext) -> dict[str, str]:
     """Each file's content hash before the task: what changed during it is told apart from what was there."""
-    return {k: ctx.ws.entry(k).get("sha", "") for k in ctx.ws.ids() if ctx.ws.kind(k) != "note"}
+    return {k: ctx.ws.entry(k).get("sha", "") for k in ctx.ws.ids()}
 
 
 def _submitted(profile: Profile, raw, trace: Trace, context: str) -> dict | str:
@@ -422,7 +422,7 @@ def _done(ctx: ToolContext, profile: Profile, result: dict, trace: Trace, proble
         out["stopped"] = f"The helper stopped early: {stopped}. What it did is below - it is kept; nothing is lost."
         problems = problems or ["the helper stopped before it finished"]
     out["ran"] = _ran(trace)
-    made = [k for k in ctx.ws.ids() if k not in trace.existing and ctx.ws.kind(k) != "note"]
+    made = [k for k in ctx.ws.ids() if k not in trace.existing]
     changed = [k for k, sha in trace.stamps.items() if k in ctx.ws.ids() and ctx.ws.entry(k).get("sha", "") != sha]
     if made or changed:
         out["files"] = ([{"id": k, "name": ctx.ws.label(k), "kind": ctx.ws.kind(k)} for k in made]

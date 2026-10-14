@@ -6,7 +6,7 @@ panel, an @ in the message box), main, every helper, a script (its working folde
     .zen/cache/            a table's typed copy (Parquet), rebuilt when its file changes
     .zen/versions/<key>/   earlier versions of a file, the last VERSIONS_KEPT
     .zen/reports/<key>.md  what a helper did with a file
-    .zen/notes/<key>.md    notes (the AI's memory - not files)
+    files/agent.md         the project's standing memory, always in view (agent_md.py)
 
 One write path: put() (and adopt(), for a file a script wrote in place) is the only way a file arrives
 or changes. It keeps paths unique (an existing name gets ' (2)'), writes atomically, keeps the version
@@ -14,7 +14,7 @@ before a change, recognises identical content where asked (an upload already her
 table and caches it, checks an image is one, and records lineage. Everything else reads.
 
 Paths, not ids: every model-facing text names a file by its path. Each file also has an internal key
-(data_3, image_7, file_2, note_1 - kept from the first design, so old chats and the search index still
+(data_3, image_7, file_2 - kept from the first design, so old chats and the search index still
 find it); keys stay inside the app and the UI's links. resolve() takes a path (any case), a bare file name
 when one file has it, a copied listing line ('sales.csv: table, ...'), or a key.
 
@@ -52,7 +52,8 @@ from .filetypes import IMAGE_FORMATS, SCRIPT_TABLES, TABLE
 from .values import type_columns
 
 FILES, ZEN = "files", ".zen"
-PREFIX = {"table": "data", "image": "image", "file": "file", "note": "note"}
+PREFIX = {"table": "data", "image": "image", "file": "file"}
+AGENT_FILE = "agent.md"  # the project's standing memory (agent_md.py)
 TABLE_FILES = (*TABLE, *SCRIPT_TABLES)  # files that are tables
 VERSIONS_KEPT = 10
 MAX_PATH = 150
@@ -99,10 +100,15 @@ class Workspace:
         self._registry_path = self.zen / "registry.json"
         if (self.root / "registry.json").exists() and not self._registry_path.exists():
             self._migrate()
-        for d in (self.files, self.zen / "cache", self.zen / "versions", self.zen / "reports", self.zen / "notes"):
+        for d in (self.files, self.zen / "cache", self.zen / "versions", self.zen / "reports"):
             d.mkdir(parents=True, exist_ok=True)
         self._reg = json.loads(self._registry_path.read_text("utf-8")) if self._registry_path.exists() \
             else {"next": {}, "items": {}}
+        notes = [k for k, e in self._reg["items"].items() if e["kind"] == "note"]
+        if notes:  # notes are gone (agent.md replaces them); the ones of the first design are dropped
+            for k in notes:
+                del self._reg["items"][k]
+            self._save()
 
     # ------------------------------------------------------------------ the one write path
 
@@ -117,8 +123,6 @@ class Workspace:
         if key is not None:
             return self._replace(key, data, meta)
         kind = kind or kind_of(str(name))
-        if kind == "note":
-            return self._put_note(str(name), data, parent, meta)
         path = clean_path(name, strict=strict)
         frame = data if isinstance(data, pd.DataFrame) else None
         if frame is not None:
@@ -202,13 +206,6 @@ class Workspace:
     def _replace(self, key: str, data: bytes | pd.DataFrame, meta: dict | None) -> Put:
         e = self.entry(key)
         frame = data if isinstance(data, pd.DataFrame) else None
-        if e["kind"] == "note":
-            _write_atomic(self.root / e["file"], bytes(data))
-            e.update(bytes=len(data), updated=_now())
-            if meta is not None:
-                e["meta"] = meta
-            self._save()
-            return Put(key, e["name"])
         path, info = e["name"], {}
         if e["kind"] == "image":
             ext, info = image_info(data, path)
@@ -230,15 +227,6 @@ class Workspace:
             self._cache_table(key, e, frame, e.get("meta", {}).get("sheet"))
         self._save()
         return Put(key, path)
-
-    def _put_note(self, title: str, data, parent, meta) -> Put:
-        new_key = self._new_id("note")
-        rel = f"{ZEN}/notes/{new_key}.md"
-        _write_atomic(self.root / rel, bytes(data))
-        self._reg["items"][new_key] = {"kind": "note", "name": title, "file": rel, "by": "assistant", "parent": parent,
-                                       "created": _now(), "bytes": len(data), "meta": meta or {}}
-        self._save()
-        return Put(new_key, title)
 
     def _cache_table(self, key: str, entry: dict, frame: pd.DataFrame | None, sheet: str | None) -> None:
         """The table's typed copy, its size and the file's stamp (a later change to the file shows by it)."""
@@ -280,9 +268,8 @@ class Workspace:
 
     def add_bytes(self, kind: str, data: bytes, ext: str, name: str, parent: str | None = None,
                   meta: dict | None = None, *, by: str = "assistant") -> str:
-        """A file the tools made (a script's output, a written file) - or a note."""
-        if kind != "note":
-            name = with_suffix(name, ext) if not PurePosixPath(str(name)).suffix else name
+        """A file the tools made (a script's output, a written file)."""
+        name = with_suffix(name, ext) if not PurePosixPath(str(name)).suffix else name
         return self.put(name, data, kind=kind, parent=parent, meta=meta, by=by).key
 
     def add_image(self, data: bytes, name: str, parent: str | None = None, meta: dict | None = None, *,
@@ -331,7 +318,7 @@ class Workspace:
         return self.entry(key)["kind"]
 
     def label(self, key: str) -> str:
-        """How the model and the user name it: its path (a note: its title)."""
+        """How the model and the user name it: its path."""
         return self.entry(key)["name"]
 
     def by_user(self, key: str) -> bool:
@@ -339,8 +326,9 @@ class Workspace:
         return self.entry(key).get("by") == "user"
 
     def protected(self) -> list[Path]:
-        """The files the user brought: a script may read them, never change them."""
-        return [self.root / e["file"] for e in self._reg["items"].values() if e.get("by") == "user" and e["kind"] != "note"]
+        """The files the user brought, and agent.md: a script may read them, never change them."""
+        return [self.root / e["file"] for e in self._reg["items"].values()
+                if e.get("by") == "user" or e["name"].casefold() == AGENT_FILE]
 
     # ------------------------------------------------------------------ changing
 
@@ -359,13 +347,8 @@ class Workspace:
 
     @_locked
     def rename(self, key: str, name: str) -> str:
-        """A file moved to another path (a note: retitled); returns the new path. ToolError when the path is
-        another file's."""
+        """A file moved to another path; returns the new path. ToolError when the path is another file's."""
         e = self.entry(key)
-        if e["kind"] == "note":
-            e["name"] = name
-            self._save()
-            return name
         path = clean_path(name, strict=True)
         taken = self.find_path(path)
         if taken and taken != key:
@@ -431,14 +414,13 @@ class Workspace:
     def find_path(self, path: str, kinds: tuple[str, ...] | None = None) -> str | None:
         """The file at this path, any case."""
         want = str(path).replace("\\", "/").strip().strip("/").casefold()
-        return next((k for k, e in self._reg["items"].items() if e["kind"] != "note" and e["name"].casefold() == want
+        return next((k for k, e in self._reg["items"].items() if e["name"].casefold() == want
                      and (kinds is None or e["kind"] in kinds)), None)
 
     @_locked
     def find(self, ref: str, kinds: tuple[str, ...] | None = None) -> str | None:
         """The file a model or the user means, or None: its path in any case; its bare file name when one file
-        has it; a line copied from a listing ('sales.csv: table, ...'); a key (old chats, the UI); a note's
-        title."""
+        has it; a line copied from a listing ('sales.csv: table, ...'); a key (old chats, the UI)."""
         text = " ".join(str(ref).split()).strip("'\"`").replace("\\", "/").strip()
         items = {k: e for k, e in self._reg["items"].items() if kinds is None or e["kind"] in kinds}
         if text in items:
@@ -449,7 +431,7 @@ class Workspace:
             if named:
                 return named[-1]
             if "/" not in want:
-                base = [k for k, e in items.items() if e["kind"] != "note" and e["name"].rsplit("/", 1)[-1].casefold() == want]
+                base = [k for k, e in items.items() if e["name"].rsplit("/", 1)[-1].casefold() == want]
                 if len(base) == 1:
                     return base[0]
         mentioned = [k for k in dict.fromkeys(ITEM_REF.findall(text)) if k in items]
@@ -469,8 +451,7 @@ class Workspace:
             raise ToolError(f"{e['name']} is {_a(e['kind'])}, not {_a(wanted)}."
                             + WRONG_KIND.get((e["kind"], kinds[0] if kinds else ""), "").format(path=e["name"]),
                             field=field)
-        pool = {k: e["name"] for k, e in self._reg["items"].items()
-                if (kinds is None or e["kind"] in kinds) and e["kind"] != "note"}
+        pool = {k: e["name"] for k, e in self._reg["items"].items() if kinds is None or e["kind"] in kinds}
         if not pool:
             raise ToolError(f"No {wanted} '{ref}': this workspace has no {wanted}s yet.", field=field)
         close = [pool[k] for _, _, k in process.extract(str(ref), pool, scorer=fuzz.WRatio, limit=3, score_cutoff=60)]
@@ -497,12 +478,10 @@ class Workspace:
     @_locked
     def lines(self) -> dict[str, str]:
         """One line per file, oldest first, by key: 'path: what it is' (content is never listed - tools read
-        it). Notes are not files: they reach the model as pinned notes and through search."""
+        it)."""
         out = {}
         for key, e in self._reg["items"].items():
             meta = e.get("meta", {})
-            if e["kind"] == "note":
-                continue
             if e["kind"] == "table":
                 cols = e.get("columns", [])
                 shown = ", ".join(cols[:8]) + (" ..." if len(cols) > 8 else "")
@@ -557,7 +536,7 @@ class Workspace:
     @_locked
     def _free(self, path: str, own: str | None = None) -> str:
         """``path``, or 'name (2).ext' ... when another file has it (any case) or something is already there."""
-        taken = {e["name"].casefold() for k, e in self._reg["items"].items() if k != own and e["kind"] != "note"}
+        taken = {e["name"].casefold() for k, e in self._reg["items"].items() if k != own}
         p = PurePosixPath(path)
         candidate, n = path, 1
         while candidate.casefold() in taken or (self.files / candidate).exists() and (own is None or (
@@ -586,11 +565,11 @@ class Workspace:
         """A workspace of the first layout (data_1.parquet, image_3.png, file_2.py ... beside registry.json)
         moved into this one: every file to its path under files/ (unique; a generated picture's long prompt
         name shortened; the format's extension added where the name had none), a table written as its CSV
-        file with its typed copy as the cache, reports and notes under .zen, who brought each file (an upload
+        file with its typed copy as the cache, reports under .zen (notes are left: agent.md replaced them), who brought each file (an upload
         or a download: the user; anything the assistant made: the assistant), and its hash. The old registry
         and script folder are kept under .zen. Nothing is deleted."""
         old = json.loads((self.root / "registry.json").read_text("utf-8"))
-        for d in (self.files, self.zen / "cache", self.zen / "reports", self.zen / "notes", self.zen / "versions"):
+        for d in (self.files, self.zen / "cache", self.zen / "reports", self.zen / "versions"):
             d.mkdir(parents=True, exist_ok=True)
         self._reg = {"next": old.get("next", {}), "items": {}}
         for key, e in old.get("items", {}).items():
@@ -606,12 +585,6 @@ class Workspace:
                     shutil.move(src, self.root / rel)
                 e["report"] = {**e["report"], "file": rel}
             if e["kind"] == "note":
-                src = self.root / e.get("file", f"{key}.md")
-                rel = f"{ZEN}/notes/{Path(e.get('file', key + '.md')).name}"
-                if src.exists():
-                    shutil.move(src, self.root / rel)
-                e["file"] = rel
-                self._reg["items"][key] = e
                 continue
             if e["kind"] == "table":
                 src = self.root / f"{key}.parquet"
@@ -812,7 +785,7 @@ def present(ws: Workspace, value):
 
     def path_of(match: re.Match) -> str:
         e = items.get(match[1])
-        return e["name"] if e and e["kind"] != "note" else match[0]
+        return e["name"] if e else match[0]
 
     def walk(v, skip: bool = False):
         if isinstance(v, dict):

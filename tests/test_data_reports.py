@@ -11,7 +11,7 @@ from app.providers.base import ModelTurn
 from app.providers.scripted import ScriptedProvider, call
 from app.assistant.registry import ToolContext
 from app.assistant.workers import PROFILES, run_worker
-from app.tools.files import search_files
+from app.tools.files import find_files
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -53,7 +53,8 @@ def test_the_report_is_kept_on_the_table_and_main_gets_the_results(ctx):
     card = next(a for a in ctx.seen if a["type"] == "report")
     assert card["table"] == "data_1" and card["name"] == "sales.csv" and card["report"] == kept
     assert ctx.ws.lines()["data_1"].endswith("| Which region sells most?")
-    assert search_files(ctx.index, "region sells most").result["passages"][0]["source"] == "the report on sales.csv"
+    hit = find_files(ctx.ws, ctx.index, "region sells most").result["files"][0]
+    assert hit["path"] == "sales.csv" and hit["match"].startswith("its report: ")
 
 
 def test_the_next_task_on_the_table_starts_from_its_report(ctx):

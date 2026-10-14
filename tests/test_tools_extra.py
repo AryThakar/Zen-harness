@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from app.tools.calc import calculate
-from app.tools.notes import save_note
+from app.tools import agent_md
 from app.tools.read_file import HELPER_CHARS, read_file
 from app.tools.sandbox import run_python
 from app.tools.workspace import Workspace
@@ -92,8 +92,6 @@ def test_read_documents_and_notes_without_numbers(ws):
     fid = ws.add_bytes("file", path.read_bytes(), "docx", name="policy.docx")
     text = read_file(ws, fid).result["text"]
     assert "returned within 14 days" in text and "1|" not in text
-    note = save_note(ws, "Plan", "Clean data_1, then forecast.").result["note"]
-    assert "forecast" in read_file(ws, note).result["text"]
 
 
 def test_reading_what_isnt_text_says_which_tool_reads_it(ws):
@@ -161,7 +159,7 @@ def test_a_table_queried_with_duckdb_in_a_script_gets_the_fix(ws):
 
 def test_a_script_changes_the_assistants_files_with_versions_and_never_the_users(ws, tmp_path):
     fid = ws.add_bytes("file", b"ORIGINAL", "py", name="average.py")
-    note = save_note(ws, "Plan", "Forecast by month.").result["note"]
+    memory = agent_md.ensure(ws)
     upload = tmp_path / "t.csv"
     upload.write_text("a\n1\n")
     table = ws.add_file(upload)  # the user's own
@@ -170,7 +168,9 @@ def test_a_script_changes_the_assistants_files_with_versions_and_never_the_users
     assert changed.result["files"] == [{"path": "average.py", "kind": "file", "updated": True}] and len(ws.versions(fid)) == 1
     refused = run_python(ws, "open('t.csv', 'w').write('a\\n2\\n')")
     assert refused.status == "invalid_arguments" and "the user's own file" in refused.result["errors"]
-    assert "Forecast by month" in read_file(ws, note).result["text"] and ws.table(table)["a"].tolist() == [1]
+    assert ws.table(table)["a"].tolist() == [1]
+    kept = run_python(ws, "open('agent.md', 'a').write('- run by a script')")  # agent.md is the project's memory
+    assert kept.status == "invalid_arguments" and "script" not in agent_md.text(ws) and memory in ws.ids()
 
 
 def test_env_file_fills_the_environment_without_overriding(tmp_path, monkeypatch):

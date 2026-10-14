@@ -25,7 +25,7 @@ from app.rag import embed
 from app.rag.embed import EmbedderUnavailable, HashEmbedder, ServerEmbedder
 from app.rag.embed_server import EmbedServer
 from app.tools import approval
-from app.tools.files import index_items, search_files
+from app.tools.files import find_files, index_items
 from app.tools.search_index import Passage, SearchIndex
 from app.tools.workspace import Workspace
 
@@ -345,9 +345,9 @@ def test_pictures_are_found_by_what_they_show(pictured):
     e.shows[_pixels(red)] = "lion standing savanna"
     ws.add_image(red, "image.png")
     assert index_items(ws, index) == 1
-    r = search_files(index, "a lion in the savanna")
-    found = r.result["passages"][0]
-    assert found["source"] == "picture 'image.png'" and "view_image" in found["text"]
+    r = find_files(ws, index, "a lion in the savanna")
+    found = r.result["files"][0]
+    assert found["path"] == "image.png" and "view_image confirms it" in found["match"]  # by what it shows
     assert index_items(ws, index) == 0  # nothing changed: nothing embedded again
 
 
@@ -392,11 +392,10 @@ def test_tables_are_found_by_their_columns_and_values(tmp_path):
     item = ws.add_table(pd.DataFrame({"region": ["North", "South"], "sales": [10, 20]}), "shop_sales.csv")
     ws.add_table(pd.DataFrame({"city": ["Pune"], "temperature": [31]}), "weather.csv")
     assert index_items(ws, index) == 2 and index_items(ws, index) == 0
-    r = search_files(index, "sales by region")
-    first = r.result["passages"][0]
-    assert first["source"] == "table 'shop_sales.csv'"
-    assert "Columns: region, sales" in first["text"] and "North, South" in first["text"]
-    assert "analyze_or_code" in first["text"]
+    r = find_files(ws, index, "sales by region")
+    first = r.result["files"][0]
+    assert first["path"] == "shop_sales.csv" and first["about"].startswith("table, 2 rows")
+    assert "Columns: region, sales" in first["match"] and "North, South" in first["match"]
     ws.rename(item, "q1_sales.csv")
     assert index_items(ws, index) == 1 and index.stamps("table")[item][2] == "q1_sales.csv"
     approval.delete(ws, index, [item])

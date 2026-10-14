@@ -3,7 +3,7 @@ tools, step limit, the check its result must pass) and how main and the user kno
 
 Three helpers, one job each, so main never has to guess between two that could both do a task:
     web        the internet: search, read pages, hand back cited answers and file links
-    knowledge  the user's own documents, notes and earlier chats
+    knowledge  the user's own files and earlier chats
     engineer   computing in the workspace: the numbers in tables (the data tools) and programs - Python files it
                writes, runs and edits in the workspace (files, run); it finishes with finish
 The data analyst and the coder were two helpers until 2026-10-10: both ran Python on the same workspace, and
@@ -94,7 +94,7 @@ class Profile:
     sees_images: bool = False  # is shown pictures in its conversation (when the server has vision)
 
     def own_tools(self) -> dict[str, Tool]:
-        tools = {n: HELPER_TOOLS.get(n) or TOOLS[n] for n in self.tools}
+        tools = {t.name: t for t in (HELPER_TOOLS.get(n) or TOOLS[n] for n in self.tools)}  # by the name it is called
         if self.asks:
             tools["ask_user"] = _ask_tool(DELEGATE_OF[self.name])
         return tools
@@ -126,7 +126,7 @@ DATA_TOOLS = ("inspect_data", "clean_data", "query_data", "make_chart", "compare
 
 PROFILES = {p.name: p for p in [
     Profile("web", prompts.WEB, ("web_search", "read_webpage"), 12, WebResult, _check_web, asks=True),
-    Profile("knowledge", prompts.KNOWLEDGE, ("search_files", "recall", "files"), 6, SourcedResult, _check_knowledge),
+    Profile("knowledge", prompts.KNOWLEDGE, ("files:read", "recall"), 6, SourcedResult, _check_knowledge),
     Profile("engineer", prompts.ENGINEER, (*DATA_TOOLS, "files", "run"), 12, WorkResult, _check_work, finish=FINISH,
             asks=True, sees_images=True),
 ]}
@@ -153,11 +153,13 @@ DELEGATES = {
                      "find a public file or dataset, and to read a page the user links to. Not for the user's own files "
                      "(ask_knowledge), or for bringing in a file whose link you have (files, mode='download').",
                              "Web researcher", ("Researching on the web", "Researched on the web")),
-    "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own documents, saved notes and earlier "
-                      "conversations, with sources. Use it when the user asks about their documents or notes, what was "
-                      "said or decided before, or for a summary of an attached document. The user's own files "
-                      "come first: when a document or note in the workspace may cover the question (judge by its "
-                      "name and title), ask here before research_web. Not for computing on a table (analyze_or_code).",
+    "ask_knowledge": Delegate("knowledge", QuestionIn, "Answer from the user's own files and earlier conversations, "
+                      "with sources: a helper finds and reads them in its own context. Use it for reading many or long "
+                      "documents (a summary of a long report, a comparison across files) and for what was said or "
+                      "decided in earlier chats. The user's own files come first: when one may cover the question "
+                      "(judge by its name and title), ask here before research_web. A quick lookup - which files, one "
+                      "passage, a pinned file - is yours with files (find, read). Not for computing on a table "
+                      "(analyze_or_code).",
                               "Knowledge", ("Looking through your files and chats", "Looked through your files and chats")),
     "analyze_or_code": Delegate("engineer", WorkTaskIn, "Give a task to the analyst-programmer, who works on the "
                      "workspace's files with tested data and machine-learning tools and with Python files it writes, runs "
@@ -180,5 +182,5 @@ DELEGATES = {
 DELEGATE_OF = {d.profile: name for name, d in DELEGATES.items()}  # helper -> main's tool for it
 
 
-MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "notes", "plan",
-               "ask_user", "files")
+MAIN_DIRECT = ("get_weather", "generate_image", "view_image", "draw_diagram", "calculate", "plan", "ask_user",
+               "files")

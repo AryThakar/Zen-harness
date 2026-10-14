@@ -18,8 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.tools import (analyze_text, ask, calc, clean_data, compare, diagram, file_ops, files, find_patterns,
-                       forecast, image, inspect_data, make_chart, memory, ml, notes, query_data, sandbox, vision,
-                       weather, web)
+                       forecast, image, inspect_data, make_chart, memory, ml, query_data, sandbox, vision, weather, web)
 from app.tools import run as run_tool
 from app.tools.core import ToolError, ToolResult, ok
 from app.tools.search_index import SearchIndex
@@ -102,14 +101,6 @@ class CalcIn(_In):
                                         "'limit(sin(x)/x, x, 0)', 'nsolve(x^3 - 3, x, 1)', 'Matrix([[1, 2], [3, 4]]).det()'")
 
 
-class NotesIn(_In):
-    mode: Literal["save", "list", "delete"] = Field(description="what to do with the notes")
-    title: str | None = Field(None, description="save: a short title (saving again with the same title updates "
-                                                "the note); delete: the note's title or id")
-    content: str | None = Field(None, description="save: a few lines; it is read later on its own, so say 'the user' "
-                                                  "and 'the assistant', not I or you")
-
-
 class AskIn(_In):
     question: str = Field(description="one short question")
     options: list[str] | None = Field(None, description="choices to show as buttons (the user can also type or skip)")
@@ -159,13 +150,6 @@ def _run(c: ToolContext, a) -> ToolResult:
     return r
 
 
-def _search_files(c: ToolContext, query: str) -> ToolResult:
-    """search_files over an index in step with the files as they are now (a file a script just wrote, too)."""
-    if c.index is not None:
-        files.index_items(c.ws, c.index)
-    return files.search_files(c.index, query)
-
-
 def show_plan(steps: list[PlanStep]) -> ToolResult:
     """The plan as a card; the page ticks a step off when its tool's call ends."""
     from .workers import DELEGATES, MAIN_DIRECT  # (the helpers' module imports this one)
@@ -189,7 +173,7 @@ class WorkTaskIn(TaskIn):
 
 
 class QuestionIn(_In):
-    question: str = Field(description="what to find in the user's documents, notes and earlier chats")
+    question: str = Field(description="what to find in the user's files and earlier chats")
 
 
 class SearchIn(_In):
@@ -200,6 +184,8 @@ class SearchIn(_In):
 
 
 FILE_NAME = "the file's name, e.g. 'report.md' or 'charts/sales.png'"
+QUERY = ("find: what to look for - words in a file's name or text, what a picture shows, a table's columns or values, "
+         "e.g. 'lion', 'refund policy', 'revenue by region'")
 START = "read: the line to read from (the result's next says where to go on)"
 CONTENT = "write: the file's whole text (Markdown for .md, .docx and .pptx)"
 OLD_TEXT = "edit: the passage to change, exactly as it is in the file (spaces and line breaks too)"
@@ -209,7 +195,8 @@ NEW_TEXT = "edit: the text to put instead ('' removes the passage)"
 class FilesIn(_In):
     mode: Literal["list", "find", "read", "write", "edit", "rename", "delete", "download"] = Field(
         description="what to do: each mode is described with the tool")
-    name: str | None = Field(None, description=FILE_NAME + " (all modes but list and download)")
+    name: str | None = Field(None, description=FILE_NAME + " (all modes but list, find and download)")
+    query: str | None = Field(None, description=QUERY)
     page: int = Field(1, ge=1, description="list: which page")
     start: int | None = Field(None, ge=0, description=START)
     content: str | None = Field(None, description=CONTENT)
@@ -221,11 +208,19 @@ class FilesIn(_In):
 
 class HelperFilesIn(_In):
     mode: Literal["find", "read", "write", "edit"] = Field(description="what to do: each mode is described with the tool")
-    name: str = Field(description=FILE_NAME)
+    name: str | None = Field(None, description=FILE_NAME + " (read, write, edit)")
+    query: str | None = Field(None, description=QUERY)
     start: int | None = Field(None, ge=0, description=START)
     content: str | None = Field(None, description=CONTENT)
     old_text: str | None = Field(None, description=OLD_TEXT)
     new_text: str | None = Field(None, description=NEW_TEXT)
+
+
+class ReaderFilesIn(_In):
+    mode: Literal["find", "read"] = Field(description="find: which files match; read: one file's text")
+    query: str | None = Field(None, description=QUERY)
+    name: str | None = Field(None, description="read: " + FILE_NAME)
+    start: int | None = Field(None, ge=0, description=START)
 
 
 class ReadPageIn(_In):
@@ -355,7 +350,7 @@ class RunIn(_In):
 
 # ---------------------------------------------------------------- the tools
 
-FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Looking for a file", "Looked for a file"),
+FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Searching your files", "Searched your files"),
                     "read": ("Reading a file", "Read a file"), "write": ("Writing a file", "Wrote a file"),
                     "edit": ("Changing a file", "Changed a file"), "rename": ("Renaming a file", "Renamed a file"),
                     "delete": ("Asking to delete a file", "Asked to delete a file"),
@@ -388,14 +383,6 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "only for maths that needs a program (a simulation, many cases). Not for a table's numbers (analyze_or_code).",
        CalcIn, lambda c, a: calc.calculate(a.expression),
        labels=("Calculating", "Calculated")),
-    Tool("notes", "Your notes - your memory across chats. save: a decision, preference, constraint, conclusion or "
-       "fact worth keeping (not tool output); your 5 latest notes stay in view in every chat, older ones are found "
-       "by search. list: every note, when the user asks what you remember. delete: one note, when the user asks you "
-       "to forget it - the user confirms with a button, so call it straight away.",
-       NotesIn, lambda c, a: notes.notes(c.ws, a.mode, a.title, a.content, index=c.index),
-       labels=("Working with notes", "Worked with notes"),
-       mode_labels={"save": ("Saving a note", "Saved a note"), "list": ("Looking at your notes", "Looked at your notes"),
-                    "delete": ("Asking to delete a note", "Asked to delete a note")}),
     Tool("plan", "Show the user your plan before a job of several steps that build on each other (find data, then "
        "analyse it, then make a file): one short line per step, with the tool or helper that does it. The user sees it "
        "as a checklist that ticks off as the tools finish. Not for a single step or a plain answer.",
@@ -418,27 +405,26 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "description (not what is said in it).", ReadPageIn,
        lambda c, a: _read_page(c, a),
        labels=("Reading a page", "Read a page")),
-    Tool("files", "The workspace's files (notes are not files): what the user has, and the files you make. Use it when "
-       "the user asks what files they have, or to open, write, change, rename, delete or bring in one. list: everything, "
-       "a page at a time; find: whether a name exists; read: a file's report (what a helper did with it), or its text "
+    Tool("files", "The workspace's files: what the user has, and the files you make. Use it when the user asks what "
+       "files they have or what is in them, or to open, write, change, rename, delete or bring in one. list: everything, "
+       "a page at a time; find: which files match a query - by name and by what is in them (a document's passages, "
+       "code, a chart, a table's columns and values, what a picture shows), each with the part that matched - one "
+       "call answers 'which' and 'how many'; read: a file's report (what a helper did with it), or its text "
        "from line start on (an image or a table says which tool reads it); write: a new file - text, Markdown, CSV, "
        "JSON, code, and documents: a Word .docx or slides .pptx are made from Markdown (for slides each # heading "
        "starts a slide; a line that is only ![caption](charts/sales.chart.json) puts in that picture or chart) - or the whole "
        "new text of a file that is there (its version before is kept); edit: change one passage - old_text exactly as "
        "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
        "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
-       "one. Not for running code (analyze_or_code) or finding where something is on the web (research_web). Delete, "
+       "one. agent.md is your memory for this project, always in view: to remember something (\"remember ...\", "
+       "\"from now on ...\") edit it - a line under the right heading. Not for running code (analyze_or_code) or "
+       "finding where something is on the web (research_web). Delete, "
        "download and changing the user's own file ask the user with a button - call it straight away, don't ask "
        "first in words.",
        FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
                                             content=a.content, old_text=a.old_text, new_text=a.new_text,
-                                            new_name=a.new_name, link=a.link),
+                                            new_name=a.new_name, link=a.link, query=a.query),
        labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
-    Tool("search_files", "Find what matches a query in the user's documents and file reports, their pictures (by what they show) "
-       "and tables (by their columns and values) - then, apart, their saved notes and pages read in earlier "
-       "research (dated).", FilesQueryIn,
-       lambda c, a: _search_files(c, a.query),
-       labels=("Searching your documents and notes", "Searched your documents and notes")),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
        FilesQueryIn,
        lambda c, a: memory.recall(c.index, a.query, exclude_conversation=c.conversation, visible_since=c.visible_since),
@@ -630,13 +616,22 @@ def _strip_titles(schema) -> None:
 
 # A helper's own version of a tool main also has: the same name and handler, the modes it may use.
 HELPER_TOOLS: dict[str, Tool] = {
-    "files": Tool("files", "The workspace's files, by name. find: whether a name exists; read: a file's text from "
+    "files": Tool("files", "The workspace's files, by name. find: which files match a query - by name and by what "
+                  "is in them - each with the part that matched; read: a file's text from "
                   "line start on, with its report (an image or a table says what reads it); write: a new file, or "
                   "the whole new text of one (its version before is kept) - a program is written here, then run "
                   "with run; edit: change one passage - old_text exactly as in the file (line numbers as read may "
                   "stay), new_text to put instead - then run it again. A file the user brought is changed only if "
                   "they allow it: they are asked.", HelperFilesIn,
                   lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, content=a.content,
-                                              old_text=a.old_text, new_text=a.new_text, helper=True),
+                                              old_text=a.old_text, new_text=a.new_text, query=a.query, helper=True),
                   labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
+    # the knowledge helper reads and never writes: files with find and read only
+    "files:read": Tool("files", "The user's files. find: which files match a query - by name and by what is in them "
+                       "(documents, code, charts, tables, pictures) - each with the passage that matched, best first, "
+                       "then pages read in earlier research (dated); read: one file's text from line start on.",
+                       ReaderFilesIn,
+                       lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, query=a.query,
+                                                   helper=True),
+                       labels=("Looking through your files", "Looked through your files"), mode_labels=FILE_MODE_LABELS),
 }

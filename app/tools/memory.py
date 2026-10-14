@@ -4,7 +4,7 @@ After every finished turn the agent calls remember_turn (not a model tool). A tu
 one unit - the user's message, the tools the assistant called (with their arguments, cut short)
 and the assistant's answer - so recall returns the question together with its answer, not a
 floating fragment. Tool results are left out (large, and the numbers can be computed again), and
-so are search_files / recall calls, so retrieved text never feeds back into memory. Nothing is
+so are recall calls, so retrieved text never feeds back into memory. Nothing is
 summarised by a model: what comes back is what was said. Idea from Unsloth Studio's conversation
 archive (studio/backend/core/rag/conversation_archive.py), written independently.
 """
@@ -21,7 +21,7 @@ from .search_index import Passage, SearchIndex
 SOURCE = ("chat",)
 MAX_ARGS = 300
 MAX_TEXT = 1500
-NOT_REMEMBERED = {"search_files", "recall"}
+NOT_REMEMBERED = {"recall"}
 
 
 def remember_turn(index: SearchIndex, conversation: str, user: str, answer: str,
@@ -64,8 +64,8 @@ def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str
               "keywords only (the embedding model is unavailable)"}
     if not hits:
         result["turns"] = []
-        result["note"] = ("No earlier conversation matched. If it may be in a document or saved note, use "
-                          "search_files; otherwise say so - don't guess what was said.")
+        result["note"] = ("No earlier conversation matched. If it may be in a file, use files(mode='find'); "
+                          "otherwise say so - don't guess what was said.")
         return ok(result)
     hits.sort(key=lambda h: h.created)  # relevance picked them; shown in the order they were said
     result["turns"] = [{"when": h.created[:16].replace("T", " "), "conversation": h.ref,
