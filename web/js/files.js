@@ -6,6 +6,7 @@
 
 import { api, itemUrl, KEYS, pngUrl, rowsUrl, send, state, uploadFile } from "./api.js";
 import { chartCard } from "./charts.js";
+import { isPinned, togglePin } from "./pins.js";
 import { openViewer, viewerOpen } from "./viewer.js";
 import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
 
@@ -345,23 +346,28 @@ export function fillDrawer() {
     return;
   }
   const act = (label, onclick, title) => h("button", { class: "act", type: "button", title, onclick }, label);
+  // Pinned to the open chat (or to a new one): what in it matches each message goes with every turn
+  const pin = i => h("button", { class: `act pin-act${isPinned(i.id) ? " on" : ""}`, type: "button", html: svg("pin"),
+    title: isPinned(i.id) ? "Unpin from this chat" : "Pin to this chat: what in it matches each message goes with it",
+    "aria-label": `${isPinned(i.id) ? "Unpin" : "Pin"} ${i.name}`, onclick: () => togglePin(i) });
   const row = (icon, name, meta, ...actions) => h("div", { class: "item" }, icon, h("div", {}, h("div", { class: "nm", title: name }, name), h("div", { class: "mt", title: meta }, meta)), ...actions);
   const named = id => state.items.find(i => i.id === id)?.name;  // a file's source, by its name
   const from = i => i.parent && named(i.parent) ? ` · from ${named(i.parent)}` : "";
   const kept = i => i.versions ? ` · ${plural(i.versions, "earlier version")}` : "";
   const sections = [
+    ["Memory", state.items.filter(i => i.memory), i => row(noteTile(), i.name, "What Zen keeps in mind in every chat · you and Zen edit it",
+      act("Open", () => openItem(i)))],
     ["Tables", itemsOf("table"), i => row(fileTile(/\.(csv|tsv|xlsx?|xlsm)$/i.test(i.name || "") ? i.name : "table.csv"), i.name, `${count(i.rows)} rows × ${i.columns} columns${from(i)}${kept(i)}`,
-      act("View", () => openItem(i)))],
+      pin(i), act("View", () => openItem(i)))],
     ["Charts", itemsOf("file").filter(i => shape(i) === "chart"), i => row(fileTile(i.name), i.title || i.name,
       `${i.name} · drawn live${from(i)}${kept(i)}`, act("View", () => openItem(i)))],
-    ["Documents & files", itemsOf("file").filter(i => shape(i) !== "chart"), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
+    ["Documents & files", itemsOf("file").filter(i => shape(i) !== "chart" && !i.memory), i => row(isPicture(i.name) ? h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""), i.name,
       `${i.passages != null ? `${i.pages ? plural(i.pages, "page") : plural(i.words || 0, "word")} · searchable` : fileSize(i.bytes)}${kept(i)}${i.report ? ` · ${i.report}` : ""}`,
-      canView(i) ? act("View", () => openItem(i)) : h("a", { class: "act", href: itemUrl(i.id), download: i.name || "" }, "Download"))],
-    ["Pinned notes", itemsOf("note"), i => row(noteTile(), i.title || i.name, `saved ${i.saved || ""} · kept in view`,
-      act("View", () => openItem(i)))],
+      pin(i), canView(i) ? act("View", () => openItem(i)) : h("a", { class: "act", href: itemUrl(i.id), download: i.name || "" }, "Download"))],
     ["Images", itemsOf("image"), i => {
       const thumb = h("img", { class: "zoomable", src: itemUrl(i.id), alt: i.name || i.id, loading: "lazy" });
-      return row(thumb, i.name || i.id, `${i.width ? `${i.width}×${i.height}` : "image"}${from(i)}${kept(i)}`, act("View", () => openViewer(thumb, "image")));
+      return row(thumb, i.name || i.id, `${i.caption || (i.width ? `${i.width}×${i.height}` : "image")}${from(i)}${kept(i)}`,
+                 pin(i), act("View", () => openViewer(thumb, "image")));
     }],
   ];
   body.replaceChildren(...sections.filter(([, list]) => list.length).flatMap(([title, list, make]) => [
@@ -372,8 +378,16 @@ export function fillDrawer() {
 // Files wait in the message box until the message is sent (removable till then); on sending they go into
 // the project, their progress shown on the message, and the message keeps them, so they show on it again.
 const waiting = [];
+const pointed = [];  // files of the project pointed at with @: they go with the message, nothing is uploaded
 let sent = [];  // ids uploaded and not yet sent with a message (files alone go with the next one)
-export const attachedCount = () => waiting.length;
+export const attachedCount = () => waiting.length + pointed.length;
+export function point(item) {  // a file picked in the @ menu
+  if (!pointed.some(p => p.id === item.id)) pointed.push(item);
+  renderTray();
+  $("#input").focus();
+}
+const pointedChip = (item, remove) => chip({ name: item.name, line: "In this project",
+  url: item.kind === "image" ? itemUrl(item.id) : null }, remove);
 export const takeSent = () => sent.splice(0);
 export const forgetSent = () => { sent = []; };
 const typeLine = (name, size) => `${(ext(name) || "file").toUpperCase()} · ${size}`;
@@ -409,9 +423,13 @@ function renderTray() {
     if (entry.url) URL.revokeObjectURL(entry.url);
     renderTray();
     $("#input").focus();
+  })), ...pointed.map(item => pointedChip(item, () => {
+    pointed.splice(pointed.indexOf(item), 1);
+    renderTray();
+    $("#input").focus();
   })));
-  tray.hidden = !waiting.length;
-  $("#composer").classList.toggle("has-files", waiting.length > 0);
+  tray.hidden = !attachedCount();
+  $("#composer").classList.toggle("has-files", attachedCount() > 0);
   hooks.updateComposer();
 }
 export function addFiles(files) {
@@ -424,10 +442,14 @@ export function addFiles(files) {
 // On sending: each waiting file uploads into the project, its progress on the message (bubble); returns
 // what came of each - and the follow-ups worth offering when the message had no words
 export async function sendFiles(bubble) {
-  const entries = waiting.splice(0);
+  const entries = waiting.splice(0), named = pointed.splice(0);
   renderTray();
   const row = h("div", { class: "user-files" });
   bubble.prepend(row);
+  for (const item of named) {  // already in the project: shown as sent at once
+    row.append(opens(pointedChip(item), item));
+    sent.push(item.id);
+  }
   const marks = entries.map(entry => {
     const c = waitingChip(entry), mark = h("span", { class: "chip-state" });
     c.classList.add("sending");

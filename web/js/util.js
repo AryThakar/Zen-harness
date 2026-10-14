@@ -32,6 +32,7 @@ const ICONS = {
   trash: '<path d="M4.5 7h15M10 11v6M14 11v6"/><path d="m6.5 7 .8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/>',
   pencil: '<path d="M16.5 4.5a2 2 0 0 1 2.8 2.8L8.5 18.1 5 19l.9-3.5z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  pin: '<path d="M9.5 4h5M10.5 4v5.2L7.5 13h9l-3-3.8V4M12 13v7"/>',
   minus: '<path d="M6 12h12"/>',
   fit: '<path d="M4.5 9V5.5a1 1 0 0 1 1-1H9M15 4.5h3.5a1 1 0 0 1 1 1V9M19.5 15v3.5a1 1 0 0 1-1 1H15M9 19.5H5.5a1 1 0 0 1-1-1V15"/>',
   lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
@@ -193,10 +194,19 @@ const MATH = { extensions: [
     },
     renderer: t => tex(t.text, !!t.display) },
 ] };
-let mathOn = false;
+// ![caption](panda.jpg): a file of the project, named by its path - kept as a reference (data-item) for the finished
+// answer to show (cards.finishAnswer), never fetched from the page's own address. A web or data address stays as it is.
+const PROJECT_FILES = { renderer: { image({ href, text }) {
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(href)) return false;
+  let path = href;
+  try { path = decodeURI(href); } catch {}
+  return `<img data-item="${escapeHtml(path)}" alt="${escapeHtml(text || "")}">`;
+} } };
+let mathOn = false, filesOn = false;
 export function markdown(text) {
   if (window.marked && window.DOMPurify) {
     if (window.katex && !mathOn) { marked.use(MATH); mathOn = true; }
+    if (!filesOn) { marked.use(PROJECT_FILES); filesOn = true; }
     return DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }));
   }
   return escapeHtml(text).replace(/\n/g, "<br>");

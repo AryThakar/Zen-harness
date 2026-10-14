@@ -71,9 +71,24 @@ def reindex(ws: Workspace, index: SearchIndex, item_id: str) -> bool:
         return False
     passages = [Passage(c.text, c.page, c.section) for c in chunk(doc.blocks)]
     embedded = index.replace("document", item_id, name, passages, meta=stamp)
-    for key, value in (("title", doc.title), ("pages", doc.pages), ("words", doc.words), ("passages", len(passages))):
+    for key, value in (("title", doc.title), ("pages", doc.pages), ("words", doc.words), ("passages", len(passages)),
+                       ("outline", outline(doc.blocks))):
         ws.set_meta(item_id, key, value)
     return embedded
+
+
+OUTLINE_KEPT = 60  # headings kept of a document's outline
+
+
+def outline(blocks) -> list[list]:
+    """A document's headings in order, each with the page it starts on: [[heading, page], ...] - its coordinates for
+    the snapshot of a pinned file (short sections share a passage, so the passages alone lose headings)."""
+    out, seen = [], set()
+    for b in blocks:
+        if b.section and b.section not in seen:
+            seen.add(b.section)
+            out.append([b.section, b.page])
+    return out[:OUTLINE_KEPT]
 
 
 def index_report(ws: Workspace, index: SearchIndex | None, item_id: str) -> None:

@@ -174,6 +174,13 @@ class SearchIndex:
             self._version += 1
         return n
 
+    def first(self, source: str, ref: str, n: int = 1) -> list[Hit]:
+        """An item's first n passages (its start)."""
+        with self._db() as db:
+            rows = db.execute("SELECT source, ref, title, page, section, text, created, meta FROM passages "
+                              "WHERE source = ? AND ref = ? ORDER BY id LIMIT ?", (source, ref, n)).fetchall()
+        return [Hit(*r, score=0.0, keyword=False, meaning=False) for r in rows]
+
     def count(self, sources: tuple[str, ...]) -> int:
         with self._db() as db:
             return db.execute(f"SELECT count(*) FROM passages WHERE source IN ({_marks(sources)})", sources).fetchone()[0]

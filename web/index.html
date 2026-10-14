@@ -79,6 +79,7 @@
       <button class="icon-btn show-side" id="showSideBtn" type="button" title="Open sidebar" aria-label="Open sidebar">
         <svg class="i ic-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3.5"/><path class="bar" d="M9.5 4.5v15"/></svg></button>
       <span class="chat-title" id="chatTitle">New chat</span>
+      <span class="pins" id="pins" aria-label="Files pinned to this chat" hidden></span>
       <span class="model-state" id="modelState" hidden>Model starting</span>
     </div>
     <div class="top-right">
@@ -102,7 +103,7 @@
     <form class="composer" id="composer" autocomplete="off">
       <div class="tray" id="tray" hidden aria-label="Attached files"></div>
       <button type="button" class="round plus" id="attachBtn" title="Add files (tables, documents, pictures, any file)" aria-label="Add files"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-      <textarea id="input" rows="1" placeholder="Ask anything" aria-label="Message"></textarea>
+      <textarea id="input" rows="1" placeholder="Ask anything · @ points at a file" aria-label="Message"></textarea>
       <button type="submit" class="round send" id="sendBtn" title="Send" aria-label="Send" disabled>
         <svg class="i send-ic" viewBox="0 0 24 24" style="stroke-width:2.5"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
         <svg class="i stop-ic" viewBox="0 0 12 12"><rect width="12" height="12" rx="2.6" fill="currentColor" stroke="none"/></svg></button>

@@ -45,6 +45,8 @@ class ToolContext:
     # Looking at an image (main's view_image, generate_image's self-check): a vision call on the helpers' slot;
     # None when there is no vision. Helpers that see images get them in their conversation instead.
     look: Callable[[bytes, str, str], str] | None = None
+    # Pinning a file to the chat (main's files pin/unpin): (key, on) -> the chat's pins now; None outside a chat.
+    pin: Callable[[str, bool], list[str]] | None = None
 
 
 class _In(BaseModel):
@@ -140,6 +142,25 @@ def _read_page(c: ToolContext, a) -> ToolResult:
         files.index_webpage(c.index, r.result)
     return r
 
+def _files(c: ToolContext, a) -> ToolResult:
+    """main's files: pin and unpin here (they belong to the chat), every other mode in file_ops."""
+    if a.mode in ("pin", "unpin"):
+        if not a.name:
+            return ToolResult("invalid_arguments", {"error": {"message": f"{a.mode} needs name: the file's name.",
+                                                              "field": "name"}})
+        if c.pin is None:
+            return ToolResult("failed", {"error": {"message": "Pins belong to a chat; there is none here."}})
+        key = c.ws.resolve(a.name, field="name")
+        pins = c.pin(key, a.mode == "pin")
+        shown = [c.ws.label(k) for k in pins if k in c.ws.ids()]
+        said = (f"{c.ws.label(key)} is pinned: the parts of it that match each message are in view every turn until it "
+                f"is unpinned." if a.mode == "pin" else f"{c.ws.label(key)} is unpinned.")
+        return ok({"pinned": shown, "note": said},
+                  {"type": "pins", "pins": [{"id": k, "name": c.ws.label(k)} for k in pins if k in c.ws.ids()]})
+    return file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start, content=a.content,
+                          old_text=a.old_text, new_text=a.new_text, new_name=a.new_name, link=a.link, query=a.query)
+
+
 def _run(c: ToolContext, a) -> ToolResult:
     """run - and each chart the program wrote shown as a live card, as make_chart's are."""
     from app.tools.chart_image import spec_of
@@ -193,7 +214,7 @@ NEW_TEXT = "edit: the text to put instead ('' removes the passage)"
 
 
 class FilesIn(_In):
-    mode: Literal["list", "find", "read", "write", "edit", "rename", "delete", "download"] = Field(
+    mode: Literal["list", "find", "read", "write", "edit", "rename", "delete", "download", "pin", "unpin"] = Field(
         description="what to do: each mode is described with the tool")
     name: str | None = Field(None, description=FILE_NAME + " (all modes but list, find and download)")
     query: str | None = Field(None, description=QUERY)
@@ -354,7 +375,8 @@ FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Searchi
                     "read": ("Reading a file", "Read a file"), "write": ("Writing a file", "Wrote a file"),
                     "edit": ("Changing a file", "Changed a file"), "rename": ("Renaming a file", "Renamed a file"),
                     "delete": ("Asking to delete a file", "Asked to delete a file"),
-                    "download": ("Asking to download", "Asked to download")}
+                    "download": ("Asking to download", "Asked to download"),
+                    "pin": ("Pinning a file", "Pinned a file"), "unpin": ("Unpinning a file", "Unpinned a file")}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("get_weather", "Weather where the user is - found automatically, don't ask them - or in a named place: now "
@@ -417,13 +439,13 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or a data "
        "table (CSV, Excel) from any public link - a repository's or folder's page lists the files it has, to pick "
        "one. agent.md is your memory for this project, always in view: to remember something (\"remember ...\", "
-       "\"from now on ...\") edit it - a line under the right heading. Not for running code (analyze_or_code) or "
+       "\"from now on ...\") edit it - a line under the right heading. pin: keep a file in view in this chat - "
+       "the parts of it that match each message come with every turn (the user pins files too); unpin: stop. "
+       "Not for running code (analyze_or_code) or "
        "finding where something is on the web (research_web). Delete, "
        "download and changing the user's own file ask the user with a button - call it straight away, don't ask "
        "first in words.",
-       FilesIn, lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start,
-                                            content=a.content, old_text=a.old_text, new_text=a.new_text,
-                                            new_name=a.new_name, link=a.link, query=a.query),
+       FilesIn, _files,
        labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
     Tool("recall", "Find what was said in earlier conversations - and earlier in this one, when it is out of view.",
        FilesQueryIn,

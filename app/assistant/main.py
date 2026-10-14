@@ -67,6 +67,7 @@ from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace, present
 
 from .checks import SAMPLE_DATA, invented_numbers, nudge_for, repeated_failure, this_turn
+from . import snapshot
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_tool_results, standing_instructions,
                       without_notes)
 from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN
@@ -146,6 +147,7 @@ class Turn:
     visible_since: str | None = None  # the first turn main still sees, when older ones were cut
     live: Live | None = None  # the turn's events, for a helper's question asked in place
     shortened: int = 0  # this turn's older tool results shown shortened (context.shorten_tool_results)
+    snapshot: str | None = None  # the pinned and pointed-at files for this turn's message (snapshot.py), made once
 
     def setup(self, stream) -> None:
         """The tools for this turn, wired to the stream and the store. Every event written checks for a
@@ -163,7 +165,8 @@ class Turn:
         self.write = write
         self.ctx = ToolContext(ws=self.ws, index=self.index, conversation=self.chat_id, emit=emit,
                                visible_since=self.visible_since, ask=self.ask if self.live else None,
-                               look=getattr(self.worker, "look", None))  # vision on the helpers' slot
+                               look=getattr(self.worker, "look", None),  # vision on the helpers' slot
+                               pin=self.pin)
         def progress(event: dict) -> None:
             if self.live is not None:
                 self.live.note_helper(event)
@@ -171,6 +174,28 @@ class Turn:
 
         self.tools = main_tools(self.worker, self.ctx, progress=progress)
 
+
+    def pin(self, key: str, on: bool) -> list[str]:
+        """Pin a file to this chat, or unpin it; the chat's pins now."""
+        pins = [k for k in self.store.chat(self.chat_id)["pins"] if k != key] + ([key] if on else [])
+        self.store.update_chat(self.chat_id, pins=pins)
+        return pins
+
+    def with_snapshot(self, visible: list[dict]) -> list[dict]:
+        """The messages with this turn's snapshot on its user message - made once a turn, so every step sends the same
+        prompt; never stored (snapshot.py)."""
+        at = next((i for i in range(len(visible) - 1, -1, -1) if visible[i]["role"] == "user"
+                   and not visible[i].get("hidden")), None)
+        if at is None:
+            return visible
+        message = visible[at]
+        if self.snapshot is None:
+            pointed = [f["id"] for f in message.get("files") or [] if isinstance(f, dict) and f.get("id")]
+            self.snapshot = snapshot.build(self.ws, self.index, self.store.chat(self.chat_id)["pins"], pointed,
+                                           message.get("text") or self.user_text)
+        if not self.snapshot:
+            return visible
+        return [*visible[:at], {**message, "content": f"{message['content']}\n\n{self.snapshot}"}, *visible[at + 1:]]
 
     def ask(self, card: dict) -> dict:
         """A helper's question, asked in place: the card goes to the UI, the helper waits here until the
@@ -210,6 +235,7 @@ def _agent(state: TurnState, config) -> dict:
     t.visible_since = visible[0].get("at") if dropped and visible else None  # recall reaches what was cut
     if t.shortened or not fits:  # this turn alone outgrew the slot: its older tool results are shortened
         visible, t.shortened = shorten_tool_results(visible, limit, count, t.shortened)
+    visible = t.with_snapshot(visible)  # the pinned and pointed-at files, for this turn only
     last = state["rounds"] >= MAX_ROUNDS
     started = time.perf_counter()
     stream = _Unstamped(t.write)
@@ -392,8 +418,9 @@ def _attached(ws: Workspace, item: str) -> dict:
 def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider,
          files: Sequence[str] = ()) -> Iterator[dict]:
     """The user's message (or, when a question is waiting, their typed answer to it): the turn's events.
-    files: the ids of what the user attached to it - kept on the message so the page can show them on it
-    again; the model hears of new files from the workspace note, as before."""
+    files: the ids of the files sent with it - uploaded with it, or pointed at with @ - kept on the message so the
+    page shows them on it again, and named on it for the model ([Files with this message: ...]); this turn's snapshot
+    holds what in them matches the message (snapshot.py)."""
     chat = store.chat(chat_id)
     if chat is None:
         yield {"type": "error", "message": "No such chat."}
@@ -415,7 +442,9 @@ def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider
         note, seen = message_context(ws, before)
         said = f"{stamp()} {text}"
         attached = [_attached(ws, i) for i in dict.fromkeys(files) if i in ws.ids()]
-        store.append(chat_id, {"role": "user", "content": f"{said}\n\n{note}" if note else said, "said": said,
+        sent = f"[Files with this message: {', '.join(a['name'] for a in attached)}]" if attached else ""
+        content = "\n\n".join(x for x in (said, sent, note) if x)  # which files the user meant: part of what they said
+        store.append(chat_id, {"role": "user", "content": content, "said": said,
                                "text": text, "seen": seen, **({"files": attached} if attached else {})})
         return text
 

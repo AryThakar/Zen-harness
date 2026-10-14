@@ -13,9 +13,10 @@
                                                               each turn's trace after it)
     GET    /assistant/chats/{chat}/traces                     how each turn went: steps, times, tokens, checks, errors
     GET    /assistant/chats/{chat}/stream                     the running turn's events from its start - events
-    POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it, shown on it) - events
+    POST   /assistant/chats/{chat}/messages   {text, files?}  send (files: ids uploaded with it or pointed at with @) - events
     POST   /assistant/chats/{chat}/answer     {answer|null}   answer the waiting question - events
     POST   /assistant/chats/{chat}/stop                       stop its running turn (the Stop button)
+    PUT    /assistant/chats/{chat}/pins       {pins}          the files pinned to the chat (ids, in order)
     GET    /assistant/workspaces/{ws}/items                   files (agent.md first), tables, images
     POST   /assistant/workspaces/{ws}/files   (upload)        a table, a document (indexed) or a file
     GET    /assistant/workspaces/{ws}/items/{item}/file       the stored file (images inline)
@@ -70,6 +71,10 @@ class TextIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     files: list[Annotated[str, Field(pattern=ITEM.pattern)]] = Field(
         default_factory=list, max_length=20, description="ids of the files uploaded with this message, shown on it")
+
+
+class PinsIn(BaseModel):
+    pins: list[Annotated[str, Field(pattern=ITEM.pattern)]] = Field(max_length=20, description="the pinned files' ids")
 
 
 class AnswerIn(BaseModel):
@@ -229,6 +234,20 @@ def answer_question(chat_id: str, body: AnswerIn, request: Request) -> Streaming
 def follow_turn(chat_id: str, request: Request) -> StreamingResponse:
     _chat(request, chat_id)
     return _stream(main_slot.follow(chat_id))
+
+
+@router.put("/chats/{chat_id}/pins")
+def set_pins(chat_id: str, body: PinsIn, request: Request) -> dict:
+    """The files pinned to the chat (from the file panel, the @ menu or the chat header): their snapshot goes with
+    every turn of it until they are unpinned."""
+    chat = _chat(request, chat_id)
+    ws, _ = _store(request).open(chat["workspace_id"])
+    missing = [i for i in body.pins if i not in ws.ids()]
+    if missing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No such file: {', '.join(missing)}.")
+    pins = list(dict.fromkeys(body.pins))
+    _store(request).update_chat(chat_id, pins=pins)
+    return {"pins": [{"id": i, "name": ws.label(i)} for i in pins]}
 
 
 @router.post("/chats/{chat_id}/stop")

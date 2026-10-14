@@ -5,7 +5,9 @@ import { api, detail, KEYS, send, serverEvents, state, API } from "./api.js";
 import { closeAsk, decision, openAsk } from "./ask.js";
 import { CARD_TYPES, addRun, artifactCard, codeCard, finishAnswer, onDrawn, passagesEl, redrawDiagrams, resultsCard, webSourcesEl } from "./cards.js";
 import { forgetCharts, redrawCharts } from "./charts.js";
-import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
+import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, openItem, point, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
+import { hooks as mentionHooks, wireMention } from "./mention.js";
+import { hooks as pinHooks, pinsFromZen, renderPins } from "./pins.js";
 import { activityEl, loadTools, traceEl } from "./steps.js";
 import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, showDialog, svg, toast, copyText, projectHue } from "./util.js";
 import { wireViewer } from "./viewer.js";
@@ -236,6 +238,7 @@ function newChat() {
   state.pending = null;
   save(KEYS.chat, null);
   clearThread();
+  renderPins();
   showHello(true);
   renderChats();
   setTitle();
@@ -254,6 +257,7 @@ async function openChat(id, again = false) {
   catch (e) { toast(e.message, true); await loadChats(); return; }
   if (ticket !== state.opening) return;
   state.chat = data.chat;
+  const pins = data.chat.pins || [];  // as stored: a replayed "pins" card says what they were then
   state.pending = null;
   save(KEYS.chat, id);
   clearThread();
@@ -276,6 +280,8 @@ async function openChat(id, again = false) {
       run(`/chats/${id}/stream`, null, view);
     }
   }
+  state.chat.pins = pins;
+  renderPins();
   renderChats();
   setTitle();
   updateComposer();
@@ -313,6 +319,7 @@ async function loadItems() {
   $("#filesBadge").textContent = n > 99 ? "99+" : n;
   $("#filesCount").textContent = n || "";
   renderHello();
+  renderPins();  // their names, as the files are now
   if (drawerOpen()) fillDrawer();
 }
 
@@ -487,6 +494,8 @@ function assistantView() {
         question = ask(a);
       } else if (a.type === "answer") {  // the user's answer to a helper's question asked in place
         question?.decide(a.skipped ? null : a.answer);
+      } else if (a.type === "pins") {  // Zen pinned or unpinned a file
+        pinsFromZen(a.pins);
       } else if (a.type === "sources") {
         for (const item of a.items || []) item.url ? web.set(item.url, item) : passages.push(item);
         if (current && !(a.tool || "").endsWith("_worker")) activity.evidence(current, a);
@@ -618,15 +627,19 @@ async function submit(text) {
   }
   return talk(text);
 }
+// The open chat - made now when there is none yet (a first message, or a first pin)
+async function ensureChat() {
+  if (state.chat) return state.chat;
+  try { state.chat = await send("POST", `/workspaces/${state.ws.id}/chats`); }
+  catch (e) { toast(e.message, true); return null; }
+  save(KEYS.chat, state.chat.id);
+  state.chats.unshift(state.chat);
+  renderChats();
+  return state.chat;
+}
 // Sends the words (the user's message already shown when files went first)
 async function talk(text, shown = null) {
-  if (!state.chat) {
-    try { state.chat = await send("POST", `/workspaces/${state.ws.id}/chats`); }
-    catch (e) { toast(e.message, true); return; }
-    save(KEYS.chat, state.chat.id);
-    state.chats.unshift(state.chat);
-    renderChats();
-  }
+  if (!await ensureChat()) return;
   if (!shown) {
     input.value = "";
     autosize();
@@ -779,6 +792,9 @@ setInterval(() => { if (!state.busy && state.ws) renderChats(); }, 60_000);  // 
 Object.assign(hooks, { thread, stick, loadItems, submit, hideHello, updateComposer });
 wireViewer();
 wireFiles();
+wireMention();
+mentionHooks.point = point;
+Object.assign(pinHooks, { open: openItem, ensureChat, changed: () => { if (drawerOpen()) fillDrawer(); } });
 playIntro();
 (async () => {
   updateComposer();

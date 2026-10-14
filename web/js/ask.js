@@ -5,6 +5,8 @@
 import { helperName } from "./steps.js";
 import { $, cap, escapeHtml, h, svg } from "./util.js";
 
+const ASK = "Ask anything · @ points at a file";  // the message box's own placeholder (index.html), put back after a question
+
 const DANGER = new Set(["delete_files", "replace_file"]);
 let open = null;  // { card, onChoose }
 export const askOpen = () => !!open;
@@ -52,7 +54,7 @@ export function openAsk(card, { onChoose, onStop, stoppable }) {
         html: key(i) + escapeHtml(o), onclick: () => choose(o) })),
       skip ? h("button", { type: "button", class: "skip-link", html: 'Skip <kbd class="key">Esc</kbd>', onclick: () => choose(null) }) : null));
   box.prepend(panel);
-  field.placeholder = text ? (options.length ? "Or type your own answer…" : "Type your answer…") : "Ask anything";
+  field.placeholder = text ? (options.length ? "Or type your own answer…" : "Type your answer…") : ASK;
   if (danger) panel.querySelectorAll(".opt")[1]?.focus();  // a delete never starts on its button
   else if (text) field.focus();
   else panel.querySelector(".opt")?.focus();
@@ -72,7 +74,7 @@ export function closeAsk(now = false) {
     panel?.remove();
     if (open) return;  // another question opened meanwhile
     box.classList.remove("asking", "danger", "no-text");
-    $("#input").placeholder = "Ask anything";
+    $("#input").placeholder = ASK;
   };
   if (!panel || now) return reset();
   panel.classList.add("leaving");

@@ -119,11 +119,7 @@ export function finishAnswer(root) {
   root.querySelectorAll("img").forEach(img => {
     const id = (img.dataset.item || img.getAttribute("src") || "").trim();
     if (/\.chart\.json$/i.test(id)) { answerChart(img, id, charts, reply); return; }  // a chart file: drawn live, once
-    if (/^image_\d+$/.test(id)) {
-      const src = itemUrl(id);
-      if (shown.has(src)) { (img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img).remove(); return; }
-      Object.assign(img, { src, className: "zoomable answer-pic", loading: "lazy" });
-    }
+    if (img.dataset.item || /^image_\d+$/.test(id)) { answerPicture(img, id, shown); return; }  // a project picture
     img.addEventListener("error", () => img.remove(), { once: true });  // a picture that doesn't load leaves no broken icon
   });
   root.querySelectorAll(":not(pre) > code").forEach(span => {
@@ -132,6 +128,22 @@ export function finishAnswer(root) {
       span.replaceWith(h("img", { class: "zoomable answer-pic", src: itemUrl(id), alt: id, loading: "lazy" }));
     }
   });
+}
+
+// A file of the project an answer names as a picture (![caption](panda_edited.jpg), or a key of an old chat): the
+// picture there - or nothing, when the reply already shows it as a card, or it isn't a picture of this project.
+async function answerPicture(img, name, shown) {
+  const block = img.parentElement?.tagName === "P" && img.parentElement.childNodes.length === 1 ? img.parentElement : img;
+  const want = name.toLowerCase();
+  const find = () => state.items.find(i => i.id === name || (i.name || "").toLowerCase() === want);
+  let item = find();
+  if (!item) { try { state.items = await api(`/workspaces/${state.ws.id}/items`); } catch {} item = find(); }  // made this turn
+  if (!item || item.kind !== "image") { block.remove(); return; }
+  const src = itemUrl(item.id);
+  if (shown.has(src)) { block.remove(); return; }
+  shown.add(src);
+  Object.assign(img, { src, alt: img.alt || item.name, className: "zoomable answer-pic", loading: "lazy" });
+  img.addEventListener("error", () => block.remove(), { once: true });
 }
 
 // A chart file an answer names (![caption](charts/sales.chart.json)): the chart shows there, once - the reply's own

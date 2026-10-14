@@ -4,6 +4,7 @@
     chats       id, workspace_id -> workspaces (ON DELETE CASCADE), title, created_at, updated_at,
                 dropped  - where the rolling window cuts this chat (kept so the prompt stays the same)
                 pending  - an ask_user question waiting for its answer (JSON), or NULL
+                pins     - the files pinned to the chat, by key (JSON list): their snapshot goes with every turn
     messages    id, chat_id -> chats (ON DELETE CASCADE), role, body (the message as JSON), created_at
 
 A workspace's files (agent.md among them), tables, images, sandbox and search index (files, past chats) live
@@ -98,6 +99,8 @@ class Store:
         self._db.execute("PRAGMA foreign_keys = ON")
         self._db.execute("PRAGMA journal_mode = WAL")
         self._db.executescript(SCHEMA)
+        if "pins" not in {r[1] for r in self._db.execute("PRAGMA table_info(chats)")}:  # a store made before pins
+            self._db.execute("ALTER TABLE chats ADD COLUMN pins TEXT")
         self._open: dict[str, tuple[Workspace, SearchIndex]] = {}
         self._refreshing: dict[str, bool] = {}  # workspace -> asked again while running
 
@@ -228,14 +231,15 @@ class Store:
     def _chat(row: sqlite3.Row) -> dict:
         chat = dict(row)
         chat["pending"] = json.loads(chat["pending"]) if chat["pending"] else None
+        chat["pins"] = json.loads(chat.get("pins") or "[]")
         return chat
 
     def update_chat(self, chat_id: str, **fields) -> None:
-        """title, dropped or pending (a dict, or None to clear it)."""
-        allowed = {"title", "dropped", "pending"}
+        """title, dropped, pending (a dict, or None to clear it) or pins (a list of keys)."""
+        allowed = {"title", "dropped", "pending", "pins"}
         if not fields or set(fields) - allowed:
             raise ValueError(f"only {sorted(allowed)} can be changed")
-        values = {k: json.dumps(v) if k == "pending" and v is not None else v for k, v in fields.items()}
+        values = {k: json.dumps(v) if k in ("pending", "pins") and v is not None else v for k, v in fields.items()}
         sets = ", ".join(f"{k} = ?" for k in values)
         self._run(f"UPDATE chats SET {sets}, updated_at = ? WHERE id = ?", (*values.values(), _now(), chat_id))
 

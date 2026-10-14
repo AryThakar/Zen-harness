@@ -104,7 +104,8 @@ def message_context(ws: Workspace, before: dict | None, *, dropped: int = 0,
 
 # The app's notes, as message_context writes them. A small model copies them into its reply (measured:
 # "[Workspace now: data_1 sales.csv ..." at the end of an answer), as it copied the time stamp.
-NOTE = re.compile(r"\[(?:Workspace now:|Workspace changes since|agent\.md - your standing memory|"
+NOTE = re.compile(r"\[(?:Workspace now:|Workspace changes since|agent\.md - your standing memory|Files with this message|"
+                  r"Pinned and pointed-at files|"
                   r"The user's standing instructions|"
                   r"\d+ earlier turn\(s\) of this chat).*?\](?=[ \t]*(?:\n|$))\s*", re.S)
 
