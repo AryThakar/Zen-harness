@@ -92,3 +92,17 @@ def test_a_box_charts_picture_names_its_axes_as_drawn(ctx):
     assert (ax.get_xlabel(), ax.get_ylabel()) == (spec["y_label"], spec["x_label"])
     plt.close(fig)
     assert picture_of(ctx.ws, key).name.endswith(f".v{chart_image.DRAWING}.png")  # a new drawing is not served stale
+
+
+@pytest.mark.parametrize("kind, x, y, by", [("bar", "survived", "sales", None), ("line", "month", "sales", "survived"),
+                                            ("box", "survived", "age", None), ("scatter", "age", "sales", None)])
+def test_a_charts_numbers_download_as_a_table_with_every_point(ctx, kind, x, y, by):
+    """2.13: a chart downloads as its picture and as its numbers (CSV) - each point drawn is a row."""
+    from app.tools.chart_image import table_of
+    key = execute(ctx, "make_chart", {"data": "titanic.csv", "type": kind, "x": x, "y": y,
+                                      **({"by": by} if by else {})}).result["chart_file"]
+    spec = spec_of(ctx.ws, key)
+    columns, rows = table_of(spec)
+    assert len(columns) >= 2 and all(len(r) == len(columns) for r in rows)
+    assert len(rows) == len(spec.get("x") or [])  # a category, period or box a row
+    assert len(columns) == 1 + (len(spec["series"]) if spec.get("series") else 5 if kind == "box" else 1)

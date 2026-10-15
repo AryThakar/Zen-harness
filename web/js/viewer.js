@@ -1,6 +1,7 @@
-// The viewer: a picture, a diagram or a chart, full size over the chat (which blurs behind it). It grows
+// The viewer: a picture, a diagram, a chart or a video, full size over the chat (which blurs behind it). It grows
 // from where the thing sat; scroll zooms where the pointer is, drag moves it, a click zooms in and back,
-// a click beside it closes; x, Esc, or the download button at the top right.
+// a click beside it closes; x, Esc, or the download button at the top right. A video plays at 16:9 with its
+// own controls and a full-screen button, and doesn't zoom.
 
 import { h, svg } from "./util.js";
 
@@ -35,13 +36,27 @@ function zoomAt(s, cx, cy, animate) {
 }
 export function zoomBy(k) { const r = V.stage.getBoundingClientRect(); zoomAt(V.s * k, r.width / 2, r.height / 2, true); }
 
-export async function openViewer(source, kind) {
+// media (a video): { embed } for a web video's player, or { src, name } for a video file; title for both
+export async function openViewer(source, kind, media = {}) {
   parts();
   closeViewer(true);
   V.from = source;
   V.item.replaceChildren();
+  V.el.classList.toggle("is-video", kind === "video");
   let title = "", download = null, filename = "", upscale = 2;
-  if (kind === "image") {
+  if (kind === "video") {
+    V.el.hidden = false;  // laid out, so the stage can be measured
+    const r = V.stage.getBoundingClientRect();
+    const w = Math.max(240, Math.min(1280, r.width - 80, (r.height - 120) * 16 / 9));
+    const player = media.embed
+      ? h("iframe", { src: `${media.embed}?autoplay=1`, title: media.title || "Video", allowfullscreen: true,
+          allow: "autoplay; encrypted-media; picture-in-picture; fullscreen", referrerpolicy: "strict-origin-when-cross-origin" })
+      : h("video", { src: media.src, controls: true, autoplay: true, playsinline: true });
+    V.item.append(h("div", { class: "viewer-video", style: `width: ${w}px` }, player));
+    V.w = w; V.h = w * 9 / 16; upscale = 1;
+    title = media.title || media.name || "";
+    if (media.src) { download = media.src; filename = media.name || ""; }
+  } else if (kind === "image") {
     const img = h("img", { src: source.currentSrc || source.src, alt: source.alt || "" });
     await img.decode().catch(() => {});
     V.item.append(img);
@@ -81,6 +96,7 @@ export async function openViewer(source, kind) {
     V.w = panel.offsetWidth; V.h = panel.offsetHeight;
   }
   V.el.querySelector(".viewer-title").textContent = title;
+  V.el.querySelector(".v-full").hidden = kind !== "video";
   const link = V.el.querySelector(".v-download");
   link.hidden = !download;
   if (download) { link.href = download; link.download = filename; }
@@ -88,7 +104,8 @@ export async function openViewer(source, kind) {
   V.el.hidden = false;
   const r = V.stage.getBoundingClientRect();
   V.fit = Math.min((r.width - 80) / V.w, (r.height - 140) / V.h, upscale);
-  const at = source.getBoundingClientRect();  // start exactly over what was clicked, then grow into place
+  // start exactly over what was clicked, then grow into place (from the middle when nothing was)
+  const at = source?.getBoundingClientRect() ?? { left: r.width / 2, top: r.height / 2, width: 1 };
   V.s = at.width / V.w; V.x = at.left - r.left; V.y = at.top - r.top;
   place(false);
   void V.item.offsetWidth;
@@ -118,8 +135,10 @@ export function closeViewer(now = false) {
   setTimeout(done, 300);
 }
 
+const playing = () => V.el.classList.contains("is-video");
 function keys(e) {
   if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeViewer(); }
+  else if (playing()) return;  // a video's own keys (space, arrows) stay its own
   else if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomBy(1.4); }
   else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomBy(1 / 1.4); }
   else if (e.key === "0") { e.preventDefault(); fitView(true); }
@@ -139,7 +158,9 @@ export function wireViewer() {
   V.el.querySelector(".v-out").addEventListener("click", () => zoomBy(1 / 1.4));
   V.el.querySelector(".v-in").addEventListener("click", () => zoomBy(1.4));
   V.el.querySelector(".v-fit").addEventListener("click", () => fitView(true));
+  V.el.querySelector(".v-full").addEventListener("click", () => V.item.querySelector("iframe, video")?.requestFullscreen?.());
   V.stage.addEventListener("wheel", e => {
+    if (playing()) return;
     e.preventDefault();
     const r = V.stage.getBoundingClientRect();
     zoomAt(V.s * Math.exp(-e.deltaY * .0016), e.clientX - r.left, e.clientY - r.top, false);
@@ -147,6 +168,7 @@ export function wireViewer() {
   const down = new Map();
   let start = null, moved = false, pinch = null;
   V.stage.addEventListener("pointerdown", e => {
+    if (playing() && V.item.contains(e.target)) return;  // the player's own controls get the click
     down.set(e.pointerId, { x: e.clientX, y: e.clientY });
     V.stage.setPointerCapture(e.pointerId);
     if (down.size === 1) { start = { x: e.clientX, y: e.clientY, ox: V.x, oy: V.y, onItem: V.item.contains(e.target) }; moved = false; }
@@ -164,7 +186,7 @@ export function wireViewer() {
     }
     if (!start) return;
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) moved = true;
-    if (moved && V.s > V.fit * 1.02) {
+    if (moved && V.s > V.fit * 1.02 && !playing()) {
       V.stage.classList.add("dragging");
       V.x = start.ox + e.clientX - start.x; V.y = start.oy + e.clientY - start.y;
       place(false);
@@ -178,6 +200,7 @@ export function wireViewer() {
     if (start && !moved) {
       const r = V.stage.getBoundingClientRect();
       if (!start.onItem) closeViewer();
+      else if (playing()) {}  // a click on a video is the player's
       else if (V.s > V.fit * 1.02) fitView(true);
       else zoomAt(V.fit * 2.2, e.clientX - r.left, e.clientY - r.top, true);
     }

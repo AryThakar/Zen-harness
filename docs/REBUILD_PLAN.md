@@ -364,3 +364,32 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
   popularity (bread with everything) where find_patterns on the same table finds the one real pair. If the tools
   keep being skipped, the library door from scripts (section 7) is the system's answer, not more wording.
   Tests: 605 pass.
+- **Phase 6 - the page: done (2026-10-15).** What changed, each checked in the browser:
+  - The live state at the end of the reply: once a reply has text, what the turn is doing ("Calculating...",
+    "Checking the answer...") shows at its end; the caret only while words arrive (before: the state at the top,
+    a lone caret blinking at the end - a 48 s re-check looked like a hang).
+  - The model's state: a dot always in the header - green ready (the model in its tooltip), amber loading, red
+    unreachable - checked every 30 s when ready, every 5 s otherwise, and right after a failed reply. A tunnel's
+    error page (Cloudflare's 530 through the Kaggle bridge) is said in plain words, never shown (before: "llama-server
+    answered 530; check its window", "Model starting", and 300 characters of HTML in a failed reply). Seen on a real
+    outage the morning of 2026-10-15 (the Kaggle session had ended): red dot, "The model can't be reached right now".
+  - Videos open in the viewer at 16:9 with a full-screen button, no zoom: a web video from a reply's sources (before:
+    played inside its small card) and a video file of the workspace (before: not viewable).
+  - An .html file runs in its card in the chat as well as in the file panel - the same sealed frame (its own origin;
+    a fetch to example.com never left the page) - with full screen in both.
+  - The console (2.12): Run, in the file panel or on a Python file's card, starts the program; what it prints
+    streams in, the user types its input() lines; Stop, Run again; at most 15 minutes, 5 with nothing typed; what it
+    writes is the workspace's; the session is kept in the file's report, so the model reads it when asked. The
+    panel's run with the answers typed up front, and its endpoint, are gone: one way to run a program.
+  - The file panel's search box: the model's own find, each file with the part that matched; folders in the paths.
+  - A chart downloads as its numbers (CSV) beside its picture.
+  - @ chips on a sent message and pinning from the @ menu (a chip in the header, the pin saved) - built in phase 4,
+    checked here; the plan card went with the plan tool in phase 5.
+  Light, dark and phone width (375 px, no sideways scroll): the console, the HTML card, the search and the video
+  viewer. Found and fixed there: the viewer's "video" state class was the sources' video-row class (the viewer
+  collapsed to nothing); the start screen offered to summarise agent.md; the console sent Windows' "\r\n"; a stray
+  "null" under the search results; the typing line slipped below the panel's fold as output grew. The live line was
+  checked with a scripted stream of a turn's events through the page's own code, the model being down; a real turn
+  sees it in phase 7.
+  Tests: 616 pass (test_open_figures_are_saved_once failed once in a full run and passed the five runs since -
+  a timing flake to watch, not fixed).

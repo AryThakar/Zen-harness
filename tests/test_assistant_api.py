@@ -219,12 +219,61 @@ def test_the_user_edits_a_file_and_runs_it_from_the_file_panel(app_and_slots):
     saved = client.put(f"{base}/items/{item}/text", json={"text": "name = input()\nprint('hi', name)\n"})
     assert saved.status_code == 200 and client.get(f"{base}/items/{item}/file").text.startswith("name = input()")
     assert "edited by the user" in ws.report(item)  # the report says it describes the version before
-    ran = client.post(f"{base}/items/{item}/run", json={"input": "Ary"}).json()
-    assert ran["status"] == "ok" and ran["output"].strip() == "hi Ary"
+    ran = in_console(client, base, item, ["Ary"])
+    assert ran[-1][0] == "end" and ran[-1][1]["exit_code"] == 0 and printed(ran) == "hi Ary\n"
     client.put(f"{base}/items/{item}/text", json={"text": "open('out.txt', 'w').write('x')\n"})
-    first = client.post(f"{base}/items/{item}/run", json={}).json()["files"][0]["id"]
-    again = client.post(f"{base}/items/{item}/run", json={}).json()["files"][0]
+    first = in_console(client, base, item)[-1][1]["files"][0]["id"]
+    again = in_console(client, base, item)[-1][1]["files"][0]
     assert again["id"] == first and again["updated"] and ws.entry(first)["parent"] == item  # run again: updated in place
     table = client.post(f"{base}/files", files={"file": ("t.csv", b"a\n1\n", "text/csv")}).json()["id"]
-    assert client.post(f"{base}/items/{table}/run", json={}).status_code == 422  # only Python files run
     assert client.put(f"{base}/items/{table}/text", json={"text": "x"}).status_code == 422
+
+
+def in_console(client, base, item, lines=()) -> list[tuple[str, dict]]:
+    """Run a file in the console, the lines typed ahead (the program reads each when it asks): its events."""
+    session = client.post(f"{base}/items/{item}/console").json()["session"]
+    for line in lines:
+        assert client.post(f"{base}/console/{session}/input", json={"line": line}).json() == {"ok": True}
+    with client.stream("GET", f"{base}/console/{session}") as r:
+        body = "".join(r.iter_text())
+    return [(e.split("\n", 1)[0].removeprefix("event: "), json.loads(e.split("data: ", 1)[1]))
+            for e in body.strip().split("\n\n")]
+
+
+def printed(events) -> str:
+    return "".join(d["text"] for kind, d in events if kind == "out")
+
+
+def test_a_program_runs_in_the_console_the_user_typing_while_it_runs(app_and_slots):
+    """2.12: started from its file, its output streams as events, each typed line goes to its input()."""
+    client, _, store = app_and_slots
+    ws_id, _ = workspace_and_chat(client)
+    base = f"/assistant/workspaces/{ws_id}"
+    item = client.post(f"{base}/files", files={"file": ("ask.py", b"a = input('first? ')\nb = input('second? ')\n"
+                                                                  b"print(a + b)\n", "text/x-python")}).json()["id"]
+    events = in_console(client, base, item, ["ze", "n"])
+    assert events[-1][0] == "end" and events[-1][1]["exit_code"] == 0
+    assert printed(events) == "first? second? zen\n"  # "\n", not Windows' "\r\n"
+    assert [d["text"] for kind, d in events if kind == "in"] == ["ze", "n"]
+    ws, _ = store.open(ws_id)
+    assert "› ze" in ws.report(item) and "zen" in ws.report(item)  # kept for the model to read
+    session = client.post(f"{base}/items/{item}/console").json()["session"]
+    client.post(f"{base}/console/{session}/stop")
+    with client.stream("GET", f"{base}/console/{session}") as r:
+        "".join(r.iter_text())
+    assert client.post(f"{base}/console/{session}/input", json={"line": "x"}).status_code == 409  # it has ended
+    assert client.get(f"{base}/console/nope").status_code == 404
+    table = client.post(f"{base}/files", files={"file": ("t.csv", b"a\n1\n", "text/csv")}).json()["id"]
+    assert client.post(f"{base}/items/{table}/console").status_code == 422  # only Python runs there
+
+
+def test_the_file_panels_search_is_the_models_find(app_and_slots):
+    client, _, _ = app_and_slots
+    ws_id, _ = workspace_and_chat(client)
+    base = f"/assistant/workspaces/{ws_id}"
+    doc = client.post(f"{base}/files", files={"file": ("lease.md", b"# Lease\n\nThe deposit is three months of rent.\n",
+                                                       "text/markdown")}).json()["file"]
+    client.post(f"{base}/files", files={"file": ("notes.txt", b"buy milk", "text/plain")})
+    found = client.get(f"{base}/find", params={"q": "deposit"}).json()
+    assert found["found"] == 1 and found["files"][0]["id"] == doc and "deposit" in found["files"][0]["match"].lower()
+    assert client.get(f"{base}/find", params={"q": "x"}).status_code == 422  # a query too short to mean anything

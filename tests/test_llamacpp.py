@@ -62,7 +62,8 @@ class QuietServer(ThreadingHTTPServer):
 class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
-    def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False, fail_first=0):
+    def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False, fail_first=0,
+                 page=None):  # page: an HTML error page, as a proxy or tunnel sends it
         self.requests = []
         fake = self
 
@@ -73,14 +74,26 @@ class FakeServer:
                 pass
 
             def do_GET(self):
+                if page is not None:
+                    return self.page()
                 body = json.dumps(props).encode() if props is not None and self.path == "/props" else b""
                 self.send_response(status)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
+            def page(self):
+                body = page.encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "text/html; charset=UTF-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
             def do_POST(self):
                 fake.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                if page is not None:
+                    return self.page()
                 if error or len(fake.requests) <= fail_first:
                     body = json.dumps({"error": {"message": error or "The Kaggle server can't be reached"}}).encode()
                     self.send_response(status)
@@ -191,7 +204,7 @@ def test_errors_become_provider_errors(fake):
     server = fake(status=400, error="the request exceeds the available context size")
     with pytest.raises(ProviderError, match="context size"):
         LlamaCppProvider("m", server.url).complete("s", [{"role": "user", "content": "q"}], [])
-    with pytest.raises(ProviderError, match="is llama-server running"):
+    with pytest.raises(ProviderError, match="isn't running"):
         LlamaCppProvider("m", "http://127.0.0.1:9").complete("s", [{"role": "user", "content": "q"}], [])
 
 
@@ -205,7 +218,7 @@ def test_a_connection_that_fails_before_anything_streams_is_tried_again(fake):
 
 def test_only_a_failed_connection_is_retried_and_never_for_ever(fake):
     down = fake(status=502, error="The Kaggle server can't be reached")
-    with pytest.raises(ProviderError, match="502"):
+    with pytest.raises(ProviderError, match="can't be reached right now"):
         LlamaCppProvider("m", down.url).complete("s", [{"role": "user", "content": "q"}], [])
     assert len(down.requests) == 3  # the first try and two more
     refused = fake(status=400, error="the request exceeds the available context size")
@@ -252,7 +265,21 @@ def test_ready_reports_loading_and_missing_server(fake):
     loading = LlamaCppProvider("m", fake(status=503).url).ready()
     assert not loading[0] and "loading" in loading[1]
     missing = LlamaCppProvider("m", "http://127.0.0.1:9").ready()
-    assert not missing[0] and "Start llama-server" in missing[1]
+    assert not missing[0] and "isn't running" in missing[1]
+
+
+def test_a_tunnels_error_page_is_said_plainly_never_shown(fake):
+    """Cloudflare's 530 page through the Kaggle bridge, when the tunnel is down: before, the status said 'llama-server
+    answered 530; check its window' and a reply ended with the page's first 300 characters of HTML."""
+    page = "<!DOCTYPE html><html><head><title>Error 1033</title></head><body>Cloudflare Tunnel error</body></html>"
+    tunnel = fake(status=530, page=page)
+    model = LlamaCppProvider("m", tunnel.url)
+    assert model.health() == ("down", "The model can't be reached right now: its connection is down. Try again in a "
+                                      "minute.")
+    with pytest.raises(ProviderError) as failed:
+        model.complete("s", [{"role": "user", "content": "q"}], [])
+    assert "<" not in str(failed.value) and "can't be reached" in str(failed.value)
+    assert LlamaCppProvider("m", fake(status=503).url).health()[0] == "loading"
 
 
 def test_a_call_gemma_wrote_into_its_text_becomes_a_real_call():

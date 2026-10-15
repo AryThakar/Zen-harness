@@ -1,7 +1,7 @@
 // Charts: the analyst's chart artifacts, drawn in the answer itself (no boxes). One series takes the data
 // colour; groups take the series colours. Each chart can open larger in the viewer.
 
-import { pngUrl } from "./api.js";
+import { csvUrl, pngUrl } from "./api.js";
 import { addExpand } from "./viewer.js";
 import { css, formatter, h, nf2, plural, xLabels, cap, escapeHtml, svg } from "./util.js";
 
@@ -84,8 +84,10 @@ export function chartCard(a) {
   const acts = h("div", { class: "card-acts" });
   if (a.id) {
     el.dataset.item = a.id;
-    acts.append(h("a", { class: "card-act", href: pngUrl(a.id), download: "", title: "Download as a picture",
-      "aria-label": "Download the chart as a picture", html: svg("download") }));
+    acts.append(h("a", { class: "card-act", href: pngUrl(a.id), download: "", title: "Download as a picture (PNG)",
+      "aria-label": "Download the chart as a picture", html: svg("download") }),
+    h("a", { class: "card-act", href: csvUrl(a.id), download: "", title: "Download its numbers (CSV)",
+      "aria-label": "Download the chart's numbers as a table", html: svg("table") }));
   }
   const open = el.querySelector(".expand");  // addExpand's button joins the cluster instead of floating on the plot
   if (open) {

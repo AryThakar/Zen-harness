@@ -3,7 +3,9 @@
 
 import { api, iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
-import { canView, openItem } from "./files.js";
+import { consoleEl } from "./console.js";
+import { canView, htmlFrame, isHtml, openItem } from "./files.js";
+import { openViewer } from "./viewer.js";
 import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, plural, polish, svg } from "./util.js";
 
 export const CARD_TYPES = new Set(["chart", "image", "diagram", "weather", "file", "report"]);
@@ -277,11 +279,24 @@ function fileCard(a) {
   const el = h("div", { class: "card slim enter" }, fileTile(a.name || ""),
     h("div", { class: "what", html: `${verb} <b>${escapeHtml(a.name || "")}</b>${a.bytes != null ? `<small>${fileSize(a.bytes)}</small>` : ""}` }));
   const item = { id: a.id, kind: "file", name: a.name, bytes: a.bytes };
+  if (/\.py$/i.test(a.name || "")) {  // a program: it runs here, the user typing while it runs
+    el.append(action("button", "play", "Run", { type: "button", onclick: () => {
+      el.querySelector(".console")?.remove();
+      el.querySelector(".below").append(consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path,
+        kind: f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file" }) }));
+    } }));
+  }
   if (canView(item)) el.append(action("button", "eye", "View", { type: "button", onclick: () => openItem(item) }));
   el.append(action("a", "download", "Download", { href: itemUrl(a.id), download: a.name || "" }));
   // the coder's save: what its last run drew, then its report (what Zen answers from); its run joins later
   const run = runEl(a.report ? [runPart("report", a)] : []);
   el.append(h("div", { class: "below" }, pictures((a.outputs || []).filter(id => id.startsWith("image_"))), run));
+  if (isHtml(a.name)) {  // a page, a game, a small tool: it runs right here
+    const live = h("div", { class: "html-live" });
+    el.querySelector(".below").prepend(live);
+    fetch(itemUrl(a.id)).then(r => r.ok ? r.text() : Promise.reject()).then(text => live.append(htmlFrame(text, a.name)))
+      .catch(() => live.remove());
+  }
   return el;
 }
 function reportCard(a) {
@@ -339,9 +354,7 @@ export function webSourcesEl(items) {
     const thumb = h("div", { class: "vthumb" });
     if (v.image) thumb.append(h("img", { src: imageUrl(v.image), alt: "", loading: "lazy" }));
     const play = h("button", { type: "button", "aria-label": `Play ${v.title || "the video"}`, html: '<svg viewBox="0 0 24 24"><path d="M9 6.2v11.6l9.4-5.8z"/></svg>' });
-    play.addEventListener("click", () => thumb.replaceChildren(h("iframe", {
-      src: `${v.video.embed}?autoplay=1`, title: v.title || "Video", allow: "autoplay; encrypted-media; picture-in-picture", allowfullscreen: true,
-      referrerpolicy: "strict-origin-when-cross-origin" })));
+    play.addEventListener("click", () => openViewer(thumb, "video", { embed: v.video.embed, title: v.title }));
     thumb.append(play);
     wrap.append(h("div", { class: "video" }, thumb, h("div", {},
       h("a", { class: "t", href: v.url, target: "_blank", rel: "noopener noreferrer" }, v.title || v.url),

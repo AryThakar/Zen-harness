@@ -80,7 +80,7 @@
         <svg class="i ic-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3.5"/><path class="bar" d="M9.5 4.5v15"/></svg></button>
       <span class="chat-title" id="chatTitle">New chat</span>
       <span class="pins" id="pins" aria-label="Files pinned to this chat" hidden></span>
-      <span class="model-state" id="modelState" hidden>Model starting</span>
+      <span class="model-state" id="modelState" role="status" hidden></span>
     </div>
     <div class="top-right">
       <button class="icon-btn files-btn" id="filesTop" type="button" title="Files &amp; data" aria-label="Files and data"><svg class="i ic-files" viewBox="0 0 24 24"><path d="M4 9.5V6.5a2 2 0 0 1 2-2h3.4l2 2H18a2 2 0 0 1 2 2v1"/><path class="paper" d="M6.5 9.5V8h11v1.5"/><path class="front" d="M3.6 11.2a1.6 1.6 0 0 1 1.6-1.7h13.6a1.6 1.6 0 0 1 1.6 1.7l-.6 6.4a2 2 0 0 1-2 1.9H6.2a2 2 0 0 1-2-1.9z"/></svg><span class="badge" id="filesBadge" hidden></span></button>
@@ -140,6 +140,7 @@
     <div><h2>Files &amp; data</h2><small id="drawerSub"></small></div>
     <button class="icon-btn" id="drawerClose" type="button" title="Close" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
   </div>
+  <label class="drawer-find"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input id="drawerFind" type="search" autocomplete="off" spellcheck="false" placeholder="Find in your files" aria-label="Find in your files: names, what is in them, what a picture shows"></label>
   <div class="drawer-body" id="drawerBody"></div>
   <div class="drawer-foot"><button class="add-btn" id="drawerAdd" type="button"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 5v14M5 12h14"/></svg>Add files</button></div>
 </aside>
@@ -148,6 +149,7 @@
 <div class="viewer" hidden role="dialog" aria-modal="true" aria-label="Viewer">
   <div class="viewer-top">
     <span class="viewer-title"></span>
+    <button class="v-btn v-full" type="button" title="Full screen" aria-label="Full screen" hidden><svg class="i" viewBox="0 0 24 24"><path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"/></svg></button>
     <a class="v-btn v-download" title="Download" aria-label="Download"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg></a>
     <button class="v-btn v-close" type="button" title="Close (Esc)" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
   </div>

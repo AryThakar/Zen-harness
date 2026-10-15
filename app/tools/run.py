@@ -63,8 +63,9 @@ def around(code: str, line: int, width: int = AROUND) -> str:
 
 
 def keep_report(ws: Workspace, index: SearchIndex | None, key: str, code: str, result: ToolResult,
-                typed: str | None) -> None:
-    """The file's report after a run: what it says it does (its docstring's first line), then the facts."""
+                typed: str | None, session: str | None = None) -> None:
+    """The file's report after a run: what it says it does (its docstring's first line), then the facts - and, for a
+    run in the console, the session as it went (what it printed, what the user typed), so the model can read it."""
     from .files import index_report
     res = result.result
     purpose = _docstring(code) or f"{ws.label(key)}"
@@ -78,12 +79,15 @@ def keep_report(ws: Workspace, index: SearchIndex | None, key: str, code: str, r
         given = typed.splitlines()
         lines.append(f"Run with typed input: {len(given)} line(s) ({', '.join(given[:5])}{' ...' if len(given) > 5 else ''})")
     printed = " ".join(res.get("output", "").split())
-    if printed:
+    if printed and session is None:  # a session keeps all it printed, below
         lines.append("It printed: " + (printed if len(printed) <= PRINTED else printed[:PRINTED] + " ..."))
     made = [f["path"] for f in (result.artifact or {}).get("files", []) if f.get("id") and f["id"] != key]
     if made:
         lines.append("It made: " + ", ".join(made))
-    ws.set_report(key, f"# {purpose}\n\n## Facts (written by the app)\n" + "\n".join(f"- {ln}" for ln in lines) + "\n")
+    report = f"# {purpose}\n\n## Facts (written by the app)\n" + "\n".join(f"- {ln}" for ln in lines) + "\n"
+    if session is not None:
+        report += f"\n## The user's session in the console (what it printed; their lines after ›)\n```\n{session}\n```\n"
+    ws.set_report(key, report)
     index_report(ws, index, key)
 
 

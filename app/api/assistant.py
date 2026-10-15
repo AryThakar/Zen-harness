@@ -18,11 +18,16 @@
     POST   /assistant/chats/{chat}/stop                       stop its running turn (the Stop button)
     PUT    /assistant/chats/{chat}/pins       {pins}          the files pinned to the chat (ids, in order)
     GET    /assistant/workspaces/{ws}/items                   files (agent.md first), tables, images
+    GET    /assistant/workspaces/{ws}/find?q=                 the file panel's search: the model's own find
     POST   /assistant/workspaces/{ws}/files   (upload)        a table, a document (indexed) or a file
     GET    /assistant/workspaces/{ws}/items/{item}/file       the stored file (images inline)
     GET    /assistant/workspaces/{ws}/items/{item}/rows       a table's first rows
+    GET    /assistant/workspaces/{ws}/items/{item}/png | /csv a chart file's picture, or its numbers as a table
     PUT    /assistant/workspaces/{ws}/items/{item}/text  {text}     the user's own edit of a text file
-    POST   /assistant/workspaces/{ws}/items/{item}/run   {input?}   run a Python file (the sandbox's engine)
+    POST   /assistant/workspaces/{ws}/items/{item}/console           run it in a console: the user types while it runs
+    GET    /assistant/workspaces/{ws}/console/{session}?start=  its output, typed lines and end - events
+    POST   /assistant/workspaces/{ws}/console/{session}/input {line}  a line the user typed, to its input()
+    POST   /assistant/workspaces/{ws}/console/{session}/stop          stop it
     GET    /assistant/web/icon?page=&favicon=   /web/image?url=   favicons and preview images,
                                                 fetched by the server with the public-address checks
 
@@ -48,8 +53,7 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import agent_md, caption, file_ops, filetypes
-from app.tools import run as run_tool
+from app.tools import agent_md, caption, console, file_ops, filetypes
 from app.tools import files as files_tool
 from app.tools import web
 from app.tools.core import ToolError, jsonable
@@ -104,9 +108,16 @@ def _chat(request: Request, chat_id: str) -> dict:
 @router.get("/status")
 def assistant_status(request: Request) -> dict:
     main = request.app.state.assistant_main
-    ready, message = main.ready()
+    health = getattr(main, "health", None)  # llama-server: ready, loading or down; others: ready or down
+    if health:
+        state, message = health()
+    else:
+        ok_, message = main.ready()
+        state = "ready" if ok_ else "down"
+    ready = state == "ready"
     loaded = getattr(main, "loaded_model", None)
-    return {"ready": ready, "message": message, "model": (loaded() if ready and loaded else None) or main.name,
+    return {"ready": ready, "state": state, "message": message,
+            "model": (loaded() if ready and loaded else None) or main.name,
             "assistant": settings.assistant_name, "user": settings.assistant_user_name}
 
 
@@ -365,6 +376,39 @@ def chart_png(ws_id: str, item_id: str, request: Request) -> FileResponse:
     return FileResponse(png, media_type="image/png", filename=name, headers=SAFE)
 
 
+@router.get("/workspaces/{ws_id}/find")
+def find_items(ws_id: str, q: str, request: Request) -> dict:
+    """The file panel's search: files(mode='find') itself - by name, by what is in them and by meaning - each file
+    with the part that matched (and its id, for the page to open it)."""
+    _workspace(request, ws_id)
+    ws, index = _store(request).open(ws_id)
+    try:
+        found = files_tool.find_files(ws, index, q).result
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
+    return jsonable({"found": found["found"], "more": found.get("more"),
+                     "files": [{**f, "id": ws.find_path(f["path"])} for f in found["files"]]})
+
+
+@router.get("/workspaces/{ws_id}/items/{item_id}/csv")
+def chart_csv(ws_id: str, item_id: str, request: Request) -> Response:
+    """A chart file's numbers as a table, to download (chart_image.table_of: one row a point)."""
+    import csv
+    import io
+    from urllib.parse import quote
+
+    from app.tools.chart_image import is_chart, spec_of, table_of
+    ws = _item(request, ws_id, item_id)
+    if not is_chart(ws.label(item_id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not a chart.")
+    columns, rows = table_of(spec_of(ws, item_id))
+    out = io.StringIO()
+    csv.writer(out).writerows([columns, *rows])
+    name = Path(ws.label(item_id)).name.removesuffix(".chart.json") + ".csv"
+    return Response("\ufeff" + out.getvalue(), media_type="text/csv; charset=utf-8",  # the mark: Excel reads it as UTF-8
+                    headers={**SAFE, "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
+
+
 @router.get("/workspaces/{ws_id}/items/{item_id}/versions")
 def item_versions(ws_id: str, item_id: str, request: Request) -> list[dict]:
     """The file's earlier versions, newest first (kept before each change, the last 10)."""
@@ -402,9 +446,8 @@ class TextBody(BaseModel):
     text: str = Field(max_length=file_ops.MAX_WRITE)
 
 
-class RunBody(BaseModel):
-    input: str | None = Field(None, max_length=10_000, description="what a person would type, one line per input()")
-    timeout: int = Field(30, ge=1, le=120)
+class LineBody(BaseModel):
+    line: str = Field(max_length=console.MAX_LINE)
 
 
 @router.put("/workspaces/{ws_id}/items/{item_id}/text")
@@ -428,20 +471,56 @@ def save_text(ws_id: str, item_id: str, body: TextBody, request: Request) -> dic
     return {"file": item_id, "bytes": done.result["bytes"]}
 
 
-@router.post("/workspaces/{ws_id}/items/{item_id}/run")
-def run_file(ws_id: str, item_id: str, body: RunBody, request: Request) -> dict:
-    """Run a Python file as the user's own run, from the file panel: the helper's run itself (app/tools/run.py) -
-    the same engine, limits, rules and report of the last run. Files it writes are the workspace's, made from it."""
+@router.post("/workspaces/{ws_id}/items/{item_id}/console")
+def console_start(ws_id: str, item_id: str, request: Request) -> dict:
+    """Run a Python file in a console (2.12): its output streams, the user types its input; the session is kept in
+    the file's report when it ends."""
     ws = _item(request, ws_id, item_id)
-    e = ws.entry(item_id)
-    if e["kind"] != "file" or not e["name"].lower().endswith(".py"):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Only Python files run here.")
     _, index = _store(request).open(ws_id)
-    result = run_tool.run(ws, index, item_id, body.input, body.timeout)
-    made = (result.artifact or {}).get("files", [])
-    if made:
-        _store(request).sync_items(ws_id)  # pictures it drew, tables it wrote: searchable now
-    return jsonable({"status": result.status, **result.result, "files": made})
+    try:
+        session = console.start(ws, index, item_id)
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
+    return {"session": session.id, "name": session.name}
+
+
+def _session(request: Request, ws_id: str, session_id: str) -> console.Session:
+    _workspace(request, ws_id)
+    ws, _ = _store(request).open(ws_id)
+    try:
+        return console.get(session_id, ws)
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, exc.message) from exc
+
+
+@router.get("/workspaces/{ws_id}/console/{session_id}")
+def console_follow(ws_id: str, session_id: str, request: Request, start: int = 0) -> StreamingResponse:
+    """The session's events from `start` (a page that reconnects gets the rest): out, err, in, end."""
+    session = _session(request, ws_id, session_id)
+
+    def body():
+        for event in session.follow(max(0, start)):
+            yield _sse(event) if event else ": still running\n\n"  # a comment line keeps the connection open
+        store = _store(request)
+        store.sync_items(ws_id)  # files it wrote: in the panel and searchable
+
+    return StreamingResponse(body(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/workspaces/{ws_id}/console/{session_id}/input")
+def console_input(ws_id: str, session_id: str, body: LineBody, request: Request) -> dict:
+    try:
+        _session(request, ws_id, session_id).type(body.line)
+    except ToolError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, exc.message) from exc
+    return {"ok": True}
+
+
+@router.post("/workspaces/{ws_id}/console/{session_id}/stop")
+def console_stop(ws_id: str, session_id: str, request: Request) -> dict:
+    _session(request, ws_id, session_id).stop()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- web cards

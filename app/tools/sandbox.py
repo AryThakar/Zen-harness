@@ -334,22 +334,14 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: 
     timeout = max(1, min(int(timeout), MAX_TIMEOUT))
     run_dir = ws.zen / "run"
     with _lock(ws.root):  # one run at a time in a workspace: each writes the script and registers what changed
-        tmp = run_dir / "tmp"
-        tmp.mkdir(parents=True, exist_ok=True)
-        tracked = {k: ws.entry(k)["file"] for k in ws.ids()}
-        protected = [str(p.relative_to(ws.root)).replace("\\", "/") for p in ws.protected()]  # the user's files, agent.md
-        script = str((run_dir / SCRIPT).resolve())
-        (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script,
-                                                   name=name or script, images=tuple(IMAGES), tracked=tracked,
-                                                   protected=protected), encoding="utf-8")
-        (run_dir / SCRIPT).write_text(code, encoding="utf-8")
+        argv = _prepare(ws, code, name, run_dir)
         before = _snapshot(ws.files)
 
         started = time.perf_counter()
         typed = stdin is not None and stdin != ""
-        proc = subprocess.Popen([sys.executable, "-I", "-X", "utf8", str((run_dir / CELL).resolve())], cwd=ws.files,
-                                env=_env(run_dir, tmp), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                stdin=subprocess.PIPE if typed else subprocess.DEVNULL, **_new_group())
+        proc = subprocess.Popen(argv, cwd=ws.files, env=_env(run_dir, run_dir / "tmp"), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, stdin=subprocess.PIPE if typed else subprocess.DEVNULL,
+                                **_new_group())
         timed_out = False
         try:
             out, err = proc.communicate(input=(stdin if stdin.endswith("\n") else stdin + "\n").encode("utf-8")
@@ -363,8 +355,7 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: 
         files, made = _register(ws, before)
     result = {"exit_code": proc.returncode, "seconds": seconds,
               "output": _cut(out.decode("utf-8", "replace"))}
-    errors = OWN_FRAME.sub("", _cut(err.decode("utf-8", "replace")))
-    errors = errors.replace(str(ws.files.resolve()) + os.sep, "").replace(str(run_dir.resolve()) + os.sep, "")
+    errors = own_errors(_cut(err.decode("utf-8", "replace")), ws, run_dir)
     if errors.strip():
         result["errors"] = errors
     if files:
@@ -386,6 +377,50 @@ def run_python(ws: Workspace, code: str, timeout: int = DEFAULT_TIMEOUT, stdin: 
     artifact = {"type": "code", "code": code, "output": result["output"], "errors": result.get("errors", ""),
                 "files": made}
     return ToolResult(status, jsonable(result), jsonable(artifact))
+
+
+def _prepare(ws: Workspace, code: str, name: str | None, run_dir: Path) -> list[str]:
+    """Write the set-up (the audit hook and the helpers a script may call) and the code into run_dir; the command
+    that runs them, in the workspace's folder with _env(run_dir, run_dir / "tmp")."""
+    (run_dir / "tmp").mkdir(parents=True, exist_ok=True)
+    tracked = {k: ws.entry(k)["file"] for k in ws.ids()}
+    protected = [str(p.relative_to(ws.root)).replace("\\", "/") for p in ws.protected()]  # the user's files, agent.md
+    script = str((run_dir / SCRIPT).resolve())
+    (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script, name=name or script,
+                                               images=tuple(IMAGES), tracked=tracked, protected=protected),
+                                encoding="utf-8")
+    (run_dir / SCRIPT).write_text(code, encoding="utf-8")
+    return [sys.executable, "-I", "-X", "utf8", str((run_dir / CELL).resolve())]
+
+
+def own_errors(errors: str, ws: Workspace, run_dir: Path) -> str:
+    """A script's error output as the script's own: the set-up's frames and the folders' paths taken out."""
+    errors = OWN_FRAME.sub("", errors)
+    return errors.replace(str(ws.files.resolve()) + os.sep, "").replace(str(run_dir.resolve()) + os.sep, "")
+
+
+def start(ws: Workspace, code: str, name: str, run_dir: Path) -> tuple[subprocess.Popen, dict]:
+    """A program started for a console: the same set-up and rules as a run, its output unbuffered (each print and
+    input() prompt comes as it is written) and its input open for the lines the user types. (the process, the
+    folder as it was - for register_since when it ends). Its own run_dir: a console can run for minutes, so it
+    doesn't hold the workspace's lock while it waits for the user."""
+    with _lock(ws.root):
+        argv = _prepare(ws, code, name, run_dir)
+        before = _snapshot(ws.files)
+        proc = subprocess.Popen([argv[0], "-u", *argv[1:]], cwd=ws.files, env=_env(run_dir, run_dir / "tmp"),
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_new_group())
+    return proc, before
+
+
+def register_since(ws: Workspace, before: dict) -> tuple[list[dict], list[dict]]:
+    """What a program wrote while it ran (_register), once it has ended - by path, so a helper's run at the same
+    time changes the same files, never copies of them."""
+    with _lock(ws.root):
+        return _register(ws, before)
+
+
+def stop(proc: subprocess.Popen) -> None:
+    _kill_tree(proc)
 
 
 def _invalid(message: str, field: str) -> ToolResult:

@@ -17,7 +17,7 @@ export function stepLabel(name, done, input) {
   return (pair || [name.replace(/_/g, " "), name.replace(/_/g, " ")])[done ? 1 : 0];
 }
 
-const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
+export const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
 const clock = s => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
 const timer = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -109,7 +109,8 @@ export function traceEl(traces) {
   }));
 }
 
-export function activityEl() {
+// onStatus(text): each new status, so the reply can also show it at its end (app.js, the live line)
+export function activityEl(onStatus = () => {}) {
   const say = h("span", { class: "say shimmer" }, "Thinking…");
   const time = h("span", { class: "timer" }, "0:00");
   const head = h("button", { class: "act-head", type: "button", "aria-expanded": "false" }, h("span", { class: "spin", html: LOADER }), say, time,
@@ -124,6 +125,7 @@ export function activityEl() {
   const setOpen = open => { el.classList.toggle("open", open); head.setAttribute("aria-expanded", open); };
   head.addEventListener("click", () => { touched = true; setOpen(!el.classList.contains("open")); });
   const tell = text => {  // the status text slides to its next state
+    onStatus(text);
     if (say.textContent === text) return;
     say.textContent = text;
     say.classList.remove("swap"); void say.offsetWidth; say.classList.add("swap");

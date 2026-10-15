@@ -72,6 +72,10 @@ NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
 # that answered with its own error (4xx, 500), a timeout and a stopped turn are not retried.
 RETRY_PAUSES = (2.0, 6.0)
 RETRY_STATUS = {502, 503, 504}
+# What a proxy or tunnel in front of the model answers when it can't reach it (the Kaggle bridge's 502, Cloudflare's
+# 52x and 530 - an HTML page): the model is down, said in plain words, never the page itself.
+GATEWAY = {502, 504, *range(520, 531)}
+DOWN = "The model can't be reached right now: its connection is down. Try again in a minute."
 
 
 def template_switches(thinking: bool) -> dict:
@@ -103,17 +107,24 @@ class LlamaCppProvider:
         self._vision: bool | None = None  # whether the server has the vision part loaded (sees_images)
         self._slot_tokens: int | None = None  # one slot's context, from /props
 
-    def ready(self) -> tuple[bool, str]:
+    def health(self) -> tuple[str, str]:
+        """The model server's state - 'ready', 'loading' or 'down' - and what to tell the user, in plain words."""
         try:
             with urllib.request.urlopen(f"{self.base_url}/health", timeout=3):
                 pass
         except urllib.error.HTTPError as exc:
-            if exc.code == 503:
-                return False, "The local model is still loading; try again in a moment."
-            return False, f"llama-server at {self.base_url} answered {exc.code}; check its window for errors."
+            if exc.code == 503 and not _is_page(exc):  # llama-server's own "Loading model"
+                return "loading", "The model is still loading; it will be ready in a moment."
+            if exc.code in GATEWAY or _is_page(exc):
+                return "down", DOWN
+            return "down", f"The model server answered with an error ({exc.code}); its window says why."
         except NET_ERRORS:
-            return False, f"Start llama-server (address {self.base_url}), then reload this page."
-        return True, f"{self.loaded_model()} (local, llama.cpp)"
+            return "down", f"The model server isn't running (expected at {self.base_url}). Start it, then reload this page."
+        return "ready", f"{self.loaded_model()} (local, llama.cpp)"
+
+    def ready(self) -> tuple[bool, str]:
+        state, message = self.health()
+        return state == "ready", message
 
     def sees_images(self) -> bool:
         """Whether llama-server has the model's vision part loaded (--mmproj; /props says so), asked once.
@@ -223,7 +234,14 @@ class LlamaCppProvider:
         return self.cancel is not None and self.cancel.is_set()
 
     def _unreachable(self) -> str:
-        return f"Could not reach the local model at {self.base_url}; is llama-server running?"
+        return f"The model server isn't running (expected at {self.base_url}). Start it, then try again."
+
+    def _http_error(self, exc: urllib.error.HTTPError) -> str:
+        """What the user is told when the server answered with an error: its own message, or - for a proxy's or
+        tunnel's error page - that the model can't be reached."""
+        if exc.code in GATEWAY or _is_page(exc):
+            return DOWN
+        return f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}"
 
     def _post(self, path: str, body: dict, timeout: int = 30) -> dict:
         with self._open(path, body, timeout) as response:
@@ -241,9 +259,9 @@ class LlamaCppProvider:
         try:
             out = self._post("/v1/chat/completions", body, timeout=LOOK_TIMEOUT)
         except urllib.error.HTTPError as exc:
-            raise ProviderError(_error_message(exc)) from exc
+            raise ProviderError(self._http_error(exc)) from exc
         except NET_ERRORS as exc:
-            raise ProviderError(f"Could not reach llama-server at {self.base_url}.") from exc
+            raise ProviderError(self._unreachable()) from exc
         return out["choices"][0]["message"].get("content") or ""
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
@@ -254,7 +272,7 @@ class LlamaCppProvider:
             with self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
                 text, calls, finish, timings, thinking = _read_stream(response, on_event, self.cancel)
         except urllib.error.HTTPError as exc:
-            raise ProviderError(f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}") from exc
+            raise ProviderError(self._http_error(exc)) from exc
         except (socket.timeout, TimeoutError) as exc:
             raise ProviderError(f"{self.where.capitalize()} took too long to respond; try a simpler question.") from exc
         except (urllib.error.URLError, ConnectionRefusedError) as exc:
@@ -415,8 +433,15 @@ def _unquote(key: str) -> str:
     return key
 
 
+def _is_page(exc: urllib.error.HTTPError) -> bool:
+    """The error came as a web page (HTML from a proxy or tunnel), not the model server's own message."""
+    return "html" in (exc.headers.get("Content-Type") or "").lower() if exc.headers else False
+
+
 def _error_message(exc: urllib.error.HTTPError) -> str:
     body = exc.read().decode("utf-8", "replace")
+    if body.lstrip()[:1] == "<":  # a page, whatever its header says: never shown as it is
+        return exc.reason or f"HTTP {exc.code}"
     try:
         error = json.loads(body).get("error", body)
         return error.get("message", str(error)) if isinstance(error, dict) else str(error)

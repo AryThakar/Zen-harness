@@ -8,7 +8,7 @@ import { forgetCharts, redrawCharts } from "./charts.js";
 import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, offerFollowUps, openDrawer, openItem, point, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
 import { hooks as mentionHooks, wireMention } from "./mention.js";
 import { hooks as pinHooks, pinsFromZen, renderPins } from "./pins.js";
-import { activityEl, loadTools, traceEl } from "./steps.js";
+import { LOADER, activityEl, loadTools, traceEl } from "./steps.js";
 import { $, addCaret, age, cap, closeDialog, confirmDialog, dialogOpen, h, load, markdown, plural, polish, prettyModel, promptDialog, save, showDialog, svg, toast, copyText, projectHue } from "./util.js";
 import { wireViewer } from "./viewer.js";
 
@@ -65,21 +65,27 @@ function playIntro() {
 }
 
 /* ═══ The model's state ═════════════════════════════════════════════════ */
+// The dot in the header is always there: green ready, amber loading, red when the model or this app's server can't
+// be reached - its words beside it only when it isn't ready; checked often until it is, then now and then (a tunnel
+// can drop at any time), and again right after a reply failed.
+const STATE_WORDS = { loading: "Model loading", down: "Model unreachable", offline: "Server offline" };
 async function refreshStatus() {
   let s;
   try { s = await api("/status"); }
-  catch { s = { ready: false, reachable: false, message: "Can't reach the server. Start it with: uvicorn app.main:app" }; }
+  catch { s = { ready: false, state: "offline", reachable: false, message: "This app's server isn't running. Start it, then reload this page." }; }
   s.reachable ??= true;
+  s.state ??= s.ready ? "ready" : "down";
   state.status = s;
   const chip = $("#modelState");
-  chip.hidden = s.ready;
-  chip.classList.toggle("down", !s.reachable);
-  chip.textContent = s.reachable ? "Model starting" : "Server offline";
-  chip.title = s.message || "";
+  chip.hidden = false;
+  chip.className = `model-state ${s.state}`;
+  chip.textContent = STATE_WORDS[s.state] || "";
+  chip.title = s.ready ? `${prettyModel(s.model)} - ready` : s.message || "";
+  chip.setAttribute("aria-label", s.ready ? `Model ready: ${prettyModel(s.model)}` : `${STATE_WORDS[s.state]}: ${s.message || ""}`);
   $("#here").title = s.ready ? `${prettyModel(s.model)}, running on this computer` : s.message || "";
   renderHello();
   clearTimeout(state.poll);
-  if (!s.ready) state.poll = setTimeout(refreshStatus, 5000);  // wait for the model to come up
+  state.poll = setTimeout(refreshStatus, s.ready ? 30000 : 5000);
   updateComposer();
 }
 
@@ -331,9 +337,11 @@ function renderHello() {
   $("#helloText").textContent = `What can I help with${user ? `, ${user}` : ""}?`;
   const notice = $("#helloNotice");
   notice.hidden = !s || s.ready;
-  if (s && !s.ready) notice.replaceChildren(h("b", {}, s.reachable ? "The model isn't ready yet" : "The server isn't reachable"), s.message || "");
+  if (s && !s.ready) notice.replaceChildren(h("b", {}, { loading: "The model is still loading", down: "The model can't be reached",
+    offline: "This app's server isn't running" }[s.state] || "The model isn't ready"), s.message || "");
   const tables = state.items.filter(i => i.kind === "table" && !i.parent);
-  const files = state.items.filter(i => i.kind === "file" && !/\.chart\.json$/i.test(i.name || ""));  // a chart is no read
+  // a chart is no read, and agent.md is Zen's memory, not a document to summarise
+  const files = state.items.filter(i => i.kind === "file" && !i.memory && !/\.chart\.json$/i.test(i.name || ""));
   const ideas = [];
   if (tables[0]) ideas.push(["chart", `What stands out in ${tables[0].name}? Show a chart`]);
   if (files[0]) ideas.push(["doc", `Summarise ${files[0].name}`]);
@@ -395,11 +403,20 @@ const SOURCE_TAG = /\[(?:Source|Sources):\s*([^\]\n]{1,80})\]/gi;
 
 // One reply, built from the stream (or from a saved chat, through the same calls)
 function assistantView() {
-  const root = h("div", { class: "reply" }), activity = activityEl();
+  // The live line: what the turn is doing, at the end of the reply once it has text - where the eye is
+  const live = h("div", { class: "live", hidden: true }, h("span", { class: "spin", html: LOADER }), h("span", { class: "say shimmer" }));
+  let status = "Thinking…", flowing = false;  // flowing: the model's words are arriving (the caret shows instead)
+  const syncLive = () => {
+    const on = streaming && !flowing && !!text.trim();
+    live.hidden = !on;
+    if (on) live.lastChild.textContent = status.startsWith("Writing") ? "Thinking…" : status;
+  };
+  const root = h("div", { class: "reply" }), activity = activityEl(said => { status = said; syncLive(); });
   const cards = h("div", { class: "cards" }), answer = h("div", { class: "answer" }), foot = h("div", { class: "foot" });
-  root.append(activity.el, cards, answer, foot);
+  root.append(activity.el, cards, answer, live, foot);
   thread.append(root);
   let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
+  const pause = () => { flowing = false; syncLive(); repaint(); };  // the words stopped: the live line takes over
   const stats = [], web = new Map(), passages = [], traces = [];
   let finished = false, traceBtn = null;
   // How the reply ran (the server's trace of each part of the turn): one small button beside the answer's
@@ -419,7 +436,7 @@ function assistantView() {
       .replace(/\{(image_\d+)\}/g, "![]($1)"))  // "{image_2}" written as a placeholder: shown as the picture (or dropped when it's on show already)
       .replace(/(<img\b[^>]*?)\bsrc="(image_\d+)"/g, '$1data-item="$2"');  // a workspace picture: resolved once the answer is done, not fetched as a page path
     polish(answer);
-    if (streaming && text) addCaret(answer);
+    if (streaming && flowing && text) addCaret(answer);
     stick();
   };
   const repaint = () => { if (!frame) frame = requestAnimationFrame(paint); };
@@ -462,16 +479,18 @@ function assistantView() {
       }
       if (!text.slice(roundStart)) activity.writing();
       text += chunk;
+      flowing = true;
+      syncLive();
       repaint();
     },
-    round() { fresh = true; },  // the model's step ended; what it writes next starts a new reply
-    checking() { fresh = true; activity.checking(); repaint(); },
+    round() { fresh = true; status = "Thinking…"; pause(); },  // the model's step ended; what it writes next starts a new reply
+    checking() { fresh = true; activity.checking(); pause(); },
     toolStart(d) {
       if (text.slice(roundStart).trim()) text = text.trimEnd() + "\n\n";
       roundStart = text.length;
       const step = activity.start(d);
       if (step?.delegate) current = step;
-      repaint();
+      pause();
     },
     toolEnd(d) {
       const step = activity.steps.get(d.id);
@@ -512,6 +531,7 @@ function assistantView() {
     stats(s) { stats.push(s); fresh = true; },
     ask(pending) {  // the turn pauses here until the user answers, in the message box
       streaming = false;
+      syncLive();
       paint();
       if (!question || question.decided) question = ask(pending);
       Object.assign(question.card, pending);
@@ -525,6 +545,7 @@ function assistantView() {
       if (inplace) {  // a helper asked in place: its step goes on working
         activity.resumed(callId);
         streaming = true;
+        syncLive();
         return;
       }
       activity.answered(callId);
@@ -532,9 +553,11 @@ function assistantView() {
       if (step === current) current = null;
       streaming = true;
       activity.running("Thinking…");
+      syncLive();
     },
     finish(final, timing) {
       streaming = false;
+      live.remove();
       if (final != null && final !== "") text = final;
       cancelAnimationFrame(frame);
       paint();
@@ -550,6 +573,8 @@ function assistantView() {
     },
     error(message) {
       streaming = false;
+      live.remove();
+      refreshStatus();  // a failed reply may mean the model went down: the dot says so at once
       paint();
       activity.stop();
       foot.append(h("div", { class: "callout" }, h("b", {}, "This reply didn't finish."), message));
@@ -559,6 +584,7 @@ function assistantView() {
     },
     stop(timing) {
       streaming = false;
+      live.remove();
       paint();
       activity.stop(timing?.seconds);
       foot.append(metaEl({ ...timing, stats, stopped: true, answer: text.trim() }, answer));

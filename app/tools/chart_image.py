@@ -83,6 +83,47 @@ def picture_of(ws: Workspace, key: str) -> Path | None:
     return cached
 
 
+def table_of(a: dict) -> tuple[list[str], list[list]]:
+    """A chart's numbers as a table - (columns, rows) - for its CSV download: what each kind draws, one row a point
+    (a category, a period, a bin, a box, a heatmap row)."""
+    kind, x = a.get("chart"), a.get("x") or []
+    first = str(a.get("x_label") or ("period" if kind in ("forecast", "unusual") else "x"))
+    value = str(a.get("y_label") or "value") + (f" ({a['unit']})" if a.get("unit") else "")
+    series = a.get("series") or []
+    if kind == "box":
+        stats = ("min", "q1", "median", "q3", "max")
+        return [first, *stats], [[n, *(b.get(s) for s in stats)] for n, b in zip(x, a.get("boxes") or [])]
+    if kind == "heatmap":
+        return [str(a.get("y_label") or ""), *map(str, x)], [[r, *row] for r, row in zip(a.get("rows") or [], a.get("values") or [])]
+    if kind == "scatter":
+        groups = a.get("groups")
+        return ([first, value] + ([str(a.get("group") or "group")] if groups else []),
+                [[px, py, *([groups[i]] if groups else [])] for i, (px, py) in enumerate(zip(x, a.get("y") or []))])
+    if kind == "unusual":
+        flagged = set(a.get("flagged") or [])
+        return [first, value, "expected", "unusual"], [[d, v, e, "yes" if d in flagged else ""]
+                                                         for d, v, e in zip(x, a.get("y") or [], a.get("expected") or [])]
+    if kind == "forecast":
+        lines = series or [{"name": str(a.get("y_label") or "value"),
+                            **{k: a.get(k) for k in ("x", "y", "forecast_x", "forecast", "low", "high")}}]
+        periods = sorted({d for s in lines for d in (s.get("x") or []) + (s.get("forecast_x") or [])})
+        columns, cells = [first], []
+        for s in lines:
+            name = str(s.get("name") or "value")
+            columns += [name, f"{name} forecast"] + ([f"{name} low", f"{name} high"] if s.get("low") else [])
+            seen = dict(zip(s.get("x") or [], s.get("y") or []))
+            ahead = {d: i for i, d in enumerate(s.get("forecast_x") or [])}
+            cells.append(lambda d, s=s, seen=seen, ahead=ahead: [
+                seen.get(d), (s.get("forecast") or [None] * len(ahead))[ahead[d]] if d in ahead else None,
+                *([s["low"][ahead[d]] if d in ahead else None, s["high"][ahead[d]] if d in ahead else None]
+                  if s.get("low") else [])])
+        return columns, [[d, *(v for cell in cells for v in cell(d))] for d in periods]
+    if series:  # line, area, bar, histogram with groups: one column a group
+        return [first, *(str(s.get("name")) for s in series)], [[d, *((s.get("y") or [None] * len(x))[i] for s in series)]
+                                                              for i, d in enumerate(x)]
+    return [first, value], [list(p) for p in zip(x, a.get("y") or [])]
+
+
 def _points(spec: dict) -> int:
     for k in ("y", "x", "values", "boxes"):
         if isinstance(spec.get(k), list):

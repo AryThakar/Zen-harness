@@ -52,6 +52,8 @@ const ICONS = {
   code2: '<path d="m8.5 8-4.5 4 4.5 4M15.5 8l4.5 4-4.5 4M13.3 5.5l-2.6 13"/>',
   flow: '<rect x="3.5" y="4" width="7" height="5" rx="1.5"/><rect x="13.5" y="15" width="7" height="5" rx="1.5"/><path d="M7 9v4.5a2 2 0 0 0 2 2h4.5"/>',
   trace: '<path d="M3 12h4l2.5-6.5 5 13 2.5-6.5h4"/>',
+  play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>',
 };
 export const svg = (name, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 

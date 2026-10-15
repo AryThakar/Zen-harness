@@ -6,6 +6,7 @@
 
 import { api, itemUrl, KEYS, pngUrl, rowsUrl, send, state, uploadFile } from "./api.js";
 import { chartCard } from "./charts.js";
+import { consoleEl } from "./console.js";
 import { isPinned, togglePin } from "./pins.js";
 import { openViewer, viewerOpen } from "./viewer.js";
 import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
@@ -17,6 +18,7 @@ const CODE = { py: "python", js: "javascript", mjs: "javascript", ts: "typescrip
   ps1: "powershell", yaml: "yaml", yml: "yaml", toml: "ini", ini: "ini", xml: "xml", r: "r", java: "java", c: "c", cpp: "cpp", h: "c",
   go: "go", rs: "rust", rb: "ruby", ipynb: "json" };
 const TEXT = new Set(["txt", "log", "csv", "tsv", "rst", "tex"]);
+const VIDEO = new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
 const LANG = { python: "Python", javascript: "JavaScript", typescript: "TypeScript", sql: "SQL", json: "JSON", css: "CSS", bash: "Shell",
   powershell: "PowerShell", yaml: "YAML", ini: "TOML", xml: "XML", r: "R", java: "Java", c: "C", cpp: "C++", go: "Go", rust: "Rust", ruby: "Ruby",
   markdown: "Markdown", plaintext: "Plain text" };
@@ -24,17 +26,18 @@ const DOT = { python: "#3b7ddd", javascript: "#e5c07b", typescript: "#3b7ddd", s
 function shape(item) {
   if (item.kind === "table") return "table";
   if (/\.chart\.json$/i.test(item.name || "")) return "chart";
-  if (item.kind === "note") return "md";
   if (item.kind === "image") return "image";
   const e = ext(item.name || item.id);
   if (CODE[e]) return "code";
   if (e === "md" || e === "markdown") return "md";
   if (e === "html" || e === "htm") return "html";
   if (e === "pdf") return "pdf";
+  if (VIDEO.has(e)) return "video";
   if (TEXT.has(e)) return "text";
   return null;
 }
 export const canView = item => !!shape(item);
+export const isHtml = name => /\.html?$/i.test(name || "");
 const LIMIT = 4 << 20;  // larger text files are downloaded, not shown
 // An HTML file runs - its scripts, styles and inline pictures - in a frame sealed two ways: the sandbox gives it
 // an origin of its own (no access to this app, its storage or its API), and this policy, read before anything
@@ -43,8 +46,18 @@ const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" conten
   `script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; ` +
   `font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'">`;
 
+// An HTML file running in the sealed frame, with a full-screen button (the file panel and its card in the chat)
+export function htmlFrame(text, title) {
+  const frame = h("iframe", { class: "html-view", sandbox: "allow-scripts allow-modals allow-pointer-lock",
+    srcdoc: SEALED + text, title: title || "HTML preview" });
+  const full = h("button", { class: "frame-full", type: "button", title: "Full screen", "aria-label": `Show ${title || "the page"} full screen`,
+    html: svg("expand") });
+  full.addEventListener("click", () => frame.requestFullscreen?.());
+  return h("div", { class: "html-frame" }, frame, full);
+}
+
 /* ═══ The file panel ════════════════════════════════════════════════════ */
-const fv = { item: null, mode: "preview", text: null, table: null, blob: null, editing: false, draft: "", input: "", output: null, versions: [] };
+const fv = { item: null, mode: "preview", text: null, table: null, blob: null, editing: false, draft: "", output: null, versions: [] };
 export const fileOpen = () => document.body.classList.contains("viewing");
 // The sandbox: a text file the user can change and save, and a Python file they can run
 const editable = item => item?.kind === "file" && ["code", "text", "md", "html"].includes(shape(item));
@@ -54,7 +67,8 @@ const keepOrDrop = async () => !dirty() || await confirmDialog("Discard your cha
 
 export async function openItem(item, from) {
   const kind = shape(item);
-  if (kind !== "image" && fileOpen() && !await keepOrDrop()) return;
+  if (kind !== "image" && kind !== "video" && fileOpen() && !await keepOrDrop()) return;
+  if (kind === "video") return openViewer(from || null, "video", { src: itemUrl(item.id), name: item.name, title: item.name });
   if (kind === "image") {  // pictures open in the viewer
     const img = from?.tagName === "IMG" ? from : Object.assign(new Image(), { src: itemUrl(item.id), alt: item.name || item.id });
     if (!from) { await img.decode().catch(() => {}); }
@@ -148,8 +162,7 @@ function show() {
     body.append(page);
     status = ["Markdown", "preview"];
   } else {
-    body.append(h("iframe", { class: "html-view", sandbox: "allow-scripts allow-modals allow-pointer-lock",
-      srcdoc: SEALED + fv.text, title: item.name }));
+    body.append(htmlFrame(fv.text, item.name));
     status = ["HTML", "runs here", "no network"];
   }
   if (fv.output && !fv.editing && runnable(item)) body.append(fv.output);  // the last run stays in view
@@ -159,7 +172,7 @@ function show() {
 }
 
 // Who brought the file, as its meta line says it (keys stay inside the app)
-const whose = item => item.kind === "note" ? "note" : item.by === "user" ? "yours" : "made by Zen";
+const whose = item => item.by === "user" ? "yours" : "made by Zen";
 
 // Earlier versions, newest first: each kept before a change (the last 10); restoring one keeps the current one too
 function versionsView(item) {
@@ -178,8 +191,7 @@ async function restore(item, v) {
   openItem(state.items.find(i => i.id === item.id) || item);
 }
 
-// Editing: the file's text in a plain editor (Tab indents, Ctrl+S saves); a Python file gets a box for what a
-// person would type when it asks (input()) and its last run's output below
+// Editing: the file's text in a plain editor (Tab indents, Ctrl+S saves); a Python file's console stays below
 function editPane() {
   const area = h("textarea", { class: "edit-area", spellcheck: "false", autocapitalize: "off", "aria-label": `Edit ${fv.item.name}` });
   area.value = fv.draft;
@@ -198,12 +210,7 @@ function editPane() {
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveEdit(); }
   });
   setTimeout(() => area.focus({ preventScroll: true }));
-  if (!runnable(fv.item)) return h("div", { class: "edit-pane" }, area);
-  const typed = h("textarea", { class: "run-input", rows: "2", spellcheck: "false",
-    placeholder: "What a person would type when it asks (input()), one line each - optional" });
-  typed.value = fv.input;
-  typed.addEventListener("input", () => { fv.input = typed.value; });
-  return h("div", { class: "edit-pane" }, area, typed, fv.output);
+  return h("div", { class: "edit-pane" }, area, runnable(fv.item) ? fv.output : null);
 }
 
 async function saveEdit() {
@@ -220,36 +227,15 @@ async function saveEdit() {
   return true;
 }
 
+// Run: the program in a console under its code - its output as it comes, the user typing its input() (console.js)
 async function runFile() {
   const item = fv.item;
-  if (!fv.editing) { fv.editing = true; fv.draft = fv.text; }
-  if (!await saveEdit()) return;
-  const button = $("#fvRun");
-  button.disabled = true;
-  button.textContent = "Running…";
-  fv.output = h("div", { class: "run-out" }, h("div", { class: "run-out-head" }, "Running…"));
+  if (fv.editing && !await saveEdit()) return;
+  fv.output = consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path,
+    kind: f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file" }),
+    onEnd: files => { if (files.length) hooks.loadItems(); } });
   show();
-  let r;
-  try { r = await send("POST", `/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}/run`, { input: fv.input || null }); }
-  catch (e) { r = { status: "failed", errors: e.message }; }
-  button.disabled = false;
-  button.textContent = "Run";
-  if (fv.item !== item) return;
-  const made = (r.files || []).filter(f => f.id);
-  const head = r.status === "ok" ? `Ran in ${r.seconds} s` : r.error?.message?.startsWith("Stopped after") ? r.error.message
-    : `Stopped with an error${r.seconds != null ? ` after ${r.seconds} s` : ""}`;
-  fv.output = h("div", { class: `run-out${r.status === "ok" ? "" : " failed"}` },
-    h("div", { class: "run-out-head" }, head),
-    r.output ? h("pre", { class: "code" }, r.output.trimEnd()) : null,
-    r.errors ? h("pre", { class: "code err-out" }, r.errors.trimEnd()) : null,
-    made.length ? h("div", { class: "tags" }, made.map(f => {
-      const kind = f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file";
-      const it = { id: f.id, kind, name: f.path };
-      return h("button", { class: "tag", type: "button", onclick: () => openItem(it) }, `${f.path}${f.updated ? " (updated)" : ""}`);
-    })) : null,
-    !r.output && !r.errors && !made.length ? h("div", { class: "muted" }, "It printed nothing.") : null);
-  show();
-  if (made.length) hooks.loadItems();
+  fv.output.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function editorView(text, lang) {
@@ -338,8 +324,31 @@ export function closeDrawer() { document.body.classList.remove("drawer-open"); }
 const closeSide = () => document.body.classList.remove("side-open");
 const itemsOf = kind => state.items.filter(i => i.kind === kind);
 
+// The search box: the model's own find (names, what is in them, meaning), so the user finds what Zen would
+let finding = 0;
+async function findFiles() {
+  const q = $("#drawerFind").value.trim(), mine = ++finding, body = $("#drawerBody");
+  if (q.length < 2) return fillDrawer();
+  let r;
+  try { r = await api(`/workspaces/${state.ws.id}/find?q=${encodeURIComponent(q)}`); }
+  catch (e) { if (mine === finding) body.replaceChildren(h("div", { class: "drawer-empty" }, e.message)); return; }
+  if (mine !== finding) return;  // a newer search is on its way
+  const rows = r.files.map(f => {
+    const item = state.items.find(i => i.id === f.id) || { id: f.id, name: f.path, kind: "file" };
+    const icon = item.kind === "image" ? h("img", { class: "zoomable", src: itemUrl(item.id), alt: f.path, loading: "lazy" })
+      : item.memory ? noteTile() : fileTile(item.kind === "table" && !/\.(csv|tsv|xlsx?|xlsm)$/i.test(f.path) ? "table.csv" : f.path);
+    return h("div", { class: "item found" }, icon, h("div", {}, h("div", { class: "nm", title: f.path }, f.path),
+      h("div", { class: "mt", title: f.match || f.about }, f.match ? `Matched ${f.match}` : f.about)),
+      h("button", { class: "act", type: "button", onclick: () => item.kind === "image" ? openViewer(icon, "image") : openItem(item) },
+        item.memory ? "Open" : "View"));
+  });
+  body.replaceChildren(h("div", { class: "sec" }, h("span", {}, r.found ? `Matching “${q}”` : `Nothing matches “${q}”`),
+    h("span", {}, String(r.found))), ...rows, ...(r.more ? [h("div", { class: "drawer-empty" }, r.more)] : []));
+}
+
 export function fillDrawer() {
   $("#drawerSub").textContent = state.ws ? `In ${state.ws.name} · ${plural(state.items.length, "item")}` : "";
+  if ($("#drawerFind").value.trim().length >= 2) return findFiles();  // a search stays until it is cleared
   const body = $("#drawerBody");
   if (!state.items.length) {
     body.replaceChildren(h("div", { class: "drawer-empty" }, "Nothing here yet. Add spreadsheets, documents or any file, or ask Zen for charts, pictures and notes."));
@@ -499,6 +508,11 @@ export function offerFollowUps(bubble, follow) {
 export function wireFiles() {
   wireFilePanel();
   $("#drawerClose").addEventListener("click", closeDrawer);
+  let pause = 0;  // search once the typing pauses; Esc clears the box first, then closes the panel
+  $("#drawerFind").addEventListener("input", () => { clearTimeout(pause); pause = setTimeout(findFiles, 280); });
+  $("#drawerFind").addEventListener("keydown", e => {
+    if (e.key === "Escape" && e.target.value) { e.stopPropagation(); e.target.value = ""; fillDrawer(); }
+  });
   $("#drawerScrim").addEventListener("click", closeDrawer);
   $("#drawerAdd").addEventListener("click", () => $("#fileInput").click());
   $("#attachBtn").addEventListener("click", () => $("#fileInput").click());
