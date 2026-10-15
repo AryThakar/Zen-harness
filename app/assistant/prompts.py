@@ -98,6 +98,10 @@ ANNOUNCE_NUDGE = ("[App check: your reply says you are about to do something, bu
 # with no call - so it says plainly that nothing happened.
 CLAIM_NUDGE = ("[App check: your reply says something was {verb}, but no tool did anything in this turn, so "
                "nothing was {verb}. Call the tool now - or tell the user it was not done.]")
+# A reply naming a file as saved or made that isn't in the workspace (measured: two writes refused, a third worked,
+# and the reply said "I have saved the detailed changes to changes.md" - there was none).
+FILE_NUDGE = ("[App check: your reply says {name} was made, but there is no file of that name in the workspace - "
+              "nothing made it. Make it now with the right tool, or tell the user it was not made.]")
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only agent.md keeps "
                   "it. Add it now: files(mode='write', name='agent.md', content=its text plus the new line).]")

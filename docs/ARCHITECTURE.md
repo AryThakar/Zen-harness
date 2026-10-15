@@ -1,214 +1,258 @@
 # Zen - architecture
 
-How the assistant works today, read from the code (2026-10-09). The decisions behind it, what was measured
-and what is still to do are in [SYSTEM_PLAN.md](SYSTEM_PLAN.md); the findings of the full read-through are in
-[REVIEW_LOG.md](REVIEW_LOG.md).
+How the assistant works, read from the code after the rebuild (2026-10-15). Why it is built this way, phase by
+phase with what was measured, is in [REBUILD_PLAN.md](REBUILD_PLAN.md); who owns what, and every guard and check,
+in [SYSTEM_MAP.md](SYSTEM_MAP.md).
 
 ## 1. The idea
 
-Zen is a chat assistant on a local model (Gemma 4 through llama-server). A **workspace** is a project and a
-sandbox: its files, tables, pictures, notes, chats and one search index live in its own folder, and nothing
-crosses its edge except through a card the user clicks (a download, a delete, replacing the user's file).
-**main** talks with the user and does quick things itself; three **helpers** do focused work - the web, the
-user's own documents and notes, and computing in the workspace - each with only its own tools, and hand main a
-short checked result. What the system guarantees - facts, file safety,
-honesty - is done by code; the model is helped, never trusted with it.
+Zen is a chat assistant on an open model (Gemma 4 26B through llama-server). A **workspace** is a project: one
+folder of real files, each named by its path - the same name for the user, the model, the helpers, a script and
+the search index - with its chats and one search index. Nothing crosses its edge except through a card the user
+clicks (a download, a delete, changing the user's own file).
+
+**main** talks with the user and does quick things itself; three **helpers** do focused work - the web, reading
+many or long documents and earlier chats, and computing in the workspace - each with only its own tools, and
+hand main one checked result. What the system guarantees - facts, file safety, honesty - is done by code; the
+model is helped, never trusted with it.
 
 ```
-browser (web/)  ──HTTP + stream──►  FastAPI (app/main.py, app/api/assistant.py)
-                                        │
-                                   main turn loop (app/assistant/main.py) ── model slot 0
-                                        │  9 tools of its own + 3 delegates
-                     ┌──────────────────┬───┴──────────────┐
-                 research_web       ask_knowledge      analyze_or_code      ── model slot 1
-                 web helper         knowledge          analyst-programmer   (app/assistant/workers/)
-                     │                  │                  │
-                 app/tools/ - plain functions with direct tests, no model inside
-                     │
-   workspace folder (files, tables, pictures, notes, reports, sandbox) + search index + chat store
+browser (web/)  --HTTP + server-sent events-->  FastAPI (app/main.py, app/api/assistant.py)
+                                                     |
+                                       main's turn (app/assistant/main.py)  -- model slot 0
+                                         7 tools of its own + 3 helpers
+                     +----------------------+--------+---------------------+
+                research_web          ask_knowledge          analyze_or_code      -- model slot 1
+                web helper            knowledge helper       analyst-programmer   (app/assistant/workers/)
+                     |                      |                      |
+                app/tools/ - plain functions with direct tests, no model inside
+                     |
+   workspace folder (files/ by path, .zen/ registry, versions, reports) + search index + chat store
 ```
 
 ## 2. What runs
 
 | Process | What it is | Who starts it |
 |---|---|---|
-| The app | `uvicorn app.main:app` - API and chat page on http://localhost:8000 | you |
-| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`: local, or the 26B on Kaggle through its bridge. Slot 0 is main, slot 1 the helpers | you |
-| The embedding server | llama-server with EmbeddingGemma 2 and its picture projector, port 8070, this computer only | the app, on first use; stopped when it exits (app/rag/embed_server.py) |
+| The app | `uvicorn app.main:app` - the API and the chat page on http://localhost:8000 | you |
+| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today the 26B on Kaggle, reached through `C:\zen-data\kaggle\bridge.py` (a local address forwarding to the notebook's tunnel); a local llama-server works the same way | you |
+| The embedding server | llama-server with EmbeddingGemma and its picture projector, port 8070, this computer only | the app, on first use; stopped when it exits (app/rag/embed_server.py) |
 | The browser | Playwright MCP (Edge, headless, no profile) for pages a plain read can't get | the app, on first use; closed when idle (app/tools/browser.py) |
 
 Settings come from environment variables or the project's `.env` (app/config.py): the chat model's address,
-the embedding server's files (`ASSISTANT_EMBED_SERVER`, `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ`),
-Playwright MCP's folder (`ASSISTANT_PLAYWRIGHT_MCP`), the data folder, thinking on or off, the assistant's
-and the user's names. Without the embedding server set up, search uses fastembed's bge-small on the CPU;
-without Playwright MCP, there is no browser and such pages are reported as unreadable.
+the embedding server's files, Playwright MCP's folder, the data folder, thinking on or off, the assistant's and
+the user's names. Without the embedding server, search falls back to fastembed's bge-small on the CPU; without
+Playwright MCP, pages that need a browser are reported as unreadable. The prompt limit follows the model server
+(its slot size from /props, less the room for the reply): 20,480 tokens a slot on Kaggle today.
 
 ## 3. The code
 
 | Folder | What is there |
 |---|---|
-| `app/api/` | the HTTP API: workspaces, chats, messages (streamed), answers to questions, uploads, items, the file panel's save and run, web icons |
-| `app/assistant/` | main's turn loop (`main.py`), what every call sees (`context.py`), main's honesty checks (`checks.py`), every tool's schema and handler (`registry.py`), the prompts (`prompts.py`), the store (`store.py`) |
-| `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence trace and guards (`evidence.py`), result checks (`checks.py`) |
-| `app/tools/` | the tools - each a plain function returning one result shape (`core.py`), tested without a model |
+| `app/api/` | the HTTP API: status, workspaces, chats, messages and answers (streamed), pins, items, uploads, the file panel's edit, find, versions and restore, chart pictures and CSV, the console, web icons |
+| `app/assistant/` | main's turn (`main.py`), what every call sees and how it fits the slot (`context.py`), the pinned files' snapshot (`snapshot.py`), main's checks (`checks.py`), every tool's schema, description and handler (`registry.py`), the prompts and nudges (`prompts.py`), the chat store (`store.py`) |
+| `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence and the guards before a call (`evidence.py`), the result checks (`checks.py`) |
+| `app/tools/` | the tools, each a plain function returning one result shape (`core.py`); the workspace (`workspace.py`), file types in one place (`filetypes.py`), agent.md (`agent_md.py`), the sandbox (`sandbox.py`), runs and the console (`run.py`, `console.py`), the search index (`search_index.py`) |
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
-| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls repaired in `gemma_calls.py`), Groq for testing, a scripted model for tests |
-| `web/` | the chat page: `index.html`, `app.css`, and `js/` - `app.js` (the chat), `api.js`, `cards.js` (answer cards), `charts.js`, `steps.js` (helper steps, trace), `files.js` (file panel), `viewer.js`, `ask.js`, `util.js` |
-| `tests/` | the tests (pytest, ~530) - tools directly, the loop with scripted models, the API, the real embedding server when it is set up |
-| `bench/` | measurements behind decisions (search models, web ranking, page focus, the extractor gate, helper runs) |
+| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`), Groq for testing, a scripted model for tests |
+| `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat), `api.js`, `cards.js` (answer cards), `charts.js`, `steps.js` (the work behind a reply, the trace), `files.js` (the file panel), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
+| `tests/` | pytest, 617 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description; no model needed |
+| `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn
 
-A turn is the user's message, then model steps and tool calls until main answers - a LangGraph graph
-(agent → tools → agent ... → end), streamed to the page; every message is saved as it happens (the store
-is the history).
+A turn is the user's message, then model steps and tool calls until main answers (at most 8 tool rounds) - a
+LangGraph graph (agent -> tools -> agent ... -> end), streamed to the page; every message is saved as it happens
+(the store is the history).
 
-- **What main sees.** A system prompt that never changes (persona and how it works - so llama.cpp's prompt
-  cache holds), the chat through a rolling window, and its tools. What the workspace holds and the pinned
-  notes ride on the user's messages, append-only (context.py): the first message carries a snapshot,
-  later ones only what changed. Each user message starts with its local time.
-- **Fitting the slot.** Sizes are counted exactly by the model server. The oldest whole turns drop out,
-  25% below the limit, and the cut stays put so the prompt's start stays the same; a turn that alone
-  outgrows the slot has its older tool results shortened. Dropped turns stay findable through recall.
-- **Questions.** ask_user pauses the turn: a card with options, a text box and Skip; the answer comes
-  back as the call's result. A helper's question pauses in place - the helper keeps its work and waits.
-- **Approvals.** Downloading, importing a table from a link, deleting and replacing the user's file are
-  asked through a card (approval.py); on the button, code does the action - the model never does.
-- **Guards and checks** - two kinds, one rule. A guard before a call judges it, so it says why it stopped
-  it and runs it when the model confirms (the same call with `confirm: true`): a call that already failed in
-  this turn; a helper task carrying numbers no tool returned and the user never wrote (confirmed - sample
-  data the user asked for - it runs, and the helper is told to say the numbers are made up). Guards for the
-  user's safety and permission - the sandbox, approvals - never take a confirm. The checks after a reply
-  only advise, once per turn, with a hidden [App check]: a reply that announces an action without doing it,
-  claims an action no tool did, says it will remember without saving, or writes a tool call as text.
-- **The plan card.** main can show its plan as a checklist; a step ticks when its tool's call ends well,
-  and a step main does itself (no tool) when the answer is finished.
-- **After the turn.** The turn is indexed for recall, the workspace's new pictures and tables are indexed,
-  a new chat is named, and a trace is stored - main's steps and tokens, every tool call, each helper's
-  steps and checks - opened from a button under the answer.
+- **What main sees.** A system prompt that never changes while the app runs - the persona, the routing list
+  (what main does itself, what goes to which helper), how to read what the app adds - followed by agent.md as it
+  is now (section 7). Then the chat through a rolling window, and its tools. What the workspace holds rides on
+  the user's messages, append-only: the first message a snapshot of the newest files, later ones only what
+  changed. Each user message starts with its local time. Files the user pointed at with @ are named on their
+  message ("[Files with this message: ...]").
+- **Pins and @: the snapshot.** For the turn being answered, the files pinned to the chat and those pointed at
+  with @ are matched to the message - an outline, the passages that match, a table's sample rows (labelled as a
+  sample), code's functions with their lines, a picture's caption - at most 6,000 characters, attached to this
+  turn's message only and never stored, like thinking (snapshot.py). The model reads more with files read.
+- **Fitting the slot.** Sizes are counted exactly by the model server, the snapshot included. The oldest whole
+  turns drop out, to 25% below the limit, and the cut stays put so the prompt's start - and the server's cache -
+  stays the same. A turn that alone outgrows the slot shortens, in order: its older tool results, its older
+  calls' long texts (a file's whole text: the file keeps it), then its newest results; past that it stops with a
+  plain message - never sent over the limit. Dropped turns stay findable through recall.
+- **Questions.** ask_user pauses the turn: a card in the message box with options, a text box and Skip; the
+  answer comes back as the call's result. A helper's question pauses it in place - it keeps its work and waits.
+- **Approvals.** Downloading, deleting and changing the user's own file are asked through a card (approval.py);
+  on the button, code does the action - the model never does.
+- **Guards and checks.** A guard before a call judges it and says why it stopped it; a judgment guard runs the
+  call when the model sends it again with `confirm: true` - a call that already failed in this turn; a helper
+  task carrying numbers no tool returned and the user never wrote (confirmed - sample data the user asked for -
+  it runs, labelled as made up). Guards for safety and permission (the sandbox, the approvals) never take a
+  confirm. After a reply, checks only advise, once per turn, with a hidden [App check]: a reply that announces
+  an action without doing it, claims one no tool did, says it will remember without writing agent.md, or says it
+  saved a file that isn't in the workspace.
+- **What the page sees while it works.** The steps (and a helper's own steps inside them) at the top of the
+  reply; once the reply has text, what is happening now ("Checking the answer...") at its end.
+- **After the turn.** The turn is indexed for recall, the workspace's new files are indexed, a new chat is
+  named, and a trace is stored - main's steps and tokens, every tool call, each helper's steps and checks -
+  opened from a button under the answer.
 
 ## 5. The helpers
 
 | Helper | main calls | Its tools | Steps | Finishes with |
 |---|---|---|---|---|
-| web | research_web | web_search, read_webpage, ask_user | 12 | answer, sources, how each page was read, pages that failed, download links |
-| knowledge | ask_knowledge | search_files, recall, read_file | 6 | answer, sources |
-| analyst-programmer (engineer) | analyze_or_code (task, data: the table, file: a program to keep or change) | inspect_data, clean_data, query_data, make_chart, compare, forecast, predict, find_patterns, analyze_text, run_code, fix_code, read_file, ask_user, save_code | 12 | finish: answer, method, caveats - a report kept on the table it worked on; a program kept by save_code, with its report |
+| web | research_web (task) | web_search, read_webpage, ask_user | 12 | submit_result: answer, caveats, sources (the numbers of the pages it read), download links |
+| knowledge | ask_knowledge (question) | files (find, read), recall | 6 | submit_result: answer, caveats, sources |
+| analyst-programmer | analyze_or_code (task, files) | inspect_data, clean_data, query_data, make_chart, compare, forecast, predict, find_patterns, analyze_text, files (find, read, write, edit), run, ask_user | 12 | finish: answer, caveats - kept as the report of the table it worked on |
 
-One helper computes in the workspace: until 2026-10-10 a data analyst and a coder both ran Python on the same
-workspace, and main - which had to predict whether a job's result was an answer or a file - sent data work to
-the coder (a download it couldn't do, a demo dataset) while the analyst built slide decks. One helper with both
-crafts has no such seam; documents stay main's (files, written from Markdown with the helper's chart ids).
-
-main knows each helper by its contract (contracts.py) - what it is for and what it hands back - never by
-its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools; it starts from
-the time, the workspace, the pinned notes and main's task - not the user's message, so it does its own part
-and not one main gave another helper. **A helper acts or finishes**: every step requires a tool call
+main knows each helper by its contract (contracts.py) - what it is for, what it hands back, when not to use it -
+never by its tools. A helper runs on slot 1 with its own short prompt, a step limit and only its tools; its task
+opens with the time, the workspace, agent.md and main's task - not the user's message (given the user's words, a
+helper did the parts main had given to others). **A helper acts or finishes**: every step requires a tool call
 (llama-server's tool_choice 'required') and the last step offers only its finish, so its result always comes
-through the finish call - nothing is read out of prose, nothing is repaired. The runner (runner.py) guards each
-call the same way main's are guarded: a repeat of a call that worked gets its earlier result back (nothing runs);
-one that failed is stopped with why and runs when confirmed; a table nobody inspected is inspected first - the
-call runs right after when there is nothing to clean; a seventh page of one site is not read. The result is
-checked by code before main sees it - a web answer must come from pages it read, with its file links in
-downloads; knowledge sources must be ones a tool returned; every number in the analyst-programmer's answer must
-be in a tool result or a run; a program it keeps must have a complete report and code that ran (save_code's
-checks answer that call, so the helper fixes the report and calls again). A check verifies, it never edits: a
-failed one names the problem and gets one chance; after that the result goes back with a warning. Charts, tables
-and pictures go straight to the page, not through the summary. The analyst-programmer sees pictures - what its script drew,
-an image it reads - in its own conversation.
+through the finish call - nothing is read out of prose.
 
-A **report** is kept on the item a helper worked on (`<item>.report.md`, reports.py): its own sections, then
-facts the app writes itself (whether the run passed, what it made), so it can't claim what didn't happen.
-The next task on that item starts from it.
+**One result envelope.** The model writes only what only it knows - the answer, its caveats, and when needed a
+suggestion or a question only the user can answer; the app adds what it saw - what ran, the files made or
+changed, the pages read. Before main sees it, code checks it: a web answer must cite pages it read (by number),
+with file links in downloads; knowledge sources must be ones a tool returned; every number in the
+analyst-programmer's answer must be in a tool result or a run's output. A failed check names the problem and gets
+one chance; after that the result goes back with a warning. A Stop, a model failure or a full context keeps the
+work done so far as the result.
+
+**Guards in the runner**: a repeat of a call that worked gets its earlier result back (nothing runs); a call that
+failed is stopped with why and runs when confirmed; a table nobody inspected is inspected first; a choice only the
+user can make (inspect_data's question, e.g. day first or month first) is asked, and its cleaning step applied by
+code; a fourth web search in a row is refused until a page is read; at most 6 pages of one site in a task; at most
+2 questions to the user in a task.
+
+**Programs are files.** The analyst-programmer writes a program with files write, runs it with run, changes it
+with files edit and runs it again; the file is the state, so the next task - or the same task after a Stop - goes
+on from it. Each run keeps the file's report: what it says it does, then facts the app writes (passed or failed,
+what it printed, what it made). It sees pictures - what its script drew, an image it reads or the task names - in
+its own conversation.
 
 ## 6. The tools
 
-main's own: **files** (list, find, read, write, update, rename, delete, download - one job per mode; Word and
-slides are written from Markdown, with pictures), **notes** (save, list, delete - the AI's short memory, the
-latest pinned in view), **calculate** (exact arithmetic), **draw_diagram** (Mermaid), **generate_image**,
-**view_image** (Gemma's vision, one question about one picture), **get_weather**, **ask_user**, **plan**.
+Each description follows one template - what it does (in the words a user would use, method names included),
+what it returns, when to use it, when not and which tool instead - and every field says what it holds, with an
+example. A test reads everything each model reads and checks that every tool, mode and field it names is one that
+model has (tests/test_tool_contracts.py).
 
-The helpers': **web_search** and **read_webpage** (section 8); **search_files**, **recall**, **read_file**
-(section 7); the data tools - **inspect_data** (a first look and what could be cleaned), **clean_data**,
-**query_data** (one read-only DuckDB query, time-limited), **make_chart** (7 kinds, computed by code, also
-kept as a picture), **compare** (is a difference real: tests, A/B), **forecast**, **predict** (learn a column,
-what drives it), **find_patterns** (segments, unusual values, items together), **analyze_text** (themes,
-labels, similar texts by meaning); and **run_code** / **fix_code** (a helper's one scratch script, run in the
-sandbox).
+main's own: **files** (list, find, read, write, edit, rename, delete, download, pin, unpin; Word and slides are
+written from Markdown, with charts and pictures), **calculate** (exact maths with SymPy: arithmetic, equations,
+derivatives, integrals, limits, sums, matrices - run in the sandbox with a time limit), **draw_diagram**
+(Mermaid), **generate_image**, **view_image** (the model's vision, one question about one picture),
+**get_weather**, **ask_user**; and its three helpers.
+
+The helpers': **web_search** and **read_webpage** (section 8); **recall** (earlier chats); the data tools -
+**inspect_data** (a first look: types, roles, problems, suggested cleaning, questions for the user),
+**clean_data**, **query_data** (one read-only DuckDB query over tables named by their files, time-limited),
+**make_chart** (line, area, bar, scatter, histogram, box, heatmap, pie - computed from all the rows, kept as a
+chart file), **compare** (is a difference, correlation, association or A/B result real), **forecast** (trend,
+season, the next periods with a range, against a baseline), **predict** (a model of one column from the others:
+tested against a baseline, its drivers and their direction), **find_patterns** (segments, unusual periods or
+rows, items bought together), **analyze_text** (themes, labels, similar texts, by meaning); **files** in each
+helper's own modes; **run** (a Python file of the workspace, in the sandbox).
 
 Every tool returns one shape: a status, a result for the model and an artifact for the page; a tool error
-becomes a result with its message, never a crash (core.py). One resolver turns any name the model uses
-(an id, a file name) into an item.
+becomes a result with what is wrong, what is valid and the next call - never a crash (core.py). One resolver turns
+any name the model uses (a path in any case, a copied listing line, a key) into a file.
 
 ## 7. Workspace, store and search
 
-- **Store** (store.py, one SQLite file): workspaces, chats (with the rolling window's cut and a waiting
-  question) and every message, including the page's cards and each turn's trace.
-- **Workspace folder** (workspace.py): every item has an id by kind - `data_1` (a table, kept as Parquet),
-  `image_1`, `file_1`, `note_1` - a name, a parent when it was made from another item, and its report.
-  One naming rule for everything made from an item ("sales - cleaned"). The `sandbox/` folder is where
-  scripts run.
-- **Search index** (search_index.py, one per workspace): every passage stored once - documents,
-  file reports, notes, chats, pictures, tables and web pages read - searched by keywords (FTS5, BM25) and by
-  meaning (embeddings), the two rankings fused by rank (RRF). Keywords must always work: without the
-  embedding model, search says it used keywords only.
-- **The embedding model**: EmbeddingGemma 2 on llama-server - text and pictures in one space of 768 numbers,
-  so a typed question finds a picture. Each model keeps its own prompts and cut-offs (embed.py, measured on
-  held-out questions about the user's own workspaces); a passage records which model embedded it, and a
-  new model re-embeds each workspace in the background when it is opened.
-- **What is kept current, and when**: documents when added or changed; notes when saved; each chat turn
-  when it ends; pictures (by what they show) and tables (name, columns, a few values) after every turn,
-  upload and run; pages the web helper read, for 30 days.
-- **search_files** returns the best passages of documents, reports, pictures and tables, then - searched
-  apart, never in their place - the 1-2 best notes and pages read before (dated, marked as that day's
-  text). **recall** finds earlier turns of every chat in the workspace.
+- **The workspace folder** (workspace.py): `files/` holds every file at its path ('sales.csv',
+  'charts/revenue.chart.json'); `.zen/` holds what each file is (registry.json: kind, path, who brought it, what it
+  was made from), a table's typed copy, the last 10 versions of each file, the reports and the run folders. One
+  write path (put, and adopt for a file a script wrote) keeps paths unique, writes atomically, keeps the version
+  before a change and recognises an upload that is already there. Every text a model reads names files by path;
+  the internal keys (data_3, image_7, file_2) stay inside the app.
+- **agent.md** (agent_md.py): the project's standing memory, one short Markdown file at the top of the workspace -
+  the user's standing instructions, preferences and facts. It is in main's system prompt every turn (and opens each
+  helper's task), never in the history; the user edits it in the file panel, the model with files write. Capped
+  at 2,000 characters; it can't be deleted or renamed, and scripts can't change it. The model server reprocesses
+  the prompt only when it changes (measured: a normal turn reads 1-600 new tokens, the turn after a change about
+  4,200 once).
+- **Pins** are kept on the chat (store.py); a picture pasted with a name that says nothing is named from its
+  caption when it arrives (caption.py), and the caption is searchable.
+- **The store** (store.py, one SQLite file): workspaces, chats (with the rolling window's cut, a waiting question
+  and the pins) and every message, including the page's cards and each turn's trace.
+- **The search index** (search_index.py, one per workspace): documents' passages, code, charts, tables (name,
+  columns, values), pictures (caption, prompt and the picture itself), reports, chat turns and web pages read -
+  searched by keywords (FTS5, BM25) and by meaning (EmbeddingGemma: text and pictures in one space, so a typed
+  question finds a picture), the two rankings fused by rank. Keywords always work: without the embedding model,
+  search says it used keywords only.
+- **find** (files.find_files) - the model's files find and the file panel's search box: each file once, best
+  first, with the part that matched; "images" or "code" pick the kind instead of matching words; how many is the
+  count of files. **recall** finds earlier turns of every chat in the workspace.
 
 ## 8. The web
 
-`web_search` asks public search engines through ddgs, DuckDuckGo first, a second tier only when the first
-finds nothing; results are de-duplicated and ordered by the engines' rank fused with meaning. `recent`
-uses the engines' own time filter.
+`web_search` asks public search engines through ddgs, DuckDuckGo first, a second tier only when the first finds
+nothing; results are de-duplicated and ordered by the engines' rank fused with meaning. `recent` uses the
+engines' own time filter.
 
 `read_webpage`, one pipeline for every link:
 1. **Address check** - public addresses only, every redirect checked again; this computer is out of reach.
-2. **Site adapters** - GitHub (repository, folder, file), YouTube (title, channel, length, description),
-   MediaWiki wikis including Wikipedia and Fandom, through their APIs.
-3. **By what the link is** - a PDF, Word or PowerPoint file goes through the one document reader; a data
-   file shows its columns and first rows, with how to bring it in as a table; an image says it is one.
-4. **A page** - menus, footers, cookie notices and pop-ups out, the parts a streamed (React) page sends
-   late put back in place, files it links to listed.
-5. **The browser** - only when the page is blocked or gives too little text; its HTML goes through the
-   same extraction.
-6. **Long pages** are cut to 12,000 characters; with `find`, the opening plus the lines about those words.
-7. **One status** for every read: ok, cut, partial, blocked, not found, unreachable or unsupported - with
-   what to try next.
+2. **Site adapters** - GitHub (repository, folder, file), YouTube (title, channel, length, description), MediaWiki
+   wikis including Wikipedia and Fandom, through their APIs.
+3. **By what the link is** - a PDF, Word or PowerPoint file goes through the one document reader; a data file
+   shows its columns and first rows; an image says it is one.
+4. **A page** - menus, footers, cookie notices and pop-ups out, the parts a streamed page sends late put back in
+   place, files it links to listed.
+5. **The browser** - only when the page is blocked or gives too little text; its HTML goes through the same
+   extraction.
+6. **Long pages** are cut to 12,000 characters; with `find`, the opening plus the parts about those words.
+7. **One status** for every read - ok, cut, partial, blocked, not found, unreachable or unsupported - with what
+   to try next, and the number the page is cited by.
 
-Reliability: a pause between pages of one site, at most 6 pages of one site per task, pages read cached for
-an hour, bounded retries on temporary errors only. Safety: an honest browser (no stealth, no CAPTCHA
-solving, no logins), no tool that clicks or types, page text treated as data, not instructions.
+A chat remembers what its helpers read and which sites refused: the same page again costs nothing, a refusing site
+is not tried again (the helper reads one other page and says so). A pause between pages of one site, pages cached
+for an hour, bounded retries on temporary errors only. Safety: an honest browser (no stealth, no CAPTCHA solving,
+no logins), no tool that clicks or types, page text treated as data, not instructions.
 
 ## 9. Running code
 
-`run_code` runs a script in a separate Python process inside the workspace's `sandbox/` folder (sandbox.py):
-30 s by default (at most 120), a clean environment with no secrets, output cut to 10,000 characters, typed
-input for programs that ask. Tables are read as copies; files it writes become items (CSV/Parquet a table,
-PNG/JPEG a picture). An audit hook refuses reading outside the workspace, writing outside the sandbox,
-starting programs and the network. It is a limit for one user's own assistant, not a security boundary.
-All runs go through one engine interface (`sandbox.ENGINE`), so a real sandbox can replace it in one
-place. The file panel can edit a text file and run a Python file with typed input, under the same rules.
+`run` runs a Python file of the workspace in a separate Python process, in the workspace's `files/` folder, so
+files open by their names (sandbox.py): 30 s by default, at most 120; a clean environment with no secrets
+(PATH, the temp folder, matplotlib's Agg, and WINDIR so fonts are found by file name); output cut to 10,000
+characters. Files it writes are the workspace's - a new file is registered, a file the assistant made gets a new
+version; changing one of the user's own files is refused, with the advice to write the result under a new name
+(the user is asked when main changes one); CSV and Parquet become tables, a chart() call writes a chart file the
+page draws. An audit hook refuses reading outside the workspace and
+Python's installation, writing outside the workspace's files, deleting or moving them, starting programs and the
+network. It is a limit for one user's own assistant, not a security boundary; all runs go through one engine
+interface (`sandbox.ENGINE`), so a real sandbox can replace it in one place.
+
+**The console** (console.py) is the same program started by the user from its file - in the file panel or on its
+card in the chat: what it prints streams to the page as it is written, each line the user types goes to its
+input(). Stop, Run again; at most 15 minutes, 5 with nothing typed. When it ends, its files are registered and the
+session - what it printed and what the user typed - is kept in the file's report, so the model can read it.
 
 ## 10. The page
 
-One chat page (web/): workspaces and chats on the left; answers with their cards (charts, tables, pictures,
-diagrams, code, sources, web pages, questions, the plan); each helper's steps shown while it works; the
-file panel for the workspace's items (view, download, edit and run); a trace button under each answer.
-Libraries come pinned from a CDN (marked, DOMPurify, Chart.js, KaTeX, Mermaid). The API refuses
-state-changing requests whose Origin is another site, so a web page the browser opens can't drive it.
+One chat page (web/): projects and chats on the left; answers with their cards - native charts (hover values, full
+screen, download as PNG or CSV), tables, pictures, diagrams, a file's card (an .html file runs in it; a Python
+file has Run, opening the console), sources (a video opens in the viewer at 16:9), questions; the work behind each
+reply (steps, a helper's steps, the trace); the live state at the end of a reply; a dot in the header for the
+model's state (ready, loading, unreachable - said in plain words). The file panel: paths, a search box (find), the
+Memory section with agent.md, pins, earlier versions and restore, editing text files, previews (Markdown, HTML in a
+sealed frame with no network, PDF, tables, charts, code). The message box: @ to point at a file or pin it, pinned
+files as chips in the header.
+
+Libraries come pinned from a CDN (marked, DOMPurify, Chart.js, KaTeX, highlight.js, and Mermaid when a diagram
+is drawn). The API refuses
+state-changing requests whose Origin is another site, so a page the browser opens can't drive it; stored files are
+served with a sandboxing policy, and only pictures inline.
 
 ## 11. Tests and measurements
 
-`python -m pytest` runs the app's tests (no model needed: tools directly, the loop and helpers with
-scripted models, the API through its client; the embedding test uses the real server when it is set up).
-`requirements.lock` holds the exact versions the tests passed with. Decisions that needed numbers were
-measured once and the scripts kept in `bench/` - the embedding models (`search_models.py`), web ranking
-(`web_rank.py`), focusing pages by meaning (`web_focus.py`), the text extractor gate (`web_extract.py`).
+`python -m pytest` runs the app's tests with no model: tools directly, the turn and the helpers with scripted
+models, the API through its client, and the contract tests (every tool refuses a missing field and a wrong file
+saying so; everything a model reads names only tools, modes and fields it has). `requirements.lock` holds the exact
+versions the tests passed with.
+
+On the real model (`bench/`, llama-server running): each phase's acceptance - `phase2.py` (the helpers),
+`phase4.py` (find, pins, agent.md), `phase5.py` (routing probes, a dev and a held-out half) - and `combos.py`, 20
+jobs of 3-6 tools each from new stores with fixed data: 10 for finding what fails, 10 held out and run once. Their
+reports are kept beside them; REBUILD_PLAN.md section 8 records the results as they came.

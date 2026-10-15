@@ -393,3 +393,29 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
   sees it in phase 7.
   Tests: 616 pass (test_open_figures_are_saved_once failed once in a full run and passed the five runs since -
   a timing flake to watch, not fixed).
+- **Phase 7 - measure: done (2026-10-15).** The 20 jobs of bench/combos.py on the 26B (Kaggle, 20,480 tokens a
+  slot), and ARCHITECTURE.md, SYSTEM_MAP.md and the README rewritten from the code.
+  - The 10 dev jobs: 6/10 as first scored. Two failures were the jobs' own checks, not the app: agent.md - in every
+    workspace since phase 4 - counted as a download the user had cancelled; and a note checked only in agent.md,
+    where phase 4 gives notes two homes (agent.md for what is kept in view in every chat, a file of its own for the
+    rest - "save it as a note" wrote travel_growth_note.md). Both checks corrected (memory_has / note_has), both
+    jobs run again: pass. So 8/10. The two left: plan_forecast_deck - main gave the slide deck to analyze_or_code,
+    against its contract ("not for documents - Word, slides"), which built one slide in a script (the model's
+    routing; flagged); invoice_rupees - the rupee total exact (1,063,840.05), the USD total not said, which the
+    job's check asks for (kept as it is).
+  - The 10 held-out jobs, after those corrections (made from phase 4's design, before the run): 8/10. Not a first
+    run: the same ten ran once on 2026-10-10, before the rebuild (9/10); none of their jobs were used for tuning
+    since. pricing_changes - two file writes refused, a third worked, and the reply said "I have saved the detailed
+    changes to changes.md": there was none (a rerun to see why passed in 25 s; the first run's errors were not
+    kept). Found a gap in the claim check (only turns where no tool did anything): a reply that says Zen saved,
+    wrote or made a file no longer passes when no file of that name is in the workspace - one hidden nudge
+    (checks.missing_files; replayed over the 333 stored replies of the user's chats: 27 say Zen made a file, none
+    flagged). budget_left - "how much is left if March spending was 4,350.75?" read as the March share (1,649.25,
+    said as such) where the check wants the whole budget (7,649.25): an ambiguous question, answered the way the
+    instructions ask (one reading, said).
+  - Against the same jobs before the rebuild (2026-10-10: dev 7/10, held-out 9/10): no better, within the noise
+    of single runs - the rebuild's measured gains are where these jobs don't look (each phase's acceptance:
+    the lion count in one call, calculus with calculate, a pinned document answered without a helper, routing
+    18/19 held-out). Slower: the dev jobs took 1,120 s in all (871 before), the held-out 492 s (341) - not
+    analysed (the prompts are 400-650 tokens longer; Kaggle's sessions differ).
+  Tests: 617 pass.

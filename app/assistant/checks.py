@@ -23,6 +23,10 @@ main itself, each from a measured failure in the user's own test chat (found in 
     claimed, not done   a reply claiming an action ("I saved a note", "has been downloaded") in a turn
                         where no tool did anything gets one hidden nudge to do it or correct the reply
                         ("remember X" answered "I saved a note" without saving it, 4 of 6)
+    a file that isn't   a reply naming a file as saved, written or created ("I have saved the changes to
+                        changes.md") when no file of that name is in the workspace, in a turn where other tools
+                        did work (two writes refused, a third worked - the held-out run of 2026-10-15). Only a
+                        file that doesn't exist counts: a file the reply only mentions (one it read) is there
 
 Each nudge is sent at most once per turn; after it the reply stands. Claims about what a tool that did
 run really did (an image "with the date added") are checked where they happen: analyze_or_code's report
@@ -33,7 +37,9 @@ from __future__ import annotations
 
 import re
 
-from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, REMEMBER_NUDGE
+from collections.abc import Callable
+
+from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, FILE_NUDGE, REMEMBER_NUDGE
 from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 
@@ -162,10 +168,33 @@ def announced(text: str) -> bool:
     return any(ANNOUNCED.search(s) and not OFFER.search(s) for s in last)
 
 
-def nudge_for(text: str, turn: list[dict]) -> str | None:
+# A file's name as a reply writes it: in backticks or bold, or a bare name with an extension ('memo.docx').
+FILE_NAMED = re.compile(r"`([^`\n]{1,120}?\.[A-Za-z0-9]{1,5})`|\*\*([^*\n]{1,120}?\.[A-Za-z0-9]{1,5})\*\*"
+                        r"|(?<![\w/.:-])([\w-]{1,80}(?:/[\w-]{1,80})*\.(?:md|txt|csv|xlsx|docx|pptx|pdf|py|html|json|png|"
+                        r"jpe?g|svg))\b", re.I)
+
+
+# Zen saying it made a file - in the first person: a summary's "has been added" quotes a document, and a file
+# deleted or renamed away is meant to be gone (both measured as false nudges, replaying 333 stored replies).
+MADE = re.compile(r"\bI(?:'ve| have)? (?:now |just |also |successfully |already )?"
+                  r"(?:saved|stored|created|wrote|written|generated|downloaded|exported|made|put)\b", re.I)
+
+
+def missing_files(text: str, exists: Callable[[str], bool]) -> list[str]:
+    """The files the reply says it saved, wrote or made that the workspace doesn't have: in each sentence where Zen
+    says it made something, the names of files - those that exist (one it read, one it made) are fine."""
+    named = []
+    for sentence in SENTENCES.split(text):
+        if MADE.search(sentence):
+            named += [next(g for g in m.groups() if g) for m in FILE_NAMED.finditer(sentence)]
+    return [n for n in dict.fromkeys(named) if "://" not in n and not exists(n)]
+
+
+def nudge_for(text: str, turn: list[dict], exists: Callable[[str], bool] | None = None) -> str | None:
     """The one nudge a tool-less reply gets, or None: asked to remember but nothing saved, then
-    announced-not-done, then claimed-not-done. None once the turn already had a nudge of these kinds. (A call
-    written out as text is made a real call where calls are read: providers/gemma_calls.py.)"""
+    announced-not-done, then claimed-not-done, then a file named as made that isn't there (exists: whether the
+    workspace has a file of that name). None once the turn already had a nudge of these kinds. (A call written
+    out as text is made a real call where calls are read: providers/gemma_calls.py.)"""
     if any(m.get("check") for m in turn if m["role"] == "user"):
         return None
     said = next((str(m.get("text") or m.get("content") or "") for m in turn if m["role"] == "user"), "")
@@ -179,4 +208,7 @@ def nudge_for(text: str, turn: list[dict]) -> str | None:
     worked = any(m["role"] == "tool" and not m.get("is_error") for m in turn)
     if claim and not worked:
         return CLAIM_NUDGE.format(verb=next(g for g in claim.groups() if g).lower())
+    missing = missing_files(text, exists) if exists else []
+    if missing:
+        return FILE_NUDGE.format(name=", ".join(missing))
     return None

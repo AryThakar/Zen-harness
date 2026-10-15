@@ -8,7 +8,7 @@ import pytest
 from app.providers.base import ModelTurn
 from app.providers.scripted import ScriptedProvider, call
 from app.assistant.checks import ANNOUNCE_NUDGE, announced, asked_to_remember, nudge_for
-from app.assistant.prompts import REMEMBER_NUDGE
+from app.assistant.prompts import FILE_NUDGE, REMEMBER_NUDGE
 from app.assistant.main import send
 from app.assistant.store import Store
 
@@ -71,6 +71,21 @@ def test_a_claim_is_flagged_only_when_no_tool_did_anything():
     assert "downloaded" in nudge_for("The file has been downloaded to your workspace.", [user])
     nudged = [user, {"role": "user", "content": ANNOUNCE_NUDGE, "hidden": True, "check": True}]
     assert nudge_for(claim, nudged) is None  # once per turn
+
+
+def test_a_file_named_as_made_that_isnt_there_gets_a_nudge():
+    """The held-out run of 2026-10-15: two writes refused, a third worked, and the reply said the changes were saved
+    to changes.md - there was none. Only a file that doesn't exist counts (replayed over 333 stored replies: none)."""
+    user = {"role": "user", "content": "write the changes to changes.md and the prices to prices.docx"}
+    worked = [user, {"role": "tool", "tool_call_id": "c1", "content": "{}", "is_error": False}]
+    have = {"prices.docx", "old_pricing.md"}.__contains__
+    reply = ("I compared old_pricing.md with the new one. I have saved the detailed changes to `changes.md` and "
+             "created the `prices.docx` file.")
+    assert nudge_for(reply, worked, exists=have) == FILE_NUDGE.format(name="changes.md")
+    assert nudge_for("I've saved the prices to `prices.docx`. I read old_pricing.md first.", worked, exists=have) is None
+    assert nudge_for("I've deleted `old.txt` for you.", worked, exists=have) is None  # deleted: meant to be gone
+    assert nudge_for("The notes say it has been added to docs/SETUP.md.", worked, exists=have) is None  # quoting a file
+    assert nudge_for(reply, worked) is None  # nothing to check against: no nudge
 
 
 def test_asked_to_remember_but_nothing_saved_gets_its_own_nudge():

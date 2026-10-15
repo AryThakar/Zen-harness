@@ -1,113 +1,98 @@
-# System map - the full read of 2026-10-10
+# System map - after the rebuild (2026-10-15)
 
-Every file of the app was read for one question: what can each model send, and what does the code do with
-it? This map is the result - what each part owns, every guard, check, repair and nudge with a decision, the
-duplications, the dead code and the wrong messages - and the design that follows. The principle, the
-user's: **a fixed contract with small genuine variations (an id or a name, any case, a copied listing
-line); anything else is refused with what is wrong, what is valid and the next call; guards only for
-safety, permission and truth.** Code never guesses what the model meant, never dead-ends it, never tells
-it something false, never loses data.
+Who owns what, and every guard, check and nudge, read from the code after the seven phases of
+[REBUILD_PLAN.md](REBUILD_PLAN.md). How it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md). The first map
+(the read of 2026-10-10, before the rebuild) is in the git history.
 
-## 1. What was read
+The principle, the user's: **a fixed contract with small genuine variations (a path in any case, a copied listing
+line); anything else is refused with what is wrong, what is valid and the next call; guards only for safety,
+permission and truth.** Code never guesses what the model meant, never dead-ends it, never tells it something
+false, never loses work. And since phase 5: a model that still misroutes once its contract is clear and
+consistent is a limit to record, not a prompt to bend (section 5).
+
+## 1. The parts
 
 | Part | Files (lines) | Owns |
 |---|---|---|
-| Server | app/main.py (108), app/config.py (74), app/api/assistant.py (412) | the app, settings, the HTTP API |
-| Turn | app/assistant/main.py (699), context.py (220), checks.py (212), prompts.py (193), registry.py (595), store.py (279) | main's loop, what every call sees, main's honesty checks, the prompts, every tool's schema and handler, the chat store |
-| Helpers | app/assistant/workers/ contracts (200), runner (580), evidence (177), checks (162), repairs (140), __init__ (99) | the helpers' contracts, their step loop, guards, result checks, repairs |
-| Providers | app/providers/ base (95), llamacpp (424), gemma_calls (265), groq (119), scripted (50) | model calls, streaming, exact counting, Gemma's text-written calls |
-| Tools | app/tools/ - 37 modules (9,118) | each tool: one function, one result shape (core.py) |
-| Search | app/tools/search_index.py (318), files.py (289), memory.py (76), app/rag/ (714) | FTS5 + embeddings, documents, recall |
-| UI | web/ (4,155) | the chat page; card types checked against what the server sends |
+| Server | app/main.py (108), app/config.py (74), app/api/assistant.py (543) | the app, settings, the HTTP API |
+| Turn | app/assistant/main.py (769), context.py (254), snapshot.py (129), checks.py (182), prompts.py (205), registry.py (674), store.py (284) | main's turn, what every call sees and how it fits, the pinned files' snapshot, main's checks, the prompts and nudges, every tool's contract and handler, the chat store |
+| Helpers | app/assistant/workers/ contracts (185), runner (529), evidence (209), checks (132), __init__ (98) | the helpers' contracts and profiles, their step loop, the evidence and guards, the result checks |
+| Providers | app/providers/ base (103), llamacpp (449), gemma_calls (268), groq (119), scripted (51) | model calls, streaming, exact counting, the model server's state, Gemma's text-written calls |
+| Tools | app/tools/ - 40 modules (10,238) | each tool: one function, one result shape (core.py); the workspace, the sandbox, the console, the search index |
+| Search | app/tools/search_index.py (335), files.py (404), memory.py (76), app/rag/ (714) | FTS5 + embeddings, documents, find, recall |
+| Page | web/ (4,683) | the chat page; card types checked against what the server sends |
 
-## 2. The parts that are right, and stay
+## 2. One owner per concept
 
-- **Workspace and its resolver** (workspace.py): every item by id, exact name in any case, or a copied listing
-  line; a wrong kind says what it is and which tool takes it; an unknown name gets the closest ones. The
-  genuine variations, and no more.
-- **Tool results** (core.py): one shape - status, a compact result for the model, an artifact for the UI;
-  ToolError and pydantic errors become invalid_arguments with the field. Every data tool's errors name the
-  problem and the fix ("'date' holds dates; use a line chart for values over time").
-- **The sandbox and the approvals** (sandbox.py, approval.py): safety and permission - hard, never confirmable.
-- **Grounding** (workers/checks.py): every number from a tool result or a run; sources really read or returned.
-- **Context** (context.py): exact counts, a sticky cut, the system prompt that never changes - the prompt cache.
-- **inspect_data and the user's choices**: it reports and suggests, never changes data; a question only the
-  user can answer is asked and its step applied by code (_settle_questions, _guessed).
-- **The search index**: keyword search always works; meaning adds to it when the embedder is up.
-- **The provider**: retries only before anything streamed, Stop checked on every line, exact token counts.
-- **The UI-server contract**: every card type the server sends is drawn; none is drawn that isn't sent.
+| Concept | Owner | Everyone else |
+|---|---|---|
+| A file's name | its path - `Workspace.resolve` reads one (any case, a listing line, a key); `workspace.present` writes paths into every result a model reads (at `ToolResult.for_model`) | keys stay inside the app and the page's links |
+| A file arriving or changing | `Workspace.put` (and `adopt`, for a file a script wrote in place): unique paths, atomic writes, the last 10 versions, identical uploads recognised | uploads, tools, runs and the console all go through it |
+| What kind a file is | `filetypes.py` | tables, documents, pictures, code, what is editable as text |
+| The project's memory | `agent_md.py` - in main's system prompt (main.py) and each helper's opening (context_block) | the file panel shows it first, as Memory |
+| Pins and @ | the chat's pins (store.py), a message's files (main.record), the turn's snapshot (snapshot.py) | the page: pins.js, mention.js |
+| Finding files | `files.find_files` | main's and the helpers' files find, the file panel's search box |
+| A chart | its chart file (make_chart, a script's chart(), forecast, find_patterns); its picture and its numbers drawn from it on demand (chart_image: picture_of, table_of) | the page draws it live; documents take its picture |
+| A tool's contract | `registry.py` (and the delegates in contracts.py): one description template, every field described | tests/test_tool_contracts.py checks every tool and everything each model reads |
+| A helper's result | the envelope (`contracts._Out`; the app's facts added in runner._done) | main reads one shape from every helper |
+| Fitting the slot | `context.py` (cut_turns, shorten_tool_results, shorten_call_args) and the provider's exact count | main and the runner use the same ladder |
+| Running a program | `sandbox.py` (the set-up, the audit hook, the clean environment): run_python to its end, start for the console | run.py (the helper's run, the report), console.py (the user's session) |
+| What a run left | `run.keep_report` - the facts, and a console session as it went | the next task and the model read the file's report |
+| The model server's state | `LlamaCppProvider.health` - ready, loading or down, in plain words | /status, the header's dot, the start screen |
+| How a tool is named while it works | `Tool.labels` in registry.py, served at /tools | the page keeps no list of its own |
+| Instructions | prompts.py (roles, nudges), registry.py (tools), contracts.py (delegates), the tools' own results | each rule in one place (tests/test_prompts.py: no model reads a sentence twice) |
 
-## 3. Guards, checks, repairs and nudges - each decided
+## 3. Guards, checks and nudges
 
-Measured fact behind the main change: llama-server's `tool_choice: "required"` works with Gemma 4, thinking
-on or off (a sum went to `calculate`, a fun fact to `finish`). A helper that must call a tool on every step
-can only act or finish: the prose path - and every repair that parses prose - is gone at its root.
-
-| Where | What it does | Decision | Why |
+| Where | What it does | Kind | Way out |
 |---|---|---|---|
-| runner: plain-text answers | a helper's prose read as its result (_from_text, _json_in_text, _without_finish_markup), checked, retried with "finish by calling ..." | **remove** | tool_choice required; the last step offers only the finish tool |
-| repairs: _attribute | credits passages as sources when the knowledge helper names none | **remove** | guesses attribution; the check asks for sources |
-| repairs: web sources | credits pages read when none are listed; drops cited pages only seen as snippets | **remove** | edits the model's citations; the check names what is wrong |
-| repairs: downloads from the answer | moves a file link written in the answer into downloads | **remove -> check** | the check says "put it in downloads" |
-| repairs: tool question copied | puts the tool's own question and options on question_for_user | **remove** | the runner already asks inspect_data's questions in place |
-| repairs: code_name | renames a kept script to .py | **remove -> refusal** | "the scratch script is Python: keep it as name.py" |
-| runner: _adopt | a code file read becomes the scratch script | **remove -> message** | fix_code on an empty scratch says how: run_code, or main gives the file |
-| runner: _unsaved | the app keeps the last working script when the helper never saves | **remove** | the finish check asks for save_code; required tools make it callable |
-| runner: auto find | read_webpage gets the last search as find | **remove** | changes the model's call; the page's own note says when it was cut |
-| runner: _inspect_first | inspects a table nobody inspected; the call runs after when nothing needs cleaning | keep | correctness: computing on summary rows and text numbers |
-| evidence: _repeat | a repeat that worked gets its result back; a failed one is stopped, confirmable | keep | serves the model; no dead end |
-| evidence: _guessed, SITE_CAP | a choice only the user can make; a seventh page of one site | keep | permission; politeness |
-| main: invented numbers, repeated failure | stop with why; confirm runs it (sample data labelled) | keep | honesty, with a way out |
-| main: announce / claim / remember nudges | one hidden [App check] a turn | keep, frozen | measured 17 of 18 right on 301 replies; no new phrases |
-| main: written-call nudge | a reply that is a tool call as JSON | **merge into gemma_calls** | two parsers for one failure, with different keys |
-| provider: gemma_calls.heal | Gemma's own call syntax written as text, made a real call | keep (main only) | a format adapter, measured; helpers no longer need it |
-| main: file= (analyze_or_code) | was reinterpreted by the runner | **strict** | a program, or refused with the field that takes it |
+| sandbox (audit hook) | refuses reading outside the workspace, writing outside its files, changing the user's files, deleting or moving files, programs, the network | safety | none - "write under a new name"; data comes in through files download |
+| approval.py | download, delete, changing the user's own file: a card, code acts on the button | permission | the user's click |
+| agent_md | capped at 2,000 characters; never deleted or renamed | truth (it is sent every turn) | merge or drop lines; longer material in a file under notes/ |
+| main: repeated failure | a call that already failed in this turn is stopped with why | judgment | `confirm: true` |
+| main: invented numbers | a helper task with numbers no tool returned and the user never wrote is stopped | truth | `confirm: true` (sample data, labelled made up) |
+| main: announce / claim / remember | a reply that announces an action without a call, claims one no tool did, or says it remembers without writing agent.md: one hidden [App check] a turn | truth | do it, or say plainly it wasn't done |
+| main: a file named as made that isn't there | a reply saying Zen saved, wrote or made a file no file of that name is in the workspace: one hidden [App check] (found in the held-out run; replayed over 333 stored replies: none flagged) | truth | make it, or tell the user it wasn't made |
+| main: cut-off reply, thought too long | another step to finish; a card to try again with a thinking budget | serves the model | - |
+| main: over the slot | shorten older results, older calls' texts, newest results; else a plain stop | truth (never sent over) | ask for less, or a new chat |
+| runner: not its tool, too many questions | refused, saying which tools it has / to decide with the recommended choice | contract | the next call |
+| runner: a table nobody inspected | inspected first; the call runs after when nothing needs cleaning | correctness | - |
+| runner: a choice only the user can make | asked in place; its cleaning step applied by code | permission | the user's answer |
+| runner: a repeat | one that worked gets its earlier result back; one that failed is stopped with why | serves the model | `confirm: true` |
+| runner: web searching without reading | a fourth search in a row is refused until a page is read | judgment | read a page, or `confirm: true` |
+| runner: one site | at most 6 pages of one site in a task | politeness | read another site |
+| web: a refusing site | not tried again in the chat | politeness | one other page, said in the caveats |
+| result checks | web: pages cited were read, file links in downloads; knowledge: sources a tool returned; analyst: every number in a tool result or a run | truth | one chance to fix, then a warning main passes on |
+| runner nudges | cut off, no call, the conversation full, steps left, fix the finish, the pictures it is shown | serves the model | - |
+| provider: Gemma's calls as text | a call written in Gemma's own syntax read as the call | format adapter | - |
 
-## 4. Duplications and inconsistencies
+## 4. Tests that hold the contracts
 
-- **File types** are defined in nine places that disagree (`.txt` is a document when uploaded, a table when
-  downloaded): files.TABLES, workspace.TABLE_FILES/IMAGE_SUFFIXES/IMAGE_FORMATS, web.TABLE_SUFFIXES,
-  file_ops.BINARY/FROM_MARKDOWN, read_file.CODE, rag.extract.KINDS, sandbox.IMAGES, image.FORMATS, api.IMAGES.
-  -> **one module, app/tools/filetypes.py**, that every one of them uses. `.txt` is a document everywhere.
-- **Editable as text**: the API refuses .docx edits but lets .pptx through; files(update) has its own rule.
-  -> one rule in filetypes.
-- **Image checks**: generate_image verifies the image, then workspace.add_image verifies it again with its own
-  format list. -> add_image alone.
-- **A tool call written as JSON**: gemma_calls.heal and checks.written_call, two key sets. -> heal alone.
+- `test_tool_contracts.py`: every tool refuses a missing field naming it, and a file that isn't there or of
+  another kind saying so; everything each model reads (its prompt, the app's hidden messages, agent.md's lines, its
+  tools and fields, and every string a tool returns) names only tools, modes and fields that model has; each tool
+  with modes describes every mode and no other.
+- `test_prompts.py`: no model reads a rule twice; each helper reads its craft in its own prompt.
+- `test_workspace_files.py`: one path for every reader; identical uploads one file; versions; the index follows
+  the folder; no key in any result a model reads.
+- `test_console.py`, `test_pins_snapshot.py`, `test_assistant_main.py` (the slot never overflows, the snapshot is
+  never stored), `test_main_checks.py` (each check from a measured failure, and the replies it must leave alone),
+  and the tools' own tests - 617 in all, no model needed.
 
-## 5. Wrong or missing messages
+## 5. Known limits (measured, recorded - not prompted around)
 
-- web.look: "download_file only takes files on GitHub ... use import_table", "leads away from GitHub;
-  download_file" - tools that don't exist (it is files(mode='download')).
-- web.look on a PDF from an ordinary site: "not a CSV, TSV or Excel file" - no next step (research_web reads
-  documents; the user can upload it).
-- read_webpage on a data file: "main brings it in as a table (import_table)".
-- query_data: "Tables: data_1, data_2" - ids without names; the model can't map "sales" to an id.
-- registry: "There is no tool 'x'." - without the tools there are (old chats hold write_code / analyze_data).
-- workspace.WRONG_KIND: nothing for an image wanted but a file or a table given.
-- fix_code on an empty scratch: says to use run_code, not how to change a stored script.
-
-## 6. Dead code
-
-- table_reader.list_sheets (nothing calls it).
-- After section 3: repairs' prose parsing, _attribute, the web repairs, code_name, _adopt, _unsaved,
-  checks.written_call and WRITTEN_NUDGE, HELPER plain-text retry (FIX_ANSWER).
-
-## 7. Done (2026-10-10)
-
-Everything in sections 3-6 is done, with one change of mind: generate_image keeps its own image check - its
-messages are about the image service ("sent something that is not a valid image"), which add_image's are not;
-both now read the formats from filetypes. New: tests/test_tool_contracts.py checks every tool the same way - a
-missing field named, an item not there or of another kind refused saying so, and what every model reads (its
-prompt, its tools' and fields' descriptions, those errors) naming only tools that exist; every field a model
-fills has a description. A tool added is checked with no test of its own.
-
-## 8. The design after this pass
-
-1. **Helpers act or finish.** Every helper step requires a tool call; the last step offers only its finish.
-   No prose results, no parsing, no "call finish" nudges.
-2. **One contract per tool.** What it does, what it returns, when, when not (and which instead); every field
-   described; strict types. Errors: what is wrong, what is valid, the next call.
-3. **Guards only for safety, permission and truth**, each with a way out; judgment guards take confirm.
-4. **Checks verify; they don't edit.** A result that fails a check gets one chance with the problem named.
-5. **One definition per concept**: file types, editability, image validity, written calls.
+- **main writes a method into a helper's task** ("analyze correlations between left and ..."); the analyst then
+  tests columns one pair at a time instead of predict - the answer was right, but pairwise tests can mislead when
+  columns move together (phase 5, 2 of 2 runs).
+- **main sends a one-file question to ask_knowledge** before reading the file itself - right answer, one helper
+  call more (phase 5, 2 of 2).
+- **main can hand its own work to a helper**: a slide deck given to analyze_or_code, against its contract ("not
+  for documents - Word, slides"), came back as one slide built in a script (phase 7, dev).
+- **The analyst can skip a built tool for a script** - item pairs counted in a script instead of find_patterns,
+  giving popularity rather than lift (phase 5 held-out). If this keeps happening, the answer is a library door to
+  the analysis tools from scripts (REBUILD_PLAN section 7), not more wording.
+- **The sandbox is not a security boundary**: a separate process with an audit hook, for one user's own
+  assistant; a native library that opens files on its own is not covered.
+- **A timing flake**: test_open_figures_are_saved_once failed once in a full run and passed the five runs since.
+- **The model is remote**: the 26B runs on a Kaggle notebook through a quick tunnel; a new session gets a new
+  address (bridge.env), and while it is down the page says so - nothing else can answer.

@@ -1,52 +1,23 @@
 [
  {
-  "id": "fix_script",
+  "id": "pricing_changes",
   "split": "holdout",
-  "why": "a broken file -> fixed in place -> its output",
+  "why": "two documents -> differences -> a Markdown file and a Word file",
   "ok": true,
   "problem": null,
-  "seconds": 73.4,
-  "truth": {
-   "mean": 15.1
-  },
+  "seconds": 24.6,
+  "truth": {},
   "tools": [
    "main:files(ok)",
-   "main:files(invalid_arguments)",
-   "main:files(None)",
-   "main:analyze_or_code(None)",
-   "engineer:read_file(ok)",
-   "engineer:run_code(ok)",
-   "engineer:save_code(ok)"
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)"
   ],
-  "cards": [
-   {
-    "question": "Update your file stats.py (file_1)? Its current text can't be brought back.",
-    "options": [
-     "Update",
-     "Cancel"
-    ],
-    "approval": {
-     "action": "replace_file",
-     "item": "file_1",
-     "name": "stats.py",
-     "content": "readings = [14.5, 9.25, 22.0, 18.75, 11.0]\n\n\ndef mean(values):\n    return sum(values) / len(values)\n\n\nprint('mean reading:', mean(readings))\n"
-    },
-    "via": null
-   },
-   {
-    "question": "Update your file stats.py (file_1)? Its current text can't be brought back.",
-    "options": [
-     "Update",
-     "Cancel"
-    ],
-    "approval": null,
-    "via": null
-   }
-  ],
+  "cards": [],
   "answers": [
-   "I've fixed the typo in `stats.py` (the variable was `value` instead of `values`).\n\nIt now prints: `mean reading: 15.1`"
+   "I've compared the two files. Here is what changed:\n\n*   **Basic**: Increased from 9 to **12 euros**.\n*   **Pro**: Increased from 29 to **35 euros**.\n*   **Enterprise**: Plan was **removed**.\n*   **Team**: New plan added at **99 euros**.\n\nI have saved the full list of changes in `changes.md` and created the `prices.docx` file with the current pricing for you, Ary."
   ],
   "errors": [],
-  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-fix_script-cdcasv_l"
+  "store": "C:\\Users\\aryth\\AppData\\Local\\Temp\\zen-job-pricing_changes-cya3b84h"
  }
 ]

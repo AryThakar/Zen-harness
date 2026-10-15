@@ -232,10 +232,21 @@ def pptx_with(slides: int, pictures: int) -> Callable[[Run, str], str | None]:
     return test
 
 
-def note_has(pattern: str) -> Check:
-    """The project's memory (agent.md) holds the pattern."""
+def memory_has(pattern: str) -> Check:
+    """'Remember this for every chat': the project's memory (agent.md) holds the pattern."""
     def check(r: Run) -> str | None:
         return None if re.search(pattern, r.remembered(), re.I) else f"agent.md doesn't hold {pattern}"
+    return check
+
+
+def note_has(pattern: str) -> Check:
+    """'Save it as a note': agent.md, or a text file Zen wrote for it, holds the pattern (phase 4 gave notes two
+    homes: agent.md for what is kept in view in every chat, a file of its own for anything else)."""
+    def check(r: Run) -> str | None:
+        notes = [r.remembered()] + [r.ws.path(k).read_text("utf-8", errors="replace") for k in r.ws.ids("file")
+                                    if r.ws.entry(k).get("by") == "assistant"
+                                    and r.ws.label(k).lower().endswith((".md", ".txt")) and r.ws.label(k) != "agent.md"]
+        return None if any(re.search(pattern, n, re.I) for n in notes) else f"no note holds {pattern}"
     return check
 
 
@@ -440,7 +451,7 @@ def ambiguous_top(r: Run) -> str | None:
 
 
 def nothing_downloaded(r: Run) -> str | None:
-    if r.ws.ids("file") or r.ws.ids("table"):
+    if [k for k in r.ws.ids("file") if r.ws.label(k) != "agent.md"] or r.ws.ids("table"):  # agent.md: there from the start
         return "a file was added although the user cancelled"
     text = r.answers[-1] if r.answers else ""
     return None if re.search(r"cancel|not download|didn'?t download|won'?t download|no file", text, re.I) else \
@@ -586,7 +597,7 @@ COMBOS = [
     Combo("fiscal_memory", "holdout",
           [Step("Remember this for every chat: our fiscal year starts on 1 July and we report in EUR."),
            Step("Which calendar month does our fiscal Q3 start in?", new_chat=True)],
-          all_of(no_errors, note_has(r"July"), answer_has(r"January")), None,
+          all_of(no_errors, memory_has(r"July"), answer_has(r"January")), None,
           "a note -> a new chat -> reasoning from it"),
     Combo("fibonacci_chart", "holdout",
           [Step("Have the coder write the first 20 Fibonacci numbers to fib.csv, then chart them and tell me the 20th.")],
