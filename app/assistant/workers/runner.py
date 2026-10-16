@@ -172,9 +172,12 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         if count(visible) > limit and not last:  # still too long: this step is the last - finish with what is done
             last = True
             visible = visible + [{"role": "user", "content": FULL.format(finish=profile.finish)}]
+        if count(visible) > limit:  # then the newest results too, as main's ladder does: the finish must fit (measured:
+            # without this step a web helper with two long price pages handed back nothing, three times running)
+            visible, _ = shorten_tool_results(visible, limit, count, 0, keep_last=0)
         if count(visible) > limit:
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task,
-                         stopped="its conversation grew larger than the model's context")
+                         stopped=CONTEXT_FULL)
         try:  # the last step offers only the finish: the task always ends with a result
             turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True,
                                      on_event=lambda kind, text: kind == "writing" and progress(
@@ -269,6 +272,9 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"], task=task)
 
 
+CONTEXT_FULL = "its conversation grew larger than the model's context"
+
+
 def _cut_again(cuts: list[dict]) -> bool:
     """Cut-offs in a row that won't end by themselves: the same too-long call twice, or three of any kind (one cut
     while thinking, then one mid-call, recovers - measured)."""
@@ -285,7 +291,7 @@ def _plain(exc: ProviderError) -> str:
     """Why the helper's model stopped, in words main can pass on - not the server's error page."""
     said = str(exc)
     if "exceeds the available context" in said or "context size" in said:
-        return "its conversation grew larger than the model's context"
+        return CONTEXT_FULL
     if any(code in said for code in ("(502)", "(503)", "(504)", "(530)")) or "<html" in said.lower() or "reach" in said:
         return "the model server could not be reached"
     return "the model stopped with an error"
@@ -443,6 +449,15 @@ def _done(ctx: ToolContext, profile: Profile, result: dict, trace: Trace, proble
     if stopped:
         out["stopped"] = f"The helper stopped early: {stopped}. What it did is below - it is kept; nothing is lost."
         problems = problems or ["the helper stopped before it finished"]
+        if not result.get("answer"):  # what it read, so main can tell the user or ask for less - not send it again
+            pages = [{"url": u, **({"title": c["title"]} if c.get("title") else {})}
+                     for u, c in list(trace.cards.items())[-6:] if u in trace.read_urls]
+            if pages:
+                out["pages_read"] = pages
+            if CONTEXT_FULL in stopped:
+                out["next"] = ("What it read filled its context before it could answer: the same task again fills it "
+                               "again. Ask for less at once (one figure, from one page), or tell the user what was "
+                               "read and what wasn't found.")
     out["ran"] = _ran(trace)
     made = [k for k in ctx.ws.ids() if k not in trace.existing]
     changed = [k for k, sha in trace.stamps.items() if k in ctx.ws.ids() and ctx.ws.entry(k).get("sha", "") != sha]

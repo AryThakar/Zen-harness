@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from app.providers.base import ModelTurn
+from app.providers.base import ModelTurn, ProviderError
 from app.providers.scripted import ScriptedProvider, call
 from app.assistant import registry, workers
 from app.providers.base import estimate_tokens
@@ -550,6 +550,44 @@ def test_three_cut_offs_of_any_kind_in_a_row_end_the_helper(ctx, fake_web):
     model = ScriptedProvider([ModelTurn(text="", stop="max_tokens")] * 3 + [submit(answer="never asked for")])
     out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
     assert len(model.requests) == 3 and "3 times in a row" in out["stopped"]
+
+
+def _long_pages(monkeypatch, chars: int):
+    pages = {u: {"url": u, "title": t, "text": f"{t}: " + "price 122,270 on 15 Oct. " * (chars // 25)}
+             for u, t in (("https://a.example.com/history", "Price history"), ("https://b.example.com/quote", "Quote"))}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "read", registry.ReadPageIn,
+                                                             lambda c, a: ok(pages[a.url], {
+                                                                 "type": "webpage", "url": a.url,
+                                                                 "title": pages[a.url]["title"]})))
+
+
+def test_a_helper_whose_pages_fill_its_context_still_finishes_with_what_it_read(ctx, fake_web, monkeypatch):
+    """Measured: two long price pages filled a web helper's context and it handed back nothing, three times running
+    - the step that should let it finish never fit, because the newest pages were never shortened."""
+    _long_pages(monkeypatch, 7_000)
+    model = ScriptedProvider([tools_turn(call("web_search", query="MRF share price history")),
+                              tools_turn(call("read_webpage", url="https://a.example.com/history")),
+                              tools_turn(call("read_webpage", url="https://b.example.com/quote")),
+                              submit(answer="It closed at 122,270 on 15 Oct.", sources=["https://a.example.com/history"])])
+    model.slot_tokens = 9_000  # a small slot, so two long pages fill it
+    out = run_worker(model, PROFILES["web"], "MRF's last month of prices?", ctx)
+    assert out["answer"] == "It closed at 122,270 on 15 Oct." and "stopped" not in out
+    last = model.requests[-1]
+    assert [t["name"] for t in last["tools"]] == ["submit_result"] and "conversation is full" in last["messages"][-1]["content"]
+    pages = [m["content"] for m in last["messages"] if m["role"] == "tool" and "price 122,270" in m["content"]]
+    assert len(pages) == 2 and all("[shortened to save space]" in p for p in pages)  # the newest page too
+
+
+def test_a_helper_stopped_by_a_full_context_hands_back_what_it_read_and_what_next(ctx, fake_web, monkeypatch):
+    _long_pages(monkeypatch, 500)
+
+    def full(messages):
+        raise ProviderError("the request (20000 tokens) exceeds the available context size (16384 tokens)")
+    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://a.example.com/history")), full])
+    out = run_worker(model, PROFILES["web"], "MRF's last month of prices?", ctx)
+    assert out["answer"] == "" and "larger than the model's context" in out["stopped"]
+    assert out["pages_read"] == [{"url": "https://a.example.com/history", "title": "Price history"}]
+    assert "the same task again fills it again" in out["next"]
 
 
 def test_a_page_that_failed_is_not_read_again_with_other_find_words(ctx, monkeypatch):
