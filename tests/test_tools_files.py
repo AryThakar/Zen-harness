@@ -201,6 +201,11 @@ def test_a_program_main_writes_is_parsed_and_said_to_be_unrun(ws, index):
     bad = files(ws, index, "write", name="mean.py", content="def mean(values):\ndef mean(values):\n    return 1\n").result
     assert bad["broken"].startswith("mean.py does not parse") and "line 2" in bad["broken"]
     assert "not_run" not in files(ws, index, "write", name="notes.md", content="# Notes\n").result
+    # what the page does with it (measured: "run it in your terminal", "open it in your web browser", then the game
+    # played in the chat by the model itself)
+    assert "from its card in the chat (Run), and type into it" in good["not_run"]
+    page = files(ws, index, "write", name="cups.html", content="<button>Cup 1</button>\n").result
+    assert page["not_run"].startswith("cups.html works in the chat, under its card") and "analyze_or_code" not in page["not_run"]
 
 
 def _png() -> bytes:

@@ -1,7 +1,8 @@
 # Zen - a local assistant
 
-Zen is a chat assistant on an open model (Gemma 4 through llama-server - on this computer, or the 26B on a Kaggle
-notebook reached through a local bridge). It talks with you and hands focused work to three helpers - one for the
+Zen is a chat assistant on an open model through llama-server - on this computer, or on a Kaggle notebook's GPUs
+reached through a local bridge (today Qwen 3.6 35B-A3B; Gemma 4 26B-A4B before, with the same score on the same
+tests: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) section 12). It talks with you and hands focused work to three helpers - one for the
 web, one for reading many or long documents and earlier chats, and an analyst-programmer for your tables and
 programs - each with its own tools, inside a **workspace**: your project, one folder of real files named by their
 paths. What must be right - facts, numbers, files - is checked by code, not left to the model.
@@ -38,12 +39,12 @@ python -m venv .venv
 
 `requirements.lock` holds the exact versions the tests passed with.
 
-**The chat model.** A llama-server (llama.cpp) with a Gemma 4 model, listening at `BIZ_LLAMACPP_URL`
+**The chat model.** A llama-server (llama.cpp) with an open model that calls tools (Qwen 3.6 or Gemma 4), listening at `BIZ_LLAMACPP_URL`
 (default http://127.0.0.1:8080). The app needs two slots (`-np 2`: slot 0 is the conversation, slot 1
 the helpers) and the model's vision projector (`--mmproj`, so it can look at pictures); the context
 (`-c`) is shared by the two slots, and the app's prompt limit follows each slot's size. The server can also run
-elsewhere - the 26B runs on Kaggle, reached through a bridge at the same address (a new notebook session has a new
-tunnel address: put it in the bridge's bridge.env and restart the bridge).
+elsewhere - on Kaggle, reached through a bridge at the same address (a new notebook session has a new
+tunnel address: put it in the bridge's bridge.env and restart the bridge). The page says where the model runs.
 
 **Search by meaning (optional, recommended).** A llama.cpp build that knows EmbeddingGemma 2 (b11515 or
 later) and the model's two files (`embeddinggemma-2-Q8_0.gguf` and its `mmproj`, from
@@ -72,7 +73,8 @@ Environment variables, or lines in a `.env` file in the project folder (`NAME=va
 | `ASSISTANT_MAX_TOKENS` | a reply's limit, thinking included (default 4096) |
 | `ASSISTANT_DATA_DIR` | where workspaces, chats and files are kept (default `data/assistant`) |
 | `BIZ_MAX_UPLOAD_MB` | the largest upload (default 100) |
-| `BIZ_LLM_PROVIDER`, `GROQ_API_KEY` | `groq` runs the app on a cloud model instead, for testing |
+| `BIZ_LLM_PROVIDER` | `gemini`, `nvidia` or `groq` runs the app on a cloud model instead, for testing the harness with a stronger model (default `llamacpp`) |
+| `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY` | that cloud's key; `BIZ_GEMINI_MODEL`, `BIZ_NVIDIA_MODEL`, `BIZ_GROQ_MODEL` pick its model |
 
 ## Run
 

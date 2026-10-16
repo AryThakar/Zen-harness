@@ -534,6 +534,24 @@ def test_a_reply_cut_off_by_the_length_limit_gets_another_step(ctx, fake_web):
     assert "cut off by the length limit" in model.requests[2]["messages"][-1]["content"]
 
 
+def test_the_same_call_cut_off_twice_ends_the_helper_with_what_it_did(ctx, fake_web):
+    """Measured: a web helper's reply cut off three times in a row, 3.5 minutes each, until the user stopped it."""
+    cut = ModelTurn(text="", stop="max_tokens", cut_call={"name": "submit_result", "chars": 9_000})
+    model = ScriptedProvider([tools_turn(call("read_webpage", url="https://news.example.com/rates")), cut, cut,
+                              submit(answer="never asked for")])
+    out = run_worker(model, PROFILES["web"], "Daily prices for the last month?", ctx)
+    assert len(model.requests) == 3 and "2 times in a row" in out["stopped"]
+    told = model.requests[2]["messages"][-1]["content"]
+    assert told.startswith("[your call to submit_result was cut off") and "9,000 characters" in told
+    assert "files(mode=" not in told  # the web helper writes no files
+
+
+def test_three_cut_offs_of_any_kind_in_a_row_end_the_helper(ctx, fake_web):
+    model = ScriptedProvider([ModelTurn(text="", stop="max_tokens")] * 3 + [submit(answer="never asked for")])
+    out = run_worker(model, PROFILES["web"], "What did the central bank do?", ctx)
+    assert len(model.requests) == 3 and "3 times in a row" in out["stopped"]
+
+
 def test_a_page_that_failed_is_not_read_again_with_other_find_words(ctx, monkeypatch):
     reads = []
     refused = ToolResult("failed", {"error": {"message": "The page answered HTTP 403."}})

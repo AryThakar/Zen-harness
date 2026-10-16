@@ -71,7 +71,7 @@ from . import snapshot
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
                       standing_instructions,
                       without_notes)
-from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN
+from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN, call_cut_off
 from .registry import ToolContext, execute, split_confirm
 from .store import NEW_CHAT, Store
 from .workers import DELEGATES, main_tools
@@ -98,6 +98,11 @@ _live: Live | None = None  # the running turn, or the last one
 STOP = threading.Event()
 STOP_WAIT = 20  # seconds a new turn waits for a stopped one to wind down
 STAMP = re.compile(r"^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{2} \w{3} \d{4}, \d{2}:\d{2}\]\s*")
+
+
+def _cut_call_before(history: list[dict]) -> bool:
+    """Was main's last step in this turn also a call the length limit cut off (its nudge is the latest message)?"""
+    return bool(history) and bool(history[-1].get("cut_call"))
 
 
 class _Unstamped:
@@ -255,7 +260,8 @@ def _agent(state: TurnState, config) -> dict:
     stream.flush()
     if t.live is not None:
         t.live.note("steps", {"seconds": round(time.perf_counter() - started, 2), "stop": turn.stop,
-                              "calls": [c["name"] for c in turn.tool_calls], **({"usage": turn.usage} if turn.usage else {})})
+                              "calls": [c["name"] for c in turn.tool_calls], **({"usage": turn.usage} if turn.usage else {}),
+                              **({"cut_call": turn.cut_call} if turn.cut_call else {})})
     turn.text = mend_blocks(without_notes(STAMP.sub("", turn.text, count=1)))
     if turn.usage:
         t.write({"type": "stats", **turn.usage, "seconds": round(time.perf_counter() - started, 3)})
@@ -266,6 +272,15 @@ def _agent(state: TurnState, config) -> dict:
                **({"usage": turn.usage} if turn.usage else {})}
     t.store.append(t.chat_id, message)
     new = [message]
+    if turn.cut_call and not last:  # the limit came while it wrote a call: too long, not too much thinking
+        if _cut_call_before(history):  # the same again: tell the user, instead of minutes more of it
+            raise ProviderError(f"Zen's {turn.cut_call.get('name') or 'tool'} call grew past the model's length limit "
+                                "twice. Ask for something shorter, or for it in parts.")
+        nudge = {"role": "user", "content": call_cut_off(turn.cut_call, main=True, edits=True), "hidden": True,
+                 "cut_call": True}
+        t.store.append(t.chat_id, nudge)
+        new.append(nudge)
+        return {"messages": new, "rounds": state["rounds"] + 1}
     if turn.stop == "max_tokens" and not turn.tool_calls and not turn.text.strip() and not quick:
         # Thought until the limit, said nothing: the user decides whether to try again quickly.
         pending = {"retry": True, "question": TOO_LONG, "options": [TRY_AGAIN], "allow_text": False,
@@ -566,7 +581,8 @@ class Live:
         helper = self.trace["helpers"][-1]
         if kind == "worker_turn":
             helper["steps"].append({"at": at, "stop": event.get("stop"), "calls": event.get("calls", []),
-                                    **({"usage": event["usage"]} if event.get("usage") else {})})
+                                    **({"usage": event["usage"]} if event.get("usage") else {}),
+                                    **({"cut_call": event["cut_call"]} if event.get("cut_call") else {})})
         elif kind == "worker_result":
             helper["tools"].append({"at": at, "name": event.get("name"), "status": event.get("status"),
                                     "chars": event.get("chars")})

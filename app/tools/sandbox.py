@@ -258,6 +258,17 @@ def chart(type, x, y=None, series=None, title=None, x_label=None, y_label=None):
         _json.dump(spec, f, default=str)
     return name
 
+# table, path and chart are a script's own already; importing them works too (measured: 'from chart import chart'
+# stopped a script with "chart is not installed"). zen holds all three.
+import types as _types
+_zen = _types.ModuleType("zen", "The workspace's helpers: table(name), path(name), chart(type, x, y, ...).")
+_zen.table, _zen.path, _zen.chart = table, path, chart
+_sys.modules["zen"] = _zen
+for _n, _f in (("chart", chart), ("table", table)):
+    _m = _types.ModuleType(_n)
+    setattr(_m, _n, _f)
+    _sys.modules.setdefault(_n, _m)
+
 def _images():
     return {{n: _os.stat(n).st_mtime for n in _os.listdir(".") if n.lower().endswith({images!r})}}
 _images_before = _images()
@@ -555,7 +566,7 @@ def _register(ws: Workspace, before: dict) -> tuple[list[dict], list[dict]]:
         if kind not in (kind_of(rel), "chart"):
             entry["note"] = f"not a readable {kind_of(rel)}; kept as a file"
         told.append(entry)
-        made.append({"path": put.path, "id": put.key, **({"chart": True} if kind == "chart" else {}),
+        made.append({"path": put.path, "id": put.key, "kind": kind, **({"chart": True} if kind == "chart" else {}),
                      **({"updated": True} if known else {})})
         if known:
             folder = ws.zen / "versions" / known

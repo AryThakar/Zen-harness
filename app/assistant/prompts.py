@@ -28,14 +28,15 @@ from app.config import settings
 # ---------------------------------------------------------------- main
 
 
-def main_prompt(name: str, user: str = "") -> str:
+def main_prompt(name: str, user: str = "", cloud: bool = False) -> str:
     """main's instructions: its persona first (who it is, how it talks, how it takes a failure), then how it
     works. Built once from the settings, so the prompt never changes while the app runs."""
     you = user or "the user"
     named = (f"The user is {user}: use their name now and then, not in every reply. " if user else "")
+    model = "a cloud model the user chose for testing" if cloud else "an open model the user runs themselves"
     return f"""You are {name}, a personal assistant for one user, running on their own computer. You talk with \
 the user, do quick things yourself and give focused work to helpers. If asked what you are: {name}, an assistant \
-running on a local open model on this computer - not ChatGPT, Claude or any other product.
+running on {model} - not ChatGPT, Claude or any other product.
 
 How you are: warm, calm and direct, like a capable friend who knows a lot. {named}Answer first, then only the \
 detail that matters - short paragraphs, a list or a table when it helps. Match the user's tone: light when they \
@@ -81,7 +82,8 @@ doesn't give. Do not make false claims - including about what you did: never say
 checked something unless you did."""
 
 
-MAIN = main_prompt(settings.assistant_name, settings.assistant_user_name)
+MAIN = main_prompt(settings.assistant_name, settings.assistant_user_name,
+                   cloud=settings.llm_provider in ("gemini", "groq", "nvidia"))
 
 # A reply cut off in the middle of its text (not in thinking): another step to finish it.
 MAIN_CUT_OFF = ("[App check: your last reply was cut off by the length limit before it finished. Finish it briefly, "
@@ -168,8 +170,9 @@ t-test, k-means, ARIMA) is done by the tool built for that job:
 - what texts are about: analyze_text
 - what none of these does (a custom reshape, a simulation, a program): a Python file of your own
 A tool that saves a table gives its name: use it next (chart the segments, query the predictions).
-4. Programs are files. Write one with files(mode='write') - a name like 'scripts/age_by_class.py', a docstring that \
-says what it does, small functions with clear names, and code at the bottom that calls them and prints the result \
+4. Programs are files. Write one with files(mode='write') - one you write to get the answer goes under work/, e.g. \
+'work/age_by_class.py', with the tables it writes along the way (a program the task asks for goes where the task \
+says, or at the top level) - a docstring that says what it does, small functions with clear names, and code at the bottom that calls them and prints the result \
 with labels - then run it with run. Change it with files(mode='edit') - the exact old lines to the new ones - and \
 run it again; never write it again whole for a small change. 'It ran' is not 'it is right': check a value against a \
 known answer (assert) and the edges the task implies (empty input, one item). A program that asks the user (a game, \
@@ -190,6 +193,20 @@ next task on a table starts from its report."""
 # Sent when a helper's reply stopped at the output limit: another step, not a half answer.
 HELPER_CUT_OFF = ("[Your last reply was cut off by the length limit before it finished. Think briefly, then call one "
                   "tool or {finish}.]")
+# Sent to main or a helper when the limit came while it wrote a call (ModelTurn.cut_call): the call is too long, not
+# the thinking - said with its size, so the next one is shorter instead of the same again. main's starts with
+# [App check] (its prompt says what that is); {parts} only for a reader that can edit files.
+CALL_CUT_OFF = ("your call to {name} was cut off by the length limit at {chars:,} characters, so it did not run - one "
+                "reply holds less, thinking included. Send a shorter one: only what is needed{parts}.]")
+CUT_PARTS = ("; a long file in parts - its start with files(mode='write'), then the rest added with "
+             "files(mode='edit') after its last lines")
+
+
+def call_cut_off(cut: dict, main: bool, edits: bool) -> str:
+    """The nudge after a call the length limit cut off (ModelTurn.cut_call)."""
+    return ("[App check: " if main else "[") + CALL_CUT_OFF.format(name=cut.get("name") or "a tool",
+                                                                   chars=cut.get("chars") or 0,
+                                                                   parts=CUT_PARTS if edits else "")
 # A helper's reply with no call (a tool call is required, so only a server that ignored it): act or finish.
 NO_CALL = "[Call one of your tools - or {finish} to hand in your result.]"
 # The conversation outgrew the slot even with old results and texts shortened: this step is the last.

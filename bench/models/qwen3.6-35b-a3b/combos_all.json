@@ -1,0 +1,567 @@
+[
+ {
+  "id": "expense_memo",
+  "split": "dev",
+  "why": "messy table -> clean -> compare months -> chart -> Word memo -> note",
+  "ok": false,
+  "problem": "reply lacks growth=4500",
+  "seconds": 223.0,
+  "truth": {
+   "grew": "Travel",
+   "growth": 4500
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:analyze_or_code(partial)",
+   "engineer:inspect_data(ok)",
+   "engineer:clean_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:files(ok)",
+   "engineer:run(invalid_arguments)",
+   "engineer:files(ok)",
+   "engineer:run(invalid_arguments)",
+   "engineer:run(invalid_arguments)",
+   "main:files(ok)",
+   "main:view_image(ok)",
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "All set, Ary:\n\n- **Cleaned the data** — 37 rows down to 36 (removed one duplicate/blank entry), amounts parsed and amounts aggregated.\n- **Fastest-growing category: Travel — up 225%** (₹2,000 → ₹6,500). Food followed at +13.75%, Software at +10%, and Rent was flat.\n- **Chart** (grouped bars) is saved as **figure_1.png** — Jan/Feb/Mar for each of the four categories.\n- **memo.docx** contains the full one-page memo with the analysis, the breakdown table, and the chart embedded.\n- **note.txt** has the fastest-growing category recorded: **Travel (+225%)**."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "dice_fairness",
+  "split": "dev",
+  "why": "coder makes data -> it becomes a table -> the analyst tests it",
+  "ok": true,
+  "problem": null,
+  "seconds": 132.2,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:files(invalid_arguments)",
+   "main:analyze_or_code(invalid_arguments)",
+   "main:analyze_or_code(invalid_arguments)",
+   "main:analyze_or_code(ok)",
+   "engineer:files(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Here's the result:\n\n| Face | Count | Deviation |\n|------|-------|-----------|\n| 1    | 970   | -30       |\n| 2    | 974   | -26       |\n| 3    | 989   | -11       |\n| 4    | 1,001 | +1        |\n| 5    | 999   | -1        |\n| 6    | 1,067 | +67       |\n\nThe die looks fair — all faces landed within ±67 of the expected 1,000, which is well within what random chance would produce.\n\nThe analyst also suggests running a chi-squared test for formal statistical validation. Want me to do that, or is this enough?"
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "meeting_actions",
+  "split": "dev",
+  "why": "document -> extract -> checklist file -> gantt diagram",
+  "ok": false,
+  "problem": "actions.md is not a checklist of 4 open items",
+  "seconds": 26.6,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:draw_diagram(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Here you go, Ary:\n\n**actions.md** has been created with all four action items from the meeting, each with owner and deadline.\n\nThe **gantt chart** above shows the timeline of all deadlines, leading up to the next meeting on 2 December.\n\nOne thing to note — the meeting is on 3 November, so the gantt uses that as the start date for each task. If you'd prefer the chart to show a different baseline, just let me know."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "survey_themes",
+  "split": "dev",
+  "why": "free text -> the user's labels -> shares -> chart",
+  "ok": true,
+  "problem": null,
+  "seconds": 122.5,
+  "truth": {
+   "top": "delivery",
+   "share": 50.0
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:analyze_text(ok)",
+   "engineer:query_data(ok)",
+   "engineer:make_chart(ok)",
+   "engineer:make_chart(ok)",
+   "engineer:files(ok)",
+   "engineer:run(invalid_arguments)",
+   "engineer:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Good. The breakdown is clear:\n\n| Category | Count | Share |\n|---|---|---|\n| **Delivery** | 30 | **50%** |\n| Price | 18 | 30% |\n| Quality | 12 | 20% |\n\n**Delivery** is by far the biggest complaint — half of all comments. Price comes next at 30%, and quality at 20%. The pie chart is in the workspace."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "invoice_rupees",
+  "split": "dev",
+  "why": "live web rate + a table's total -> exact conversion",
+  "ok": true,
+  "problem": null,
+  "seconds": 113.2,
+  "truth": {
+   "total_usd": 11204.31
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:research_web(ok)",
+   "web:web_search(ok)",
+   "web:read_webpage(failed)",
+   "web:read_webpage(ok)",
+   "web:read_webpage(ok)",
+   "main:calculate(ok)",
+   "main:calculate(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "The total of your 8 invoices is **$11,204.31**.\n\nUsing the central bank reference rate for 16 October 2026 (**1 USD = 94.99 INR**), that converts to:\n\n**₹10,64,297.41**\n\n(₹10,64,297.4069 exactly)\n\nNote: This uses the standard central bank reference rate. If you're converting through a bank today, the actual rate might differ slightly — Federal Bank's rates for today ranged from ₹93.37 (cash buy) to ₹94.44 (cheque). Ary, let me know which rate you prefer for your calculation."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "churn_risk",
+  "split": "dev",
+  "why": "model -> drivers -> score the rest -> save the top 5",
+  "ok": true,
+  "problem": null,
+  "seconds": 107.8,
+  "truth": {},
+  "tools": [
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:predict(ok)",
+   "engineer:query_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:files(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Here's what predicts churn in your data:\n\n**The single biggest driver is support tickets** — they account for **~90%** of the predictive power. Each additional ticket strongly pushes a customer toward churning. Monthly usage (monthly_hours) is the second factor, but in the opposite direction: higher usage means lower churn risk. Plan type and tenure had almost no predictive impact.\n\nThe model (ridge regression) scored **AUC 0.88** — a strong predictor.\n\nThe **5 most at-risk active customers** have been saved to **at_risk.csv**:\n\n| Customer | Tickets | Monthly Hours | Tenure | Plan | Risk |\n|---|---|---|---|---|---|\n| C0007 | 5 | 21.0 | 29 mo | pro | **94.5%** |\n| C0290 | 4 | 4.9 | 24 mo | basic | **89.7%** |\n| C0312 | 4 | 17.1 | 31 mo | basic | **81.9%** |\n| C0285 | 4 | 16.9 | 51 mo | basic | **72.2%** |\n| C0107 | 3 | 5.2 | 48 mo | basic | **70.3%** |\n\nC0007 and C0290 are the most urgent — both above 90%. C0007 is on a pro plan, so they may be especially valuable to retain.\n\n**Caveats:** These are associations, not proven causes. The model was cross-validated on the same dataset, so the AUC might be slightly optimistic. The risk scores are estimates, not certainties — a quick review of each customer's recent support history could help validate."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "verified_picture",
+  "split": "dev",
+  "why": "coder draws -> the picture is looked at -> confirmed",
+  "ok": true,
+  "problem": null,
+  "seconds": 67.3,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)",
+   "main:view_image(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done. The pie chart is saved as `budget.png` and I've checked it:\n\n- **Title**: \"My budget\" — confirmed\n- **Biggest slice**: Rent at 50% — confirmed (red slice)\n- All three categories: Rent (50%), Food (30%), Fun (20%)\n\nThe chart looks right."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "ambiguous_top",
+  "split": "dev",
+  "why": "an ambiguous question -> ask, or say the reading taken",
+  "ok": true,
+  "problem": null,
+  "seconds": 49.7,
+  "truth": {
+   "by_revenue": "Widget Pro",
+   "by_units": "Gizmo"
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:query_data(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "**Widget Pro** is your top product, with **$7,182** in total revenue.\n\nHere's how all four products stack up:\n\n| Product | Total Revenue |\n|---|---|\n| Widget Pro | $7,182 |\n| Gizmo | $3,895 |\n| Doohickey | $3,344 |\n| Thingamajig | $2,852 |\n\nIt's pulling almost double the revenue of your second-best product. That's almost certainly because of its much higher unit price ($189 vs. $9.50 for Gizmo, the next highest), even though Gizmo sells a lot more units."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "cancel_download",
+  "split": "dev",
+  "why": "a permission refused -> nothing done, said plainly",
+  "ok": true,
+  "problem": null,
+  "seconds": 13.3,
+  "truth": {},
+  "tools": [
+   "main:files(None)"
+  ],
+  "cards": [
+   {
+    "question": "Download README.md (11.0 KB) from GitHub into this workspace?",
+    "options": [
+     "Download",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "download_file",
+     "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/README.md",
+     "name": "README.md",
+     "type": "text/plain",
+     "bytes": 11251,
+     "host": "raw.githubusercontent.com",
+     "github": true
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "That download was cancelled — you saw the button and backed out. Let me know if you want to try it again or grab a different file."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "plan_forecast_deck",
+  "split": "dev",
+  "why": "several steps -> forecast -> slides",
+  "ok": true,
+  "problem": null,
+  "seconds": 183.1,
+  "truth": {
+   "best": "2024-12"
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:clean_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:forecast(ok)",
+   "engineer:query_data(ok)",
+   "engineer:forecast(ok)",
+   "engineer:files(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)",
+   "main:view_image(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done. Here's the summary:\n\n**Best Month:** **December 2024** — 6,206.50 in sales\n\n**Next Quarter Forecast:**\n\n| Month | Forecast | 80% CI |\n|-------|----------|--------|\n| Oct 2025 | 6,061.28 | 5,572.90 – 6,549.67 |\n| Nov 2025 | 6,122.62 | 5,634.24 – 6,611.01 |\n| Dec 2025 | 6,183.97 | 5,695.58 – 6,672.35 |\n\n- **Trend:** +56.17/month, clearly rising (p < 0.0001) with strong seasonality (December peaks)\n- **Model:** Theta model — 6% error vs 11% for seasonal naive baseline\n- **Confidence intervals** are rough estimates (based on ~9 past errors)\n\nThe deck `outlook.pptx` has 5 slides: title with the chart, best month, trend summary, forecast table, and outlook notes."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "pricing_changes",
+  "split": "holdout",
+  "why": "two documents -> differences -> a Markdown file and a Word file",
+  "ok": true,
+  "problem": null,
+  "seconds": 25.0,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done — `changes.md` and `prices.docx` are both ready."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "fiscal_memory",
+  "split": "holdout",
+  "why": "a note -> a new chat -> reasoning from it",
+  "ok": true,
+  "problem": null,
+  "seconds": 28.5,
+  "truth": {},
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done. Fiscal year starting **1 July** and reporting in **EUR** is saved. I'll keep it in mind for every chat.",
+   "**January**. Your fiscal year starts 1 July, so:\n\n| Quarter | Months |\n|---------|--------|\n| Q1 | July – September |\n| Q2 | October – December |\n| **Q3** | **January – March** |\n| Q4 | April – June |"
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "fibonacci_chart",
+  "split": "holdout",
+  "why": "coder -> a table -> the analyst's chart",
+  "ok": false,
+  "problem": "no chart shown",
+  "seconds": 96.6,
+  "truth": {},
+  "tools": [
+   "main:calculate(invalid_arguments)",
+   "main:analyze_or_code(invalid_arguments)",
+   "main:analyze_or_code(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)",
+   "engineer:inspect_data(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done. Here's the summary:\n\n- **fib.csv** has been written with 20 rows (columns: `n` 1–20, `value` the Fibonacci number).\n- **fib_chart.png** shows the exponential growth curve.\n- **The 20th Fibonacci number is `4181`**.\n\nThe full sequence: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, **4181**."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "mumbai_trip_note",
+  "split": "holdout",
+  "why": "forecast -> answer -> note",
+  "ok": true,
+  "problem": null,
+  "seconds": 39.1,
+  "truth": {},
+  "tools": [
+   "main:get_weather(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Here's what the forecast looks like for the next 3 days:\n\n- **Today (Oct 16):** Overcast, **0% chance of rain** — no rain expected.\n- **Oct 17:** Light drizzle, **20% chance** — very light, around 0.1mm.\n- **Oct 18:** Foggy, **24% chance** — no rain expected.\n\n**Bottom line:** No heavy rain expected in the next 3 days. There's a small chance of light drizzle on the 17th, but it'll be minimal.\n\nOne thing worth noting: the air quality is currently **very unhealthy** (AQI 261), so if you're sensitive to that, keep that in mind.\n\nSaving this as a note now."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "ab_report",
+  "split": "holdout",
+  "why": "A/B test -> chart -> Word file",
+  "ok": true,
+  "problem": null,
+  "seconds": 207.8,
+  "truth": {
+   "rate_a": 9.9,
+   "rate_b": 13.0
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:run(invalid_arguments)",
+   "engineer:files(ok)",
+   "engineer:run(ok)",
+   "engineer:compare(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:make_chart(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Done. **Yes — Variant B is truly better.** The result is in `ab_result.docx`, which includes:\n\n- The summary table (A: 9.88%, B: 12.98%)\n- The chart\n- The full stats: z = 4.36, p < 0.0001, +31.4% relative lift, 95% CI of 1.71 to 4.49 pp above zero"
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "spike_explained",
+  "split": "holdout",
+  "why": "anomaly in a table -> its cause in a document",
+  "ok": false,
+  "problem": "find_patterns did not run",
+  "seconds": 54.6,
+  "truth": {
+   "spike_day": "2025-10-08",
+   "spike_words": [
+    "2025-10-08",
+    "8 October",
+    "October 8"
+   ]
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:clean_data(ok)",
+   "engineer:query_data(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "The most unusual day was **October 8, 2025**, with **$1,900.00** in sales — over 7 standard deviations above the daily average of $517.57. That's a massive spike.\n\nChecking your **marketing_log.md**, there's a matching entry:\n\n> **October 8: the autumn sale email went out to all 40,000 customers.**\n\nThat's almost certainly what drove it — a mass email for a seasonal promotion would easily explain a nearly 4x jump in a single day.\n\nYou also have a podcast mention on October 17 and new product photos on September 18, but neither aligns with this outlier. Did that email campaign do what you hoped?"
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "budget_left",
+  "split": "holdout",
+  "why": "an earlier chat recalled -> exact sum",
+  "ok": true,
+  "problem": null,
+  "seconds": 33.8,
+  "truth": {
+   "left": 7649.25
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:ask_knowledge(None)",
+   "knowledge:files(ok)",
+   "knowledge:recall(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Do you need to break this down further by specific spring activities or channels?",
+    "options": [
+     "Yes, break it down by activities",
+     "No, this is fine"
+    ],
+    "approval": null,
+    "via": "ask_knowledge"
+   }
+  ],
+  "answers": [
+   "The spring campaign budget was **12,000 euros**. Subtracting the March spend of 4,350.75 leaves:\n\n**7,649.25 euros** remaining.\n\n(March had 6,000 allocated, so there's also **1,649.25 euros** left from the March portion that didn't get spent.)"
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "titanic_link",
+  "split": "holdout",
+  "why": "a data link -> import with permission -> computed, not remembered",
+  "ok": true,
+  "problem": null,
+  "seconds": 54.5,
+  "truth": {},
+  "tools": [
+   "main:files(None)",
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:query_data(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Download titanic.csv (58.9 KB) from GitHub into this workspace?",
+    "options": [
+     "Download",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "download_file",
+     "url": "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv",
+     "name": "titanic.csv",
+     "type": "text/plain",
+     "bytes": 60302,
+     "host": "raw.githubusercontent.com",
+     "github": true
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "There are **891** passengers in the file, and **342** of them survived — that's **38.4%** (just under 2 in 5)."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "keep_then_rename",
+  "split": "holdout",
+  "why": "a delete refused -> a rename instead",
+  "ok": true,
+  "problem": null,
+  "seconds": 24.3,
+  "truth": {},
+  "tools": [
+   "main:files(None)",
+   "main:files(ok)"
+  ],
+  "cards": [
+   {
+    "question": "Delete draft.txt from this workspace? This can't be undone.",
+    "options": [
+     "Delete",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "delete_files",
+     "items": [
+      "file_2"
+     ],
+     "named": [
+      "draft.txt"
+     ]
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "It was cancelled. I didn't delete `draft.txt`.",
+   ""
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "fix_script",
+  "split": "holdout",
+  "why": "a broken file -> fixed in place -> its output",
+  "ok": true,
+  "problem": null,
+  "seconds": 49.8,
+  "truth": {
+   "mean": 15.1
+  },
+  "tools": [
+   "main:files(ok)",
+   "main:files(ok)",
+   "main:analyze_or_code(ok)",
+   "engineer:files(ok)",
+   "engineer:run(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "Fixed — line 5 had a typo: `len(value)` → `len(values)`.\n\nIt prints:\n\n**mean reading: 15.1**"
+  ],
+  "errors": [],
+  "store": null
+ }
+]

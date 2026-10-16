@@ -95,6 +95,17 @@ def test_destructive_steps_are_explicit(ws, messy):
     assert "1 filled with median 800" in r.result["log"][0]
 
 
+def test_dropping_rows_with_any_gap_may_not_remove_most_of_a_table(ws, messy):
+    """Measured: 'any column' on a table with a mostly empty comments column kept 34 of 344 rows, and the answer
+    built on those 34 never said so."""
+    r = clean_data(ws, messy, [{"op": "drop_missing"}])
+    message = r.result["error"]["message"]
+    assert r.status == "invalid_arguments" and "would remove 5 of 6 rows" in message
+    assert "note (83% empty)" in message and "drop_missing{columns: [...]}" in message and "drop_columns" in message
+    named = clean_data(ws, messy, [{"op": "drop_missing", "columns": ["note"]}])  # named: the caller's choice
+    assert named.status == "ok" and "removed 5 of 6 rows" in named.result["log"][0]
+
+
 def test_invalid_step_saves_nothing(ws, messy):
     before = ws.ids()
     r = clean_data(ws, messy, [{"op": "drop_duplicates"}, {"op": "fill_missing", "columns": ["region"], "method": "mean"}])

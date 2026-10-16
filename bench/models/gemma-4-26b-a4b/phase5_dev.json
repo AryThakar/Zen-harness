@@ -1,0 +1,305 @@
+[
+ {
+  "case": "attrition",
+  "kind": "stats",
+  "run": 1,
+  "ok": false,
+  "problem": "the helper used no predict (it used: inspect_data, compare, compare, compare, compare, compare)",
+  "seconds": 126.9,
+  "tools": [
+   "analyze_or_code({\"files\": [\"staff.csv\"], \"task\": \"Identify the key factors that lead to employees leaving the company. Analyze correlations between the 'lef…) ok",
+   "engineer:inspect_data({\"data\": \"staff.csv\"}) ok",
+   "engineer:compare({\"columns\": [\"department\", \"left\"], \"data\": \"staff.csv\", \"question\": \"association\"}) ok",
+   "engineer:compare({\"columns\": [\"overtime\", \"left\"], \"data\": \"staff.csv\", \"question\": \"association\"}) ok",
+   "engineer:compare({\"columns\": [\"salary_k\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok",
+   "engineer:compare({\"columns\": [\"satisfaction\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok",
+   "engineer:compare({\"columns\": [\"years_at_company\", \"left\"], \"data\": \"staff.csv\", \"question\": \"difference\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "staff.csv"
+     ],
+     "task": "Identify the key factors that lead to employees leaving the company. Analyze correlations between the 'left' column and 'department', 'salary_k', 'overtime', 'satisfaction', and 'years_at_company'. Provide a summary of why people tend to leave."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "staff.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "department",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "association"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "overtime",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "association"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "salary_k",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "satisfaction",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "years_at_company",
+      "left"
+     ],
+     "data": "staff.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "People tend to leave primarily due to **low satisfaction** and **working overtime**.\n\n### Key Findings\n*   **Satisfaction:** This is the strongest driver. Employees who leave have a much lower median satisfaction score (**2.0**) than those who stay (**3.0**).\n*   **Overtime:** Working overtime is significantly associated with a higher likelihood of leaving.\n*   **Tenure:** Those leaving have slightly shorter tenures (median **8.0** years) compared to those who stay (median **10.0** years).\n\nInterestingly, **salary** and **department** do not appear to have a significant impact on whether someone leaves.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "complaints",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 49.4,
+  "tools": [
+   "analyze_or_code({\"files\": [\"tickets.csv\"], \"task\": \"Read the messages in tickets.csv and identify the most common themes or topics that people are complaini…) ok",
+   "engineer:inspect_data({\"data\": \"tickets.csv\"}) ok",
+   "engineer:analyze_text({\"column\": \"message\", \"data\": \"tickets.csv\", \"kind\": \"themes\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "files": [
+      "tickets.csv"
+     ],
+     "task": "Read the messages in tickets.csv and identify the most common themes or topics that people are complaining about. Summarize the main complaints."
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "tickets.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "analyze_text",
+    "input": {
+     "column": "message",
+     "data": "tickets.csv",
+     "kind": "themes"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The main complaints in `tickets.csv` are:\n\n*   **Login Issues (41.7%):** Users reporting the login page \"just spins,\" specifically after updates to versions 4.2 and 4.3.\n*   **App Performance (25.0%):** Reports of lagging, freezing, or general slowness, often following recent updates.\n*   **Billing and Subscription Errors (23.3%):** Users being charged for cancelled plans or having trouble with subscription changes.\n*   **Refund Delays (10.0%):** Complaints regarding long wait times for receiving refunds.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "notice",
+  "kind": "docs",
+  "run": 1,
+  "ok": false,
+  "problem": "called ask_knowledge",
+  "seconds": 18.5,
+  "tools": [
+   "ask_knowledge({\"question\": \"What is the notice period required to leave my flat according to the lease agreement?\"}) ok",
+   "files({\"mode\": \"read\", \"name\": \"lease.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "ask_knowledge",
+    "input": {
+     "question": "What is the notice period required to leave my flat according to the lease agreement?"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "lease.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "You need to give **two months' notice** in writing, according to your lease for flat 4B, Harbour Road.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "pinned_pets",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 5.8,
+  "tools": [],
+  "calls": [],
+  "answer": "You can, Ary, but you'll need to get **written permission** from your landlord first. The lease notes that a small cat or dog is usually accepted.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "which_files",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 8.0,
+  "tools": [
+   "files({\"mode\": \"find\", \"query\": \"deposit\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "query": "deposit"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Two files mention the deposit, Ary:\n\n*   **lease.md**: States the deposit is **three months' rent** and will be returned within 30 days of you moving out.\n*   **moving.md**: Includes a reminder to ask about the **deposit return**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "hey",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.6,
+  "tools": [],
+  "calls": [],
+  "answer": "It's going well, Ary. Just sitting here in the workspace, ready for whenever you need me. How is your evening going?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "thanks",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [],
+  "calls": [],
+  "answer": "You're very welcome, Ary! I'm glad I could help. \n\nWhat's next on your mind?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "coffee",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.0,
+  "tools": [],
+  "calls": [],
+  "answer": "Oh no, Ary! That is a classic cat move. \n\nI hope your laptop and any important papers survived the spill. Do you need me to help you find something or do anything while you deal with the cleanup?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "weekend",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 31.9,
+  "tools": [],
+  "calls": [],
+  "answer": "Since you're looking for **low-effort** fun, Ary, here are a few ways to spend a Sunday depending on how much energy you have:\n\n**For total relaxation (Zero effort):**\n*   A **movie marathon** of a series you've already seen.\n*   Starting a new **long-form podcast** or an audiobook.\n*   Getting lost in a low-stress **video game**.\n\n**For gentle movement (Low effort):**\n*   A slow **walk** through a park or a quiet neighborhood.\n*   Working on a **jigsaw puzzle** or a coloring book.\n*   Some **light baking**, like something that makes the house smell wonderful.\n\n**For a \"refresh\" (Small effort):**\n*   Curating a new **music playlist**.\n*   Organizing your **digital photos** or phone apps.\n\nLet me know if you'd like a specific recommendation, such as a movie genre or a simple recipe.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "diagnosis",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 26.6,
+  "tools": [],
+  "calls": [],
+  "answer": "I am sorry to hear this, Ary. It can feel overwhelming, but type 2 diabetes is a manageable condition.\n\n**Please note: I am an AI, not a doctor. This information is for educational purposes and should not replace professional medical advice, diagnosis, or treatment.**\n\nHere is a summary of the most important aspects to understand:\n\n### The Core Focus\nThe goal of management is to keep **blood glucose (sugar) levels** within a target range to prevent long-term complications.\n\n*   **Monitoring**: He will likely need to check his blood sugar regularly using a glucose meter. Understanding his specific **target ranges** is essential.\n*   **Nutrition**: It is less about \"never eating sugar\" and more about managing **carbohydrates**. Focusing on fiber, lean proteins, and healthy fats helps prevent sudden spikes.\n*   **Activity**: Regular **physical movement** helps the body use insulin more effectively.\n\n### Critical Signs to Watch\nIt is important to recognize when levels are out of range:\n\n*   **Hypoglycemia (Low Blood Sugar)**: Look for shakiness, sweating, dizziness, or confusion. This often requires immediate consumption of fast-acting glucose.\n*   **Hyperglycemia (High Blood Sugar)**: Look for extreme thirst, frequent urination, or fatigue.\n\n### Practical Support\n*   **Specialists**: Ask his doctor for a referral to a **Registered Dietitian (RD)** or a **Certified Diabetes Care and Education Specialist (CDCES)**. They provide the practical \"how-to\" for daily life.\n*   **Family Involvement**: Lifestyle changes are much easier when the entire household adopts similar eating and activity habits.\n*   **Preventative Care**: Long-term management involves regular checks of the **eyes, feet, and kidneys** to catch any early signs of complications.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "tcp_udp",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 25.7,
+  "tools": [],
+  "calls": [],
+  "answer": "The main difference is that **TCP** is designed for **reliability** and accuracy, whereas **UDP** is designed for **speed** and efficiency.\n\n**TCP (Transmission Control Protocol)**\nTCP is a \"connection-oriented\" protocol. Before any data is sent, it establishes a formal connection between the sender and the receiver (often called a three-way handshake). It tracks every packet sent to ensure they arrive in the **correct order** and without errors. If a packet is lost, TCP will automatically request a retransmission. Because of this constant checking, it is slightly slower but highly dependable.\n\n*   **Best for:** Web browsing (HTTP), email (SMTP), and file transfers (FTP) where losing even a single bit of data could corrupt the whole file.\n\n**UDP (User Datagram Protocol)**\nUDP is a \"connectionless\" protocol. It follows a \"fire and forget\" approach, meaning it sends packets into the network without checking if the receiver is ready or if the data actually arrived. There is no handshake and no error correction. This lack of overhead makes it significantly **faster** than TCP.\n\n*   **Best for:** Live video streaming, online gaming, and VoIP (Voice over IP), where speed is more important than perfection. A dropped frame in a video is better than the video pausing to wait for a lost packet.\n\n| Feature | TCP | UDP |\n| :--- | :--- | :--- |\n| **Reliability** | **Guaranteed** delivery | \"Best effort\" delivery |\n| **Speed** | Slower (higher overhead) | **Faster** (lower overhead) |\n| **Ordering** | Delivers data in order | No guaranteed order |\n| **Connection** | Connection-oriented | Connectionless |",
+  "emoji": false,
+  "nudges": []
+ }
+]

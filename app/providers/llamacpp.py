@@ -44,6 +44,7 @@ import re
 import socket
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -88,6 +89,9 @@ def template_switches(thinking: bool) -> dict:
 class LlamaCppProvider:
     name = "llamacpp"
     where = "the local model"  # in error messages
+    CHAT = "/v1/chat/completions"  # under base_url; a cloud's own paths in cloud.py's subclasses
+    MODELS = "/v1/models"
+    STREAM_EXTRA: dict = {}  # a stream's own fields (llama-server sends its timings unasked)
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:8080", thinking: bool = False,
                  slot: int | None = None, max_tokens: int | None = None, sampling: dict | None = None,
@@ -106,12 +110,13 @@ class LlamaCppProvider:
         self.thinking_budget = thinking_budget  # None: unlimited (only for comparisons)
         self._vision: bool | None = None  # whether the server has the vision part loaded (sees_images)
         self._slot_tokens: int | None = None  # one slot's context, from /props
+        self.host: str | None = None  # where a bridge says the model runs (its X-Model-Host), e.g. 'Kaggle'
 
     def health(self) -> tuple[str, str]:
         """The model server's state - 'ready', 'loading' or 'down' - and what to tell the user, in plain words."""
         try:
-            with urllib.request.urlopen(f"{self.base_url}/health", timeout=3):
-                pass
+            with urllib.request.urlopen(f"{self.base_url}/health", timeout=3) as response:
+                self.host = response.headers.get("X-Model-Host") or self.host
         except urllib.error.HTTPError as exc:
             if exc.code == 503 and not _is_page(exc):  # llama-server's own "Loading model"
                 return "loading", "The model is still loading; it will be ready in a moment."
@@ -120,7 +125,15 @@ class LlamaCppProvider:
             return "down", f"The model server answered with an error ({exc.code}); its window says why."
         except NET_ERRORS:
             return "down", f"The model server isn't running (expected at {self.base_url}). Start it, then reload this page."
-        return "ready", f"{self.loaded_model()} (local, llama.cpp)"
+        return "ready", f"{self.loaded_model()} (llama.cpp, {self.location()})"
+
+    def location(self) -> str:
+        """Where the model runs, in words: 'on Kaggle' when a bridge names its host, 'on this computer' for
+        llama-server here, else its address."""
+        if self.host:
+            return f"on {self.host}"
+        where = urllib.parse.urlsplit(self.base_url).hostname or ""
+        return "on this computer" if where in ("127.0.0.1", "localhost", "::1") else f"at {where}"
 
     def ready(self) -> tuple[bool, str]:
         state, message = self.health()
@@ -205,6 +218,10 @@ class LlamaCppProvider:
     def _headers(self) -> dict:
         return {"Content-Type": "application/json"}
 
+    def _clean(self, body: dict) -> dict:
+        """A request as this server takes it (llama-server takes its own fields; a cloud strips them)."""
+        return body
+
     def _open(self, path: str, body: dict, timeout: float, stream: bool = False):
         """POST a request to the server; the open response. A connection that fails before anything comes back
         is tried again (RETRY_PAUSES); nothing has streamed yet, so a retry can't repeat an answer."""
@@ -241,7 +258,7 @@ class LlamaCppProvider:
         tunnel's error page - that the model can't be reached."""
         if exc.code in GATEWAY or _is_page(exc):
             return DOWN
-        return f"{self.where.capitalize()} returned an error ({exc.code}): {_error_message(exc)}"
+        return f"{self.where[:1].upper() + self.where[1:]} returned an error ({exc.code}): {_error_message(exc)}"
 
     def _post(self, path: str, body: dict, timeout: int = 30) -> dict:
         with self._open(path, body, timeout) as response:
@@ -257,7 +274,7 @@ class LlamaCppProvider:
                                                           {"type": "text", "text": question}]}],
                 **({"id_slot": self.slot} if self.slot is not None else {}), **self.sampling}
         try:
-            out = self._post("/v1/chat/completions", body, timeout=LOOK_TIMEOUT)
+            out = self._post(self.CHAT, self._clean(body), timeout=LOOK_TIMEOUT)
         except urllib.error.HTTPError as exc:
             raise ProviderError(self._http_error(exc)) from exc
         except NET_ERRORS as exc:
@@ -267,27 +284,30 @@ class LlamaCppProvider:
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
                  allow_tools: bool = True, require_tool: bool = False, on_event: EventCallback | None = None,
                  think: bool = True, budget: int | None = None) -> ModelTurn:
-        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool), "stream": True}
+        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool), "stream": True,
+                **self.STREAM_EXTRA}
         try:
-            with self._open("/v1/chat/completions", body, READ_TIMEOUT, stream=True) as response:
+            with self._open(self.CHAT, body, READ_TIMEOUT, stream=True) as response:
                 text, calls, finish, timings, thinking = _read_stream(response, on_event, self.cancel)
         except urllib.error.HTTPError as exc:
             raise ProviderError(self._http_error(exc)) from exc
         except (socket.timeout, TimeoutError) as exc:
-            raise ProviderError(f"{self.where.capitalize()} took too long to respond; try a simpler question.") from exc
+            raise ProviderError(f"{self.where[:1].upper() + self.where[1:]} took too long to respond; try a simpler question.") from exc
         except (urllib.error.URLError, ConnectionRefusedError) as exc:
             raise ProviderError(self._unreachable()) from exc
         except (http.client.HTTPException, OSError) as exc:  # the answer was cut off part way
             raise ProviderError(f"The connection to {self.where} dropped in the middle of the answer; try again.") from exc
         except json.JSONDecodeError as exc:
-            raise ProviderError(f"{self.where.capitalize()} sent an answer that could not be read; try again.") from exc
+            raise ProviderError(f"{self.where[:1].upper() + self.where[1:]} sent an answer that could not be read; try again.") from exc
         turn = parse_turn(text, calls, finish, allow_tools, self.model, {t["name"] for t in tools or []})
         turn.thinking = thinking
         if timings:
             turn.usage = {"output_tokens": timings.get("predicted_n"), "prompt_tokens": timings.get("prompt_n"),
                           "cached_tokens": timings.get("cache_n"),  # reused from llama.cpp's prompt cache
                           "tokens_per_second": timings.get("predicted_per_second"),
-                          "thinking_chars": len(thinking)}
+                          "thinking_chars": len(thinking),
+                          # a cloud that keeps its thinking to itself says how long it was (Gemini: total less the rest)
+                          **({"thinking_tokens": timings["thought_n"]} if timings.get("thought_n") else {})}
         return turn
 
 
@@ -302,6 +322,9 @@ def parse_turn(text: str, calls: list[dict], finish: str | None, allow_tools: bo
                   "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}}
                  for name, arguments in written]
     stop = "max_tokens" if finish == "length" else "tool_use" if calls else "end"
+    cut_call = None
+    if stop == "max_tokens" and calls:  # the limit came while it wrote a call: too long, said so (base.ModelTurn)
+        cut_call = {k: v for k, v in writing(calls[-1]["function"]).items() if k in ("name", "chars")}
     if stop == "max_tokens" or not allow_tools:
         calls = []
         stop = "max_tokens" if finish == "length" else "end"
@@ -309,7 +332,7 @@ def parse_turn(text: str, calls: list[dict], finish: str | None, allow_tools: bo
                   for c in calls]
     raw = {"tool_calls": calls} if calls else None
     text = TEXT_TOOL_CALL.sub("", text).strip()
-    return ModelTurn(text=text, tool_calls=tool_calls, raw=raw, stop=stop, model=model)
+    return ModelTurn(text=text, tool_calls=tool_calls, raw=raw, stop=stop, model=model, cut_call=cut_call)
 
 
 def to_openai_messages(messages: list[dict]) -> list[dict]:
@@ -333,7 +356,7 @@ def to_openai_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
-OPENAI_STYLE = {"llamacpp", "groq"}  # providers whose raw tool calls are already in this format
+OPENAI_STYLE = {"llamacpp", "groq", "gemini", "nvidia"}  # providers whose raw tool calls are already in this format
 
 
 def _assistant_message(msg: dict, answered: set[str]) -> dict | None:
@@ -360,6 +383,7 @@ def _read_stream(response, on_event: EventCallback | None,
     server without timings reports usage instead; it is read into the same shape."""
     text, finish, timings, thinking = "", None, None, ""
     partial: dict[int, dict] = {}  # tool call index -> {"id", "type", "function": {"name", "arguments"}}
+    told: dict[int, int] = {}  # a call being written -> its length when the page was last told
     for line in response:
         if cancel is not None and cancel.is_set():  # checked on thinking tokens too, not only on text
             raise Cancelled
@@ -381,12 +405,19 @@ def _read_stream(response, on_event: EventCallback | None,
                 if on_event:
                     on_event("text", delta["content"])
             for d in delta.get("tool_calls") or []:
-                call = partial.setdefault(d.get("index", 0), {"id": None, "type": "function",
-                                                             "function": {"name": "", "arguments": ""}})
+                index = _call_index(d, partial)
+                call = partial.setdefault(index, {"id": None, "type": "function",
+                                                  "function": {"name": "", "arguments": ""}})
                 call["id"] = d.get("id") or call["id"]
+                if d.get("extra_content"):  # Gemini's thought signature: sent back with the call, or refused
+                    call["extra_content"] = d["extra_content"]
                 fn = d.get("function") or {}
                 call["function"]["name"] += fn.get("name") or ""
                 call["function"]["arguments"] += fn.get("arguments") or ""
+                length = len(call["function"]["arguments"])
+                if on_event and length - told.get(index, -WRITING_STEP) >= WRITING_STEP:
+                    told[index] = length
+                    on_event("writing", json.dumps(writing(call["function"]), ensure_ascii=False))
             finish = choice.get("finish_reason") or finish
     calls = [partial[i] for i in sorted(partial)]
     for call in calls:
@@ -394,14 +425,39 @@ def _read_stream(response, on_event: EventCallback | None,
     return text, calls, finish, timings, thinking
 
 
+def _call_index(d: dict, partial: dict[int, dict]) -> int:
+    """Which call a streamed piece belongs to: its index (llama-server, Groq), or - from a cloud that sends each
+    call whole and without one (Gemini) - a new call for a new id, else the last one."""
+    if "index" in d:
+        return d["index"]
+    if d.get("id") and all(call["id"] != d["id"] for call in partial.values()):
+        return len(partial)
+    return next((i for i, call in partial.items() if call["id"] == d.get("id")), max(partial, default=0))
+
+
+WRITING_STEP = 400  # characters between "writing" events: a few a second at the model's speed
+WRITTEN_NAME = re.compile(r'"(?:name|file)"\s*:\s*"((?:[^"\\]|\\.)+)"')
+
+
+def writing(function: dict) -> dict:
+    """A call as far as it is written: its tool, the file it names once that is written, its length."""
+    args = function.get("arguments") or ""
+    named = WRITTEN_NAME.search(args)
+    return {"name": function.get("name") or "", "chars": len(args), **({"file": named.group(1)} if named else {})}
+
+
 def _usage_timings(usage: dict | None) -> dict | None:
     """An OpenAI-style usage report in llama-server's timings shape."""
     if not usage:
         return None
     out, seconds = usage.get("completion_tokens"), usage.get("completion_time")
-    return {"prompt_n": usage.get("prompt_tokens"), "predicted_n": out,
+    total, prompt = usage.get("total_tokens"), usage.get("prompt_tokens")
+    thought = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or (
+        total - prompt - out if total and prompt is not None and out is not None and total > prompt + out else None)
+    return {"prompt_n": prompt, "predicted_n": out,
             "cache_n": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
-            "predicted_per_second": out / seconds if out and seconds else None}
+            "predicted_per_second": out / seconds if out and seconds else None,
+            **({"thought_n": thought} if thought else {})}
 
 
 def _arguments(arguments: str):

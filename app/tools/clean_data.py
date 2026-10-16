@@ -18,6 +18,8 @@ from .core import ToolError, ToolResult, number, ok, tool
 from .values import parse_dates, parse_numbers
 from .workspace import Workspace, resolve_column
 
+MOST_ROWS = 0.5  # drop_missing over every column may not remove more than this share of a table's rows
+
 
 class _Step(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -266,8 +268,17 @@ def _drop_rows(df, step: DropRows, notes):
 def _drop_missing(df, step: DropMissing, notes):
     subset = _cols(df, step.columns)
     out = df.dropna(subset=subset)
+    removed = len(df) - len(out)
+    if not step.columns and removed > MOST_ROWS * len(df):
+        # Measured: 'any column' on a table with a mostly empty comments column kept 34 of 344 rows, and the answer
+        # built on those 34 never said so.
+        empty = df.isna().mean().sort_values(ascending=False)
+        worst = [f"{c} ({share:.0%} empty)" for c, share in empty.items() if share > 0][:4]
+        raise ToolError(f"drop_missing over every column would remove {removed:,} of {len(df):,} rows, mostly because "
+                        f"of {', '.join(worst)}. Name the columns the question needs - drop_missing{{columns: [...]}} - "
+                        "or drop the mostly empty ones first with drop_columns.")
     where = ", ".join(subset) if step.columns else "any column"
-    return out, f"drop_missing ({where}) - removed {len(df) - len(out):,} rows"
+    return out, f"drop_missing ({where}) - removed {removed:,} of {len(df):,} rows"
 
 
 def _tidy_text(df, step: TidyText, notes):

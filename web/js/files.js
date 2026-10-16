@@ -231,9 +231,8 @@ async function saveEdit() {
 async function runFile() {
   const item = fv.item;
   if (fv.editing && !await saveEdit()) return;
-  fv.output = consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path,
-    kind: f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file" }),
-    onEnd: files => { if (files.length) hooks.loadItems(); } });
+  fv.output = consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path, kind: madeKind(f) }),
+    onEnd: files => { if (files.length) hooks.loadItems(); }, onClose: () => { fv.output = null; } });
   show();
   fv.output.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
@@ -322,7 +321,13 @@ export const drawerOpen = () => document.body.classList.contains("drawer-open");
 export function openDrawer() { closeSide(); fillDrawer(); document.body.classList.add("drawer-open"); $("#drawerClose").focus(); }
 export function closeDrawer() { document.body.classList.remove("drawer-open"); }
 const closeSide = () => document.body.classList.remove("side-open");
-const itemsOf = kind => state.items.filter(i => i.kind === kind);
+// work/: what a helper made only to get an answer (its scripts, in-between tables) - kept, but out of the way
+// A file a program made, as the file panel knows it: the server says its kind (a chart is a file drawn live); a run
+// stored before it did is read from its key
+export const madeKind = f => f.kind === "chart" ? "file"
+  : f.kind || (f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file");
+export const isWorking = name => /^work\//i.test(name || "");
+const itemsOf = kind => state.items.filter(i => i.kind === kind && !isWorking(i.name));
 
 // The search box: the model's own find (names, what is in them, meaning), so the user finds what Zen would
 let finding = 0;
@@ -379,8 +384,15 @@ export function fillDrawer() {
                  pin(i), act("View", () => openViewer(thumb, "image")));
     }],
   ];
+  const working = state.items.filter(i => isWorking(i.name));
+  const generic = i => row(i.kind === "image" ? h("img", { src: itemUrl(i.id), alt: i.name, loading: "lazy" }) : fileTile(i.name || ""),
+    i.name, i.kind === "table" ? `${count(i.rows)} rows × ${i.columns} columns` : fileSize(i.bytes),
+    canView(i) ? act("View", () => openItem(i)) : h("a", { class: "act", href: itemUrl(i.id), download: i.name || "" }, "Download"));
   body.replaceChildren(...sections.filter(([, list]) => list.length).flatMap(([title, list, make]) => [
-    h("div", { class: "sec" }, h("span", {}, title), h("span", {}, String(list.length))), ...list.map(make)]));
+    h("div", { class: "sec" }, h("span", {}, title), h("span", {}, String(list.length))), ...list.map(make)]),
+    ...(working.length ? [h("details", { class: "work-sec" },  // closed until opened: the answers are above
+      h("summary", { class: "sec", title: "What Zen's helpers made along the way: their scripts and in-between tables" },
+        h("span", {}, "Zen's working files"), h("span", {}, String(working.length))), ...working.map(generic))] : []));
 }
 
 /* ═══ Attachments ═══════════════════════════════════════════════════════ */

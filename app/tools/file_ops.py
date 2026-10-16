@@ -222,8 +222,16 @@ def written_code(name: str, content: str) -> dict:
     mean reading: 15.1' - a run that never happened, of a file that still didn't run."""
     if not is_code(name):
         return {}
+    # What the page does with it, said here (measured: main told the user to run a game "in your terminal" and to
+    # open its HTML "in your web browser", then played the game itself in the chat - the page runs both).
+    if suffix(name) in (".html", ".htm"):
+        return {"not_run": f"{name} works in the chat, under its card - a page or a game the user uses right there, no "
+                           "browser or server needed. You haven't seen it run: don't say how it behaves beyond what "
+                           "you wrote."}
     out = {"not_run": f"{name} was written, not run: don't say what it prints before a run (run runs it in a helper; "
-                      "main gives it to analyze_or_code)."}
+                      "main gives it to analyze_or_code)."
+                      + (" The user can run it too, from its card in the chat (Run), and type into it while it runs."
+                         if suffix(name) == ".py" else "")}
     if suffix(name) == ".py":
         try:
             compile(content, name, "exec")

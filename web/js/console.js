@@ -8,8 +8,9 @@ import { h, svg } from "./util.js";
 
 const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-// item: the Python file ({id, name}); onEnd(files): what it made or changed, once it ends
-export function consoleEl(item, { onEnd = () => {}, openFile = null } = {}) {
+// item: the Python file ({id, name}); onEnd(files): what it made or changed, once it ends; onClose(): the console was
+// closed (a program still running is stopped first)
+export function consoleEl(item, { onEnd = () => {}, openFile = null, onClose = () => {} } = {}) {
   const base = `/workspaces/${state.ws.id}`;
   const said = h("span", { class: "con-state" }, "Starting…");
   const time = h("span", { class: "con-time" });
@@ -19,6 +20,8 @@ export function consoleEl(item, { onEnd = () => {}, openFile = null } = {}) {
   const stop = button("stop", "Stop", "Stop the program");
   const again = button("play", "Run again", "Run it again from the start");
   again.hidden = true;
+  const close = h("button", { class: "icon-btn con-close", type: "button", title: "Close the console",
+    "aria-label": `Close the console for ${item.name}`, html: svg("cross") });
   const out = h("pre", { class: "con-out", role: "log", "aria-live": "polite", "aria-label": `${item.name}: what it prints` });
   const field = h("input", { class: "con-field", type: "text", spellcheck: "false", autocomplete: "off", disabled: true,
     placeholder: "Type here, then Enter", "aria-label": `Type a line for ${item.name}` });
@@ -26,7 +29,7 @@ export function consoleEl(item, { onEnd = () => {}, openFile = null } = {}) {
   const made = h("div", { class: "tags con-files", hidden: true });
   const el = h("div", { class: "console running" },
     h("div", { class: "con-head" }, h("span", { class: "con-dot", "aria-hidden": "true" }), h("b", {}, item.name), said, time,
-      h("span", { class: "con-acts" }, stop, again)),
+      h("span", { class: "con-acts" }, stop, again, close)),
     out, form, made);
 
   let session = null, seen = 0, events = null, tick = null, t0 = 0, ended = false;
@@ -96,6 +99,14 @@ export function consoleEl(item, { onEnd = () => {}, openFile = null } = {}) {
   });
   stop.addEventListener("click", () => session && send("POST", `${base}/console/${session}/stop`).catch(() => {}));
   again.addEventListener("click", start);
+  close.addEventListener("click", () => {  // closing never leaves a program running unseen
+    if (session && !ended) send("POST", `${base}/console/${session}/stop`).catch(() => {});
+    ended = true;
+    events?.close();
+    clearInterval(tick);
+    el.remove();
+    onClose();
+  });
   start();
   return el;
 }

@@ -476,6 +476,10 @@ body.drawer-open .drawer { transform: none; }
 .drawer-find input::placeholder { color: var(--soft); }
 .item.found .mt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .sec { display: flex; justify-content: space-between; padding: 16px 8px 6px; font-size: 12px; font-weight: 500; color: var(--soft); }
+.work-sec > summary { cursor: pointer; list-style: none; }
+.work-sec > summary::-webkit-details-marker { display: none; }
+.work-sec > summary > span:first-child::after { content: " ▸"; }
+.work-sec[open] > summary > span:first-child::after { content: " ▾"; }
 .item { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; }
 .item:hover { background: var(--hover); }
 .item > div { flex: 1; min-width: 0; }
@@ -699,6 +703,8 @@ body.fv-full .fv-wide .a { transform: rotate(180deg); }
 .con-time { font-variant-numeric: tabular-nums; }
 .con-acts { margin-left: auto; display: flex; gap: 6px; }
 .con-acts .btn-s { padding: 4px 10px; font-size: 12.5px; }
+.con-acts .con-close { width: 28px; height: 28px; border-radius: 8px; }
+.con-close svg.i { width: 15px; height: 15px; }
 .con-out { margin: 0; padding: 10px 12px; min-height: 72px; max-height: 340px; overflow: auto; color: var(--ink);
   font: 12.5px/1.6 "Google Sans Code", Consolas, monospace; --dials: normal; white-space: pre-wrap; overflow-wrap: anywhere; }
 .con-out .con-err { color: var(--red); }

@@ -18,6 +18,9 @@ export function stepLabel(name, done, input) {
 }
 
 export const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
+// A call being written, as it grows (the model writes a whole file into it - a long one takes minutes)
+const size = n => n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} characters`;
+const composing = d => `${d.file ? `Writing ${d.file}` : stepLabel(d.name, false)} · ${size(d.chars)}…`;
 const clock = s => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
 const timer = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -60,6 +63,7 @@ function evidenceEl(a, titled, shown) {
     return h("div", {}, title(`Searched the web: “${a.query}”`), h("div", { class: "links" }, (a.items || []).slice(0, 5).map(r => link(r.url, r.title, r.favicon))));
   }
   if (a.type === "webpage") return h("div", {}, title("Read a page"), h("div", { class: "links" }, link(a.url, a.title, a.favicon)));
+  if (a.type === "file") return h("div", {}, title(`${a.action === "updated" ? "Changed" : "Wrote"} ${a.name}`));
   if (a.type === "table") {
     const rows = a.rows || [];
     const t = tableEl(a.columns || [], rows, 6);
@@ -138,6 +142,7 @@ export function activityEl(onStatus = () => {}) {
     running(text) { unpause(); el.hidden = false; el.classList.remove("done", "waiting"); el.classList.add("running"); say.classList.add("shimmer"); tell(text); },
     checking() { view.running("Checking the answer…"); },  // a hidden check sent the model back: say so, not a stuck reply
     writing() { if (!steps.size) el.hidden = true; else { view.fold(); view.running("Writing…"); } },
+    composing(d) { view.running(composing(d)); },  // main writing a call: its file and size so far
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
       const step = { id: d.id, name: d.name, delegate: isDelegate(d.name), done: false, sub: null, tables: [], code: null, input: d.input };
@@ -196,6 +201,8 @@ export function activityEl(onStatus = () => {}) {
         step.subs.append(step.sub.el);
         helperActions++;
         view.running(`${stepLabel(e.name, false)}…`);
+      } else if (e.event === "writing") {  // a helper writing a call (a script, a long answer)
+        view.running(composing(e));
       } else if (e.event === "result" && step.sub) {
         view.subEnd(step, e);
       } else if (e.event === "check") {

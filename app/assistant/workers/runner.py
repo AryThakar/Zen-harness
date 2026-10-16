@@ -12,6 +12,7 @@ of an error; and a Stop keeps the trace for main (ctx.trace, main._tools)."""
 from __future__ import annotations
 
 import base64
+import json
 import re
 from collections.abc import Callable
 from datetime import datetime
@@ -29,7 +30,7 @@ from app.tools.workspace import ITEM_REF, present
 
 from ..context import (IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_call_args,
                        shorten_tool_results)
-from ..prompts import FIX_FINISH, FULL, HELPER_CUT_OFF, NO_CALL, PICTURES, STEPS_LEFT
+from ..prompts import FIX_FINISH, FULL, HELPER_CUT_OFF, NO_CALL, PICTURES, STEPS_LEFT, call_cut_off
 from ..registry import ToolContext, execute, split_confirm, typed_optionals
 from .contracts import BRIEF, DELEGATE_OF, MAX_ASKS, Profile, WebResult, WorkResult
 from .evidence import SEARCHES_BEFORE_READING, Trace, _guessed, _repeat, _unread, _uninspected
@@ -161,6 +162,7 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         trace.passages.append((agent_md.AGENT_FILE, agent_md.body(ctx.ws)))
     limit, count = prompt_limit(provider), counter(provider, system, tool_specs)  # exact, from the server
     retried, shortened, cut = False, 0, 0
+    cuts: list[dict] = []  # the cut-offs in a row: each one's cut call ({} for one cut while thinking)
     progress({"type": "worker_start", "worker": profile.name, "task": task, "limit": limit})
     for step in range(profile.max_steps + 1):
         last = step == profile.max_steps
@@ -174,19 +176,27 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task,
                          stopped="its conversation grew larger than the model's context")
         try:  # the last step offers only the finish: the task always ends with a result
-            turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True)
+            turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True,
+                                     on_event=lambda kind, text: kind == "writing" and progress(
+                                         {"type": "worker_writing", "worker": profile.name, **json.loads(text)}))
         except ProviderError as exc:
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task, stopped=_plain(exc))
         messages.append({"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,
                          "provider": provider.name, "model": turn.model, "stop": turn.stop})
         progress({"type": "worker_turn", "worker": profile.name, "step": step, "stop": turn.stop,
                   "calls": [c["name"] for c in turn.tool_calls], "text": turn.text[:300], "usage": turn.usage,
-                  "shortened": shortened})
-        if not turn.tool_calls:  # cut off by the length limit while thinking (a call is required otherwise)
+                  "shortened": shortened, **({"cut_call": turn.cut_call} if turn.cut_call else {})})
+        cuts = cuts + [turn.cut_call or {}] if turn.stop == "max_tokens" and not turn.tool_calls else []
+        if _cut_again(cuts):  # each cut-off costs minutes (measured: three in a row, 10 minutes): end with what is done
+            return _done(ctx, profile, {"answer": ""}, trace, [], task=task,
+                         stopped=f"its replies ran past the length limit {len(cuts)} times in a row")
+        if not turn.tool_calls:  # cut off by the length limit (a call is required otherwise)
             if last:
                 return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"],
                              task=task)
-            hint = (HELPER_CUT_OFF if turn.stop == "max_tokens" else NO_CALL).format(finish=profile.finish)
+            hint = (call_cut_off(turn.cut_call, main=False, edits="edit" in _modes(own.get("files")))
+                    if turn.cut_call else
+                    (HELPER_CUT_OFF if turn.stop == "max_tokens" else NO_CALL).format(finish=profile.finish))
             messages.append({"role": "user", "content": hint})
             progress({"type": "worker_hint", "worker": profile.name, "text": hint})
             continue
@@ -257,6 +267,18 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                 messages.append(_pictures(ctx, items, kind))
                 progress({"type": "worker_hint", "worker": profile.name, "text": messages[-1]["content"]})
     return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"], task=task)
+
+
+def _cut_again(cuts: list[dict]) -> bool:
+    """Cut-offs in a row that won't end by themselves: the same too-long call twice, or three of any kind (one cut
+    while thinking, then one mid-call, recovers - measured)."""
+    return len(cuts) >= 3 or (len(cuts) >= 2 and all(c.get("name") for c in cuts[-2:]))
+
+
+def _modes(tool) -> set[str]:
+    """A tool's modes (files: find, read, write ...), from its input's mode field; none for a tool without modes."""
+    field = tool.input_model.model_fields.get("mode") if tool is not None else None
+    return set(getattr(field.annotation, "__args__", ())) if field is not None else set()
 
 
 def _plain(exc: ProviderError) -> str:

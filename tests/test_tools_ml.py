@@ -46,6 +46,10 @@ def test_classification_finds_the_planted_signal_and_its_direction(ws):
     assert excluded == {"customer_id": "unique per row (an id or free text)",
                         "signup_note": "unique per row (an id or free text)"}
     assert res["model_type"] in res["scores_by_model"] and "5-fold" in res["tested_on"]
+    # the drivers as a chart file (measured: without one the analyst typed them into a script to chart them)
+    assert r.artifact["type"] == "chart" and r.artifact["x"][0] == "tickets" and r.artifact["id"] == res["chart_file"]
+    assert ws.label(res["chart_file"]) == "charts/what-predicts-churned.chart.json"
+    assert r.artifact["y"] == [d["share"] for d in res["drivers"]]
 
 
 def test_predictions_are_saved_out_of_sample(ws):
@@ -82,6 +86,7 @@ def test_noise_target_is_not_better_than_baseline(ws):
     assert r.status == "ok" and not r.result["better_than_baseline"]
     assert r.result["verdict"].startswith("Not clearly better") and r.result["drivers"] == []
     assert any("no more useful than the average" in n for n in r.result["notes"])
+    assert r.artifact["type"] == "table" and "chart_file" not in r.result  # nothing worth drawing
 
 
 def test_time_split_and_leak_warning(ws):

@@ -419,3 +419,7 @@ to the analysis tools from scripts (only if phase 5 shows the tools are still sk
     18/19 held-out). Slower: the dev jobs took 1,120 s in all (871 before), the held-out 492 s (341) - not
     analysed (the prompts are 400-650 tokens longer; Kaggle's sessions differ).
   Tests: 617 pass.
+- **After the rebuild - the testing pass (2026-10-16).** The user's live chats read turn by turn; the app's
+  failures fixed once, the models' recorded; the same tests run on a second model (Qwen 3.6 35B-A3B on the same
+  Kaggle setup): the same score as Gemma, Qwen now the working model. ARCHITECTURE.md section 12 has the details
+  and the table; SYSTEM_MAP.md the new guards and the limits both models show.

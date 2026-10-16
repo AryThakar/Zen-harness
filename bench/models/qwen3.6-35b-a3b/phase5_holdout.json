@@ -1,0 +1,791 @@
+[
+ {
+  "case": "power",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 13.5,
+  "tools": [
+   "calculate({\"expression\": \"2**20 / 365\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "2**20 / 365"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "It is approximately **2,872.81**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "derivative",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 17.0,
+  "tools": [
+   "calculate({\"expression\": \"diff(ln(x**2 + 1), x)\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "diff(ln(x**2 + 1), x)"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The derivative is:\n\n$$ \\frac{2x}{x^2 + 1} $$\n\nThis comes from the chain rule:\n1. The derivative of $\\ln(u)$ is $1/u$.\n2. Here, $u = x^2 + 1$, so its derivative is $2x$.\n\nMultiply them together: $\\frac{1}{x^2 + 1} \\cdot 2x = \\frac{2x}{x^2 + 1}$.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "interest",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 17.5,
+  "tools": [
+   "calculate({\"expression\": \"200000 * 9 * 3 / 100\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "200000 * 9 * 3 / 100"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "You will pay **54,000** in interest.\n\nUsing the simple interest formula (Principal × Rate × Time), the calculation is:\n200,000 × 9% × 3 = 54,000.\n\nThe total amount you would repay at the end of 3 years is **254,000**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "cubic",
+  "kind": "maths",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.6,
+  "tools": [
+   "calculate({\"expression\": \"x**3 - 6*x**2 + 11*x - 6 = 0\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "calculate",
+    "input": {
+     "expression": "x**3 - 6*x**2 + 11*x - 6 = 0"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The roots of **x³ - 6x² + 11x - 6 = 0** are:\n\n- **x = 1**\n- **x = 2**\n- **x = 3**\n\nThe polynomial factors as **(x - 1)(x - 2)(x - 3)**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "house_prices",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 83.1,
+  "tools": [
+   "analyze_or_code({\"task\": \"Analyze homes.csv to find which features (area_m2, bedrooms, location, year_built) drive the price. Do correlation analysis, check…) ok",
+   "engineer:inspect_data({\"data\": \"homes.csv\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT \\n    corr(area_m2, price) as area_price_corr,\\n    corr(bedrooms, price) as bedrooms_price_corr,\\n    corr(year_built, pric…) ok",
+   "engineer:predict({\"data\": \"homes.csv\", \"target\": \"price\", \"features\": [\"area_m2\", \"bedrooms\", \"location\", \"year_built\"]}) ok",
+   "engineer:query_data({\"sql\": \"SELECT location, AVG(price) as avg_price, AVG(area_m2) as avg_area, AVG(year_built) as avg_year, COUNT(*) as n FROM \\\"homes.csv\\\" G…) ok",
+   "engineer:make_chart({\"data\": \"homes.csv\", \"type\": \"scatter\", \"x\": \"area_m2\", \"y\": \"price\", \"by\": \"location\", \"title\": \"Home Price vs Area by Location\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "task": "Analyze homes.csv to find which features (area_m2, bedrooms, location, year_built) drive the price. Do correlation analysis, check feature importance with a regression model, and report the strongest drivers.",
+     "files": [
+      "homes.csv"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "homes.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT \n    corr(area_m2, price) as area_price_corr,\n    corr(bedrooms, price) as bedrooms_price_corr,\n    corr(year_built, price) as year_built_price_corr\nFROM \"homes.csv\"",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "predict",
+    "input": {
+     "data": "homes.csv",
+     "target": "price",
+     "features": [
+      "area_m2",
+      "bedrooms",
+      "location",
+      "year_built"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT location, AVG(price) as avg_price, AVG(area_m2) as avg_area, AVG(year_built) as avg_year, COUNT(*) as n FROM \"homes.csv\" GROUP BY location ORDER BY avg_price DESC",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "make_chart",
+    "input": {
+     "data": "homes.csv",
+     "type": "scatter",
+     "x": "area_m2",
+     "y": "price",
+     "by": "location",
+     "title": "Home Price vs Area by Location"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Two things drive price in **homes.csv**, in order:\n\n- **Area (m²)** — ~80% of importance, correlation **0.87**. Each additional m² adds roughly **$1,828**. By far the biggest factor.\n- **Location** — ~15%:\n  - Centre avg: **$264,567**\n  - Suburb avg: **$213,051**\n  - Outskirts avg: **$196,223**\n\n**Bedrooms** contribute only ~5%, and **year_built** is essentially negligible once area and location are accounted for. The model (linear regression) explains **95%** of price variance with a mean error of **$11,565**.\n\nA chart was saved showing price vs. area, split by location. If you want, I can look at price per m² by location to isolate the pure location premium from the area effect.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "next_quarter",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 186.4,
+  "tools": [
+   "files({\"mode\": \"read\", \"name\": \"orders_by_month.csv\"}) ok",
+   "analyze_or_code({\"task\": \"Forecast the next 3 months of orders from orders_by_month.csv. Use a time series method (e.g. Holt-Winters/ETS or exponential smoo…) ok",
+   "engineer:inspect_data({\"data\": \"orders_by_month.csv\"}) ok",
+   "engineer:clean_data({\"data\": \"orders_by_month.csv\", \"steps\": [{\"op\": \"parse_dates\", \"columns\": [\"month\"]}]}) ok",
+   "engineer:forecast({\"data\": \"orders_by_month-cleaned.csv\", \"date\": \"month\", \"horizon\": 3, \"time_unit\": \"month\"}) ok",
+   "engineer:forecast({\"data\": \"orders_by_month-cleaned.csv\", \"date\": \"month\", \"horizon\": 3, \"time_unit\": \"month\", \"value\": \"orders\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT * FROM \\\"orders_by_month-cleaned.csv\\\" ORDER BY month DESC LIMIT 6\", \"save\": true}) ok",
+   "engineer:query_data({\"sql\": \"SELECT * FROM \\\"orders_by_month-cleaned.csv\\\" ORDER BY month ASC\", \"save\": true}) ok",
+   "engineer:make_chart({\"data\": \"orders_by_month-cleaned-query (2).csv\", \"type\": \"line\", \"x\": \"month\", \"y\": \"orders\", \"agg\": \"sum\", \"time_unit\": \"month\", \"title\": …) ok",
+   "engineer:files({\"mode\": \"write\", \"name\": \"scripts/forecast_chart.py\", \"content\": \"\\\"\\\"\\\"Combine last 6 months actuals with 3-month forecast and produce a l…) ok",
+   "engineer:run({\"file\": \"scripts/forecast_chart.py\"}) ok",
+   "engineer:files({\"mode\": \"write\", \"name\": \"scripts/draw_forecast.py\", \"content\": \"\\\"\\\"\\\"Draw the monthly orders forecast chart with actuals + forecast + con…) ok",
+   "engineer:run({\"file\": \"scripts/draw_forecast.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "orders_by_month.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "task": "Forecast the next 3 months of orders from orders_by_month.csv. Use a time series method (e.g. Holt-Winters/ETS or exponential smoothing) to predict the next 3 months. Show the last 6 months of actual data, the 3-month forecast with upper and lower confidence bounds, and a line chart showing actuals + forecast. The user wants to plan ahead and see the trend.",
+     "files": [
+      "orders_by_month.csv"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "orders_by_month.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "clean_data",
+    "input": {
+     "data": "orders_by_month.csv",
+     "steps": [
+      {
+       "op": "parse_dates",
+       "columns": [
+        "month"
+       ]
+      }
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "date": "month",
+     "horizon": 3,
+     "time_unit": "month"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "forecast",
+    "input": {
+     "data": "orders_by_month-cleaned.csv",
+     "date": "month",
+     "horizon": 3,
+     "time_unit": "month",
+     "value": "orders"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT * FROM \"orders_by_month-cleaned.csv\" ORDER BY month DESC LIMIT 6",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT * FROM \"orders_by_month-cleaned.csv\" ORDER BY month ASC",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "make_chart",
+    "input": {
+     "data": "orders_by_month-cleaned-query (2).csv",
+     "type": "line",
+     "x": "month",
+     "y": "orders",
+     "agg": "sum",
+     "time_unit": "month",
+     "title": "Monthly Orders: Actuals + 3-Month Forecast"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "files",
+    "input": {
+     "mode": "write",
+     "name": "scripts/forecast_chart.py",
+     "content": "\"\"\"Combine last 6 months actuals with 3-month forecast and produce a line chart.\"\"\"\nimport pandas as pd\nimport numpy as np\n\n# Load all historical data\nhist = pd.read_csv(\"orders_by_month-cleaned.csv\", parse_dates=[\"month\"])\n\n# Last 6 months of actuals\nhist = hist.sort_values(\"month\").tail(6).copy()\n\n# Forecast data (from the forecast tool result)\nforecast_data = pd.DataFrame({\n    \"month\": pd.to_datetime([\"2025-01-01\", \"2025-02-01\", \"2025-03-01\"]),\n    \"orders\": [1332.12, 1315.54, 1522.10],\n    \"low_80\": [1268.10, 1251.53, 1458.08],\n    \"high_80\": [1396.14, 1379.56, 1586.12],\n})\n\n# Combine\nhist[\"type\"] = \"Actual\"\nforecast_data[\"type\"] = \"Forecast\"\n\ncombined = pd.concat([\n    hist[[\"month\", \"orders\", \"type\"]],\n    forecast_data[[\"month\", \"orders\", \"type\"]]\n], ignore_index=True)\n\ncombined = combined.sort_values(\"month\").reset_index(drop=True)\n\nprint(\"=== Last 6 Months Actuals ===\")\nlast_6 = hist.sort_values(\"month\")\nprint(last_6[[\"month\", \"orders\"]].to_string(index=False))\n\nprint(\"\\n=== 3-Month Forecast ===\")\nprint(forecast_data[[\"month\", \"orders\", \"low_80\", \"high_80\"]].to_string(index=False))\n\nprint(\"\\n=== Combined Data ===\")\nprint(combined.to_string(index=False))\n\n# Trend info\ntrend_slope = 12.45  # per month\nprint(f\"\\nTrend: rising ~{trend_slope:.0f} orders/month (+1.1% of average), p = 0.0009\")\nprint(f\"Seasonality: strong (strength = 0.79); peak = March, trough = February\")\nprint(f\"Latest actual: Dec 2024 = 1,348 vs Dec 2023 = 1,156 (+16.6%)\")\n\n# Save for charting\ncombined.to_csv(\"forecast_combined.csv\", index=False)\n"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "run",
+    "input": {
+     "file": "scripts/forecast_chart.py"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "files",
+    "input": {
+     "mode": "write",
+     "name": "scripts/draw_forecast.py",
+     "content": "\"\"\"Draw the monthly orders forecast chart with actuals + forecast + confidence bounds.\"\"\"\nimport pandas as pd\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport matplotlib.dates as mdates\n\n# Load combined data\ndf = pd.read_csv(\"forecast_combined.csv\", parse_dates=[\"month\"])\n\n# Load confidence bounds\nbounds = pd.DataFrame({\n    \"month\": pd.to_datetime([\"2025-01-01\", \"2025-02-01\", \"2025-03-01\"]),\n    \"low_80\": [1268.10, 1251.53, 1458.08],\n    \"high_80\": [1396.14, 1379.56, 1586.12],\n})\n\n# Split actuals and forecast\nactuals = df[df[\"type\"] == \"Actual\"].set_index(\"month\").sort_index()\nforecast = df[df[\"type\"] == \"Forecast\"].set_index(\"month\").sort_index()\n\n# Plot\nfig, ax = plt.subplots(figsize=(12, 6))\n\n# Confidence band\nax.fill_between(\n    bounds[\"month\"], bounds[\"low_80\"], bounds[\"high_80\"],\n    alpha=0.15, color=\"blue\", label=\"80% confidence bounds\"\n)\n\n# Actuals\nax.plot(actuals.index, actuals[\"orders\"], color=\"steelblue\", linewidth=2,\n        marker=\"o\", markersize=7, label=\"Actual orders\")\n\n# Forecast\nax.plot(forecast.index, forecast[\"orders\"], color=\"coral\", linewidth=2,\n        marker=\"s\", markersize=7, label=\"Forecast orders\", linestyle=\"--\")\n\n# Format\nax.set_title(\"Monthly Orders: Last 6 Months Actuals + 3-Month Forecast\",\n             fontsize=14, fontweight=\"bold\", pad=15)\nax.set_xlabel(\"Month\", fontsize=12)\nax.set_ylabel(\"Orders\", fontsize=12)\nax.xaxis.set_major_formatter(mdates.DateFormatter(\"%b %Y\"))\nax.xaxis.set_major_locator(mdates.MonthLocator())\nplt.xticks(rotation=45)\n\n# Legend\nax.legend(loc=\"upper left\", fontsize=10)\n\n# Grid\nax.grid(True, alpha=0.3)\n\n# Annotations for key values\nfor i, (date, val) in enumerate(actuals[\"orders\"].items()):\n    ax.annotate(f\"{int(val)}\", (date, val), textcoords=\"offset points\",\n                xytext=(0, 12), ha=\"center\", fontsize=9)\n\nfor i, (date, val) in enumerate(forecast[\"orders\"].items()):\n    ax.annotate(f\"{val:.0f}\", (date, val), textcoords=\"offset points\",\n                xytext=(0, 12), ha=\"center\", fontsize=9, color=\"coral\")\n\nplt.tight_layout()\nplt.savefig(\"charts/monthly-orders-forecast.png\", dpi=150)\nplt.close()\nprint(\"Chart saved to charts/monthly-orders-forecast.png\")\n"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "run",
+    "input": {
+     "file": "scripts/draw_forecast.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Here's the 3-month forecast for your orders:\n\n**Forecast (Jan–Mar 2025)**\n\n| Month | Forecast | 80% Confidence Range |\n|-------|----------|---------------------|\n| January | **1,332** | 1,268 – 1,396 |\n| February | **1,316** | 1,252 – 1,380 |\n| March | **1,522** | 1,458 – 1,586 |\n| **Total** | **4,170** | — |\n\n**Model:** Exponential Smoothing (ETS) — backtested at only **2% average error** vs 14% for a basic seasonal baseline, so it's a strong fit.\n\n**Key signals:**\n\n- **Upward trend** — orders are rising about **12/month** (+1.1% on average), statistically significant.\n- **Strong seasonality** (strength 0.79) — March is historically your peak month and February the trough, which drives the March jump to 1,522.\n- **Last 6 months** have all been above **1,230**, well clear of the 2022–2023 range, confirming the higher baseline.\n\n**Caveat:** The confidence bounds are fairly wide for March since seasonality adds more uncertainty that far out, and the backtest was only on 36 data points (3 years). If you get more data points later, the bounds should tighten.\n\nThe chart is saved at `charts/monthly-orders-forecast.png`.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "methods",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 126.9,
+  "tools": [
+   "files({\"mode\": \"read\", \"name\": \"scores.csv\"}) ok",
+   "analyze_or_code({\"task\": \"Analyze scores.csv to determine if the two teaching methods give significantly different exam results. Perform a statistical test …) ok",
+   "engineer:inspect_data({\"data\": \"scores.csv\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT method, COUNT(*) as n, ROUND(AVG(exam_score), 2) as mean, ROUND(STDDEV(exam_score), 2) as std_dev, ROUND(MIN(exam_score), 2)…) ok",
+   "engineer:compare({\"columns\": [\"method\", \"exam_score\"], \"data\": \"scores.csv\", \"question\": \"difference\"}) ok",
+   "engineer:files({\"mode\": \"write\", \"content\": \"\\\"\\\"\\\"\\nPerform a Welch's t-test comparing exam scores between two teaching methods.\\n\\\"\\\"\\\"\\nimport pandas as…) ok",
+   "engineer:run({\"file\": \"scripts/welch_ttest.py\"}) ok",
+   "engineer:files({\"mode\": \"edit\", \"name\": \"scripts/welch_ttest.py\", \"old_text\": \"# Effect size (Cohen's d using pooled std)\\npooled_std = ((n1 - 1) * lecture…) ok",
+   "engineer:run({\"file\": \"scripts/welch_ttest.py\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "scores.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "task": "Analyze scores.csv to determine if the two teaching methods give significantly different exam results. Perform a statistical test (t-test) comparing the exam scores between the two methods, calculate means, standard deviations, and the p-value. Summarize whether there's a statistically significant difference.",
+     "files": [
+      "scores.csv"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "scores.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT method, COUNT(*) as n, ROUND(AVG(exam_score), 2) as mean, ROUND(STDDEV(exam_score), 2) as std_dev, ROUND(MIN(exam_score), 2) as min_score, ROUND(MAX(exam_score), 2) as max_score FROM \"scores.csv\" GROUP BY method ORDER BY method",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "compare",
+    "input": {
+     "columns": [
+      "method",
+      "exam_score"
+     ],
+     "data": "scores.csv",
+     "question": "difference"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "files",
+    "input": {
+     "mode": "write",
+     "content": "\"\"\"\nPerform a Welch's t-test comparing exam scores between two teaching methods.\n\"\"\"\nimport pandas as pd\nfrom scipy import stats\n\n# Load data\ndf = pd.read_csv(\"scores.csv\")\n\n# Split by method\nlecture_scores = df[df[\"method\"] == \"lecture\"][\"exam_score\"]\nproject_scores = df[df[\"method\"] == \"project\"][\"exam_score\"]\n\n# Summary statistics\nlecture_mean = lecture_scores.mean()\nlecture_std = lecture_scores.std()\nproject_mean = project_scores.mean()\nproject_std = project_scores.std()\nlecture_n = len(lecture_scores)\nproject_n = len(project_scores)\n\nprint(\"=== Summary Statistics ===\")\nprint(f\"Lecture method: n={lecture_n}, mean={lecture_mean:.2f}, std={lecture_std:.2f}\")\nprint(f\"Project method: n={project_n}, mean={project_mean:.2f}, std={project_std:.2f}\")\nprint(f\"Mean difference (project - lecture): {project_mean - lecture_mean:.2f}\")\nprint()\n\n# Welch's t-test (does not assume equal variances)\nt_stat, p_value = stats.ttest_ind(project_scores, lecture_scores, equal_var=False)\n\nprint(\"=== Welch's t-test Results ===\")\nprint(f\"t-statistic: {t_stat:.4f}\")\nprint(f\"Degrees of freedom: {stats.ttest_ind(project_scores, lecture_scores, equal_var=False).df if hasattr(stats.ttest_ind(project_scores, lecture_scores, equal_var=False), 'df') else 'N/A'}\")\n\n# Manual df calculation for Welch's t-test\ns1 = lecture_std**2\ns2 = project_std**2\nn1 = lecture_n\nn2 = project_n\ndf_welch = (s1/n1 + s2/n2)**2 / ((s1/n1)**2/(n1-1) + (s2/n2)**2/(n2-1))\nprint(f\"Degrees of freedom (Welch): {df_welch:.2f}\")\nprint(f\"p-value: {p_value:.6f}\")\nprint()\n\n# Effect size (Cohen's d using pooled std)\npooled_std = ((n1 - 1) * lecture_std**2 + (n2 - 1) * project_std**2) / (n1 + n2 - 2)\ncohen_d = (project_mean - lecture_mean) / pooled_std\nprint(\"=== Effect Size ===\")\nprint(f\"Cohen's d (pooled): {cohen_d:.4f}\")\nprint(f\"Interpretation: {'small' if abs(cohen_d) < 0.2 else 'medium' if abs(cohen_d) < 0.5 else 'large'} effect\")\nprint()\n\n# Conclusion\nalpha = 0.05\nprint(\"=== Conclusion ===\")\nif p_value < alpha:\n    print(f\"Since p-value ({p_value:.6f}) < alpha ({alpha}), we reject the null hypothesis.\")\n    print(f\"There IS a statistically significant difference between the two teaching methods.\")\n    direction = \"Project method scores are significantly HIGHER than Lecture method scores.\" if project_mean > lecture_mean else \"Lecture method scores are significantly HIGHER than Project method scores.\"\n    print(f\"Direction: {direction}\")\nelse:\n    print(f\"Since p-value ({p_value:.6f}) >= alpha ({alpha}), we fail to reject the null hypothesis.\")\n    print(f\"There is NO statistically significant difference between the two teaching methods.\")\n",
+     "name": "scripts/welch_ttest.py"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "run",
+    "input": {
+     "file": "scripts/welch_ttest.py"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "files",
+    "input": {
+     "mode": "edit",
+     "name": "scripts/welch_ttest.py",
+     "old_text": "# Effect size (Cohen's d using pooled std)\npooled_std = ((n1 - 1) * lecture_std**2 + (n2 - 1) * project_std**2) / (n1 + n2 - 2)\ncohen_d = (project_mean - lecture_mean) / pooled_std",
+     "new_text": "# Effect size (Cohen's d using pooled std)\npooled_var = ((n1 - 1) * lecture_std**2 + (n2 - 1) * project_std**2) / (n1 + n2 - 2)\npooled_std = pooled_var ** 0.5\ncohen_d = (project_mean - lecture_mean) / pooled_std"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "run",
+    "input": {
+     "file": "scripts/welch_ttest.py"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Yes, there's a clear difference. The **Project method** scores are significantly higher than the Lecture method.\n\n| | Mean | SD |\n|---|---|---|\n| Lecture | 64.88 | 12.58 |\n| Project | 70.94 | 10.43 |\n\n**Mean difference: +6.06 points for Project.**\n\n**Welch's t-test: t(152.77) = 3.32, p = 0.0011** — well below the usual 0.05 threshold. A non-parametric Mann-Whitney U test also confirms significance (p = 0.0026). Cohen's d is **0.52**, a medium-to-large effect size.\n\nThe difference is both statistically significant and practically meaningful. One thing to keep in mind: this shows an association, not proven causation — if the groups weren't randomly assigned, there could be other factors at play.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "bought_together",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 99.4,
+  "tools": [
+   "analyze_or_code({\"task\": \"Analyze baskets.csv to find items that are frequently bought together. The table has order_id and item columns. Find the most comm…) ok",
+   "engineer:inspect_data({\"data\": \"baskets.csv\"}) ok",
+   "engineer:find_patterns({\"data\": \"baskets.csv\", \"kind\": \"together\", \"basket\": \"order_id\", \"item\": \"item\"}) ok",
+   "engineer:query_data({\"sql\": \"\\nWITH order_items AS (\\n  SELECT order_id, item\\n  FROM \\\"baskets.csv\\\"\\n),\\nall_pairs AS (\\n  SELECT a.item AS item_a, b.item AS …) invalid_arguments",
+   "engineer:query_data({\"sql\": \"\\nWITH all_pairs AS (\\n  SELECT a.item AS item_a, b.item AS item_b\\n  FROM \\\"baskets.csv\\\" a\\n  JOIN \\\"baskets.csv\\\" b ON a.order_i…) ok",
+   "engineer:query_data({\"sql\": \"\\nSELECT item, COUNT(DISTINCT order_id) AS orders, COUNT(*) AS total_occurrences\\nFROM \\\"baskets.csv\\\"\\nGROUP BY item\\nORDER BY ord…) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "task": "Analyze baskets.csv to find items that are frequently bought together. The table has order_id and item columns. Find the most common item pairs (items that appear in the same order) using market basket analysis or association rules. Return the top item pairs with their co-occurrence counts and confidence/support metrics.",
+     "files": [
+      "baskets.csv"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "baskets.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "find_patterns",
+    "input": {
+     "data": "baskets.csv",
+     "kind": "together",
+     "basket": "order_id",
+     "item": "item"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "\nWITH order_items AS (\n  SELECT order_id, item\n  FROM \"baskets.csv\"\n),\nall_pairs AS (\n  SELECT a.item AS item_a, b.item AS item_b\n  FROM order_items a\n  JOIN order_items b ON a.order_id = b.order_id AND a.item < b.item\n),\npair_counts AS (\n  SELECT item_a, item_b, COUNT(*) AS together\n  FROM all_pairs\n  GROUP BY item_a, item_b\n),\nitem_freq AS (\n  SELECT item, COUNT(DISTINCT order_id) AS freq\n  FROM \"baskets.csv\"\n  GROUP BY item\n),\ntotal_orders AS (\n  SELECT COUNT(DISTINCT order_id) AS total\n  FROM \"baskets.csv\"\n)\nSELECT \n  pc.item_a,\n  pc.item_b,\n  pc.together AS co_occurrences,\n  ROUND(pc.together::FLOAT / t.total, 4) AS support,\n  ROUND(pc.together::FLOAT / IF.freq_a, 4) AS confidence_a_given_b,\n  ROUND(pc.together::FLOAT / IF.freq_b, 4) AS confidence_b_given_a,\n  ROUND(pc.together::FLOAT * t.total / (IF.freq_a * IF.freq_b), 4) AS lift\nFROM pair_counts pc\nCROSS JOIN total_orders t\nCROSS JOIN (\n  SELECT \n    MAX(CASE WHEN item = 'bread' THEN freq END) AS freq_bread,\n    MAX(CASE WHEN item = 'butter' THEN freq END) AS freq_butter,\n    MAX(CASE WHEN item = 'eggs' THEN freq END) AS freq_eggs,\n    MAX(CASE WHEN item = 'milk' THEN freq END) AS freq_milk,\n    MAX(CASE WHEN item = 'sugar' THEN freq END) AS freq_sugar,\n    MAX(CASE WHEN item = 'coffee' THEN freq END) AS freq_coffee,\n    MAX(CASE WHEN item = 'cheese' THEN freq END) AS freq_cheese,\n    MAX(CASE WHEN item = 'juice' THEN freq END) AS freq_juice,\n    MAX(CASE WHEN item = 'rice' THEN freq END) AS freq_rice,\n    MAX(CASE WHEN item = 'flour' THEN freq END) AS freq_flour\n  FROM item_freq\n) IF\nORDER BY lift DESC, co_occurrences DESC\n",
+     "save": true
+    },
+    "status": "invalid_arguments"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "\nWITH all_pairs AS (\n  SELECT a.item AS item_a, b.item AS item_b\n  FROM \"baskets.csv\" a\n  JOIN \"baskets.csv\" b ON a.order_id = b.order_id AND a.item < b.item\n),\npair_counts AS (\n  SELECT item_a, item_b, COUNT(*) AS together\n  FROM all_pairs\n  GROUP BY item_a, item_b\n),\nitem_freq AS (\n  SELECT item, COUNT(DISTINCT order_id) AS freq\n  FROM \"baskets.csv\"\n  GROUP BY item\n),\ntotal_orders AS (\n  SELECT COUNT(DISTINCT order_id) AS total\n  FROM \"baskets.csv\"\n)\nSELECT \n  pc.item_a,\n  pc.item_b,\n  pc.together AS co_occurrences,\n  ROUND(pc.together::FLOAT / t.total, 4) AS support,\n  ROUND(pc.together::FLOAT / fa.freq, 4) AS confidence_a_given_b,\n  ROUND(pc.together::FLOAT / fb.freq, 4) AS confidence_b_given_a,\n  ROUND(pc.together::FLOAT * t.total / (fa.freq * fb.freq), 4) AS lift\nFROM pair_counts pc\nCROSS JOIN total_orders t\nLEFT JOIN item_freq fa ON pc.item_a = fa.item\nLEFT JOIN item_freq fb ON pc.item_b = fb.item\nORDER BY lift DESC, co_occurrences DESC\n",
+     "save": true
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "\nSELECT item, COUNT(DISTINCT order_id) AS orders, COUNT(*) AS total_occurrences\nFROM \"baskets.csv\"\nGROUP BY item\nORDER BY orders DESC\n"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "The strongest pattern in your baskets is **Bread + Butter**, which appears together in **138 of 400 orders** (34.5% support) with a lift of **2.37** — meaning they're 2.4× more likely to be bought together than by random chance. Butter→Bread confidence is 100%, so every order with butter has bread too.\n\nHere are the other most notable pairs:\n\n| Pair | Co-occurrences | Lift |\n|------|---------------|------|\n| Bread + Eggs | 46 | 1.06 |\n| Butter + Rice | 39 | 1.06 |\n| Coffee + Eggs | 27 | 1.12 |\n| Apples + Pasta | 24 | 1.16 |\n\n**Bread + Butter** is the only pair that remains statistically significant after correction. The others (Bread+Eggs, Butter+Rice) are close but didn't quite pass the strict threshold — though with only 10 items and 400 orders, statistical power is limited, so they may still reflect real patterns.\n\nI've saved the full results (all 45 pairs with support, confidence and lift) to **baskets-query.csv**.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "feedback_themes",
+  "kind": "stats",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 140.9,
+  "tools": [
+   "files({\"mode\": \"read\", \"name\": \"feedback.csv\"}) ok",
+   "analyze_or_code({\"task\": \"Read feedback.csv, which has columns 'id' and 'feedback'. Analyze all the feedback text (52 rows) and group them into themes. Iden…) ok",
+   "engineer:inspect_data({\"data\": \"feedback.csv\"}) ok",
+   "engineer:analyze_text({\"kind\": \"themes\", \"data\": \"feedback.csv\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT theme, id, feedback FROM \\\"feedback-themes.csv\\\" ORDER BY theme, id\", \"save\": false}) ok",
+   "engineer:query_data({\"sql\": \"SELECT theme, COUNT(*) as cnt FROM \\\"feedback-themes.csv\\\" GROUP BY theme ORDER BY theme\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT theme, id, feedback FROM \\\"feedback-themes.csv\\\" WHERE id IN (34, 35, 40, 41) ORDER BY theme, id\"}) ok",
+   "engineer:query_data({\"sql\": \"SELECT theme, id, feedback FROM \\\"feedback-themes.csv\\\" WHERE id IN (45, 47) ORDER BY theme, id\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "feedback.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "main",
+    "name": "analyze_or_code",
+    "input": {
+     "task": "Read feedback.csv, which has columns 'id' and 'feedback'. Analyze all the feedback text (52 rows) and group them into themes. Identify common themes like battery, camera, screen, performance, software/updates, design, etc. For each theme, list the feedback IDs and the feedback text that falls under it. Provide a count per theme.",
+     "files": [
+      "feedback.csv"
+     ]
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "inspect_data",
+    "input": {
+     "data": "feedback.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "analyze_text",
+    "input": {
+     "kind": "themes",
+     "data": "feedback.csv"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT theme, id, feedback FROM \"feedback-themes.csv\" ORDER BY theme, id",
+     "save": false
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT theme, COUNT(*) as cnt FROM \"feedback-themes.csv\" GROUP BY theme ORDER BY theme"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT theme, id, feedback FROM \"feedback-themes.csv\" WHERE id IN (34, 35, 40, 41) ORDER BY theme, id"
+    },
+    "status": "ok"
+   },
+   {
+    "by": "engineer",
+    "name": "query_data",
+    "input": {
+     "sql": "SELECT theme, id, feedback FROM \"feedback-themes.csv\" WHERE id IN (45, 47) ORDER BY theme, id"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Done. The 52 feedback entries cluster into **3 main themes**:\n\n| Theme | Count | Share |\n|---|---|---|\n| **Battery & Screen / Hardware Issues** | 23 | 44% |\n| **Camera Problems** | 18 | 35% |\n| **Battery Drain After Software Updates** | 11 | 21% |\n\n**What each covers:**\n\n- **Battery & Screen / Hardware Issues** — battery degradation (drops to 35% by lunchtime, dies in 3–7 hours, drains overnight), screen cracking after drops, green line on screen, display flickering.\n\n- **Camera Problems** — focus hunting in portrait/macro/video modes, grainy zoom at 5× and 10×, blurry night photos, camera app crashes on video mode.\n\n- **Battery Drain After Software Updates** — all mention \"charge doesn't last a day\" triggered by updates 12.1, 12.2 or 13.0, pointing to regressions in those releases.\n\n**Note:** There's some overlap between Theme 1 (general battery complaints) and Theme 3 (update-triggered battery drain). Theme 3 is separated because every entry ties the issue to a specific software update version. The theme separation is moderate — a full re-cluster with slightly different parameters might shift a few entries.\n\nThe full breakdown with IDs and text is in `feedback-themes.csv`.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "water",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 15.7,
+  "tools": [
+   "files({\"mode\": \"read\", \"name\": \"policy.md\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "read",
+     "name": "policy.md"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "**Yes, it's covered.** Your policy covers sudden escape of water from pipes up to **20,000**. A burst pipe would count as sudden, not gradual, so it falls within cover.\n\nYou'll need to pay the first **250** of each claim.\n\nDoesn't cover gradual leaks, damp, or flooding from outside, but a burst pipe should be fine.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "pinned_bake",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.5,
+  "tools": [],
+  "calls": [],
+  "answer": "It goes in for **35 minutes** at 230 °C. Take it out when it sounds hollow tapped on the bottom.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "warranty",
+  "kind": "docs",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 12.1,
+  "tools": [
+   "files({\"mode\": \"find\", \"query\": \"warranty\"}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "files",
+    "input": {
+     "mode": "find",
+     "query": "warranty"
+    },
+    "status": "ok"
+   }
+  ],
+  "answer": "Your **tv_receipt.md** mentions a warranty: the TV has a **2-year manufacturer's warranty** from the purchase date (2 March 2025).",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "list_tuple",
+  "kind": "talk",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 10.6,
+  "tools": [],
+  "calls": [],
+  "answer": "The main difference is **mutability**:\n\n- **Lists** (e.g., `[1, 2, 3]`) are **mutable** — you can add, remove, or change elements after creation\n- **Tuples** (e.g., `(1, 2, 3)`) are **immutable** — once created, they can't be modified\n\nOther practical differences:\n\n- **Syntax**: `[]` for lists, `()` for tuples\n- **Performance**: Tuples are slightly faster since they're fixed-size\n- **Use cases**: Lists for collections that change; tuples for fixed records or when you need something hashable (lists can't be dict keys, tuples can)\n- **Methods**: Lists have `append`, `remove`, `pop`, etc. Tuples only have `count` and `index`\n\nIn short: use a tuple when the data shouldn't change, list when it should.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "morning",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 7.2,
+  "tools": [],
+  "calls": [],
+  "answer": "Good afternoon, Ary! ☀️ Always ready. What are we tackling today?",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "nailed",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 6.3,
+  "tools": [],
+  "calls": [],
+  "answer": "Congratulations, Ary! 🎉 That's a huge milestone. How are you feeling?",
+  "emoji": true,
+  "nudges": []
+ },
+ {
+  "case": "rainy",
+  "kind": "casual",
+  "run": 1,
+  "ok": false,
+  "problem": "called get_weather",
+  "seconds": 19.4,
+  "tools": [
+   "get_weather({}) ok"
+  ],
+  "calls": [
+   {
+    "by": "main",
+    "name": "get_weather",
+    "input": {},
+    "status": "ok"
+   }
+  ],
+  "answer": "Yeah, the kind of afternoon that makes you want to just disappear into a book or a series. The air quality's pretty bad today too — AQI **210**, very unhealthy — so it's definitely one of those days to stay in.\n\nGot a couple of suggestions, depending on your mood:\n\n- **Something immersive** — a good podcast or audiobook to zone out to\n- **Something creative** — I could generate an image for you, help you brainstorm a story, or we could just chat about stuff\n- **Something to watch** — pick a genre, I can recommend something solid\n- **Or we can play around** — I can whip up a little game, a puzzle, or even a text adventure\n\nWhat sounds least boring right now?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "movie",
+  "kind": "casual",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 9.4,
+  "tools": [],
+  "calls": [],
+  "answer": "**About Time** — a warm, charming romantic comedy with a time-travel twist. It's funny, gentle and genuinely heartwarming without being heavy. Perfect for a relaxed evening.\n\nIf you've seen it or want something else, I can suggest more.",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "job_loss",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 11.7,
+  "tools": [],
+  "calls": [],
+  "answer": "I'm really sorry, Ary. That's a lot to take in. You're not alone in this — I can help you sort through the next steps, one at a time. Here's what tends to matter most right now:\n\n**1. Take care of the basics first**\n- Collect any paperwork they gave you (severance, final pay, benefits info)\n- Note the deadline for responding to any severance offer\n- Check when your health insurance ends and what COBRA/renewal options are\n\n**2. File for unemployment**\n- Do this as soon as possible, even if you're not sure if you'll qualify — delays can cost you benefits\n\n**3. Don't rush to update your resume yet**\n- Give yourself a day or two to breathe. When you're ready, I can help you draft or polish one, or work on a LinkedIn update\n\n**4. Talk to people**\n- Reach out to a couple of contacts or former colleagues — people are often more willing to help than we expect\n\nI'm here to help with any of that, or just to talk if that's what you need right now. What feels most pressing — or do you just need a moment?",
+  "emoji": false,
+  "nudges": []
+ },
+ {
+  "case": "sql_index",
+  "kind": "serious",
+  "run": 1,
+  "ok": true,
+  "problem": null,
+  "seconds": 10.6,
+  "tools": [],
+  "calls": [],
+  "answer": "A database index works like a book's index: instead of scanning every page, you jump straight to the section you need.\n\nHere's how it speeds things up:\n\n**Without an index**\nThe database does a **full table scan** — it reads every row one by one to find matches. For a million-row table, that's a million checks.\n\n**With an index**\nThe database reads the index first, which is a smaller, sorted data structure (usually a **B-tree**) that maps column values to the location of the full row. It narrows the search down to just a few disk reads, then fetches only the matching rows.\n\n**The trade-off**\n- **Queries get faster** — often from seconds to milliseconds on large tables\n- **Writes get slower** — every insert, update, or delete must also update the index\n- **Storage cost** — indexes take up extra disk space\n\nA common analogy: looking up a word in a dictionary. With the alphabetical order (index), you flip near the right spot immediately. Without it, you'd flip page by page from the beginning.",
+  "emoji": false,
+  "nudges": []
+ }
+]

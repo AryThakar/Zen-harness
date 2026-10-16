@@ -1,12 +1,14 @@
 # Zen - architecture
 
-How the assistant works, read from the code after the rebuild (2026-10-15). Why it is built this way, phase by
+How the assistant works, read from the code after the rebuild (2026-10-15) and the testing pass that followed
+(2026-10-16: section 12). Why it is built this way, phase by
 phase with what was measured, is in [REBUILD_PLAN.md](REBUILD_PLAN.md); who owns what, and every guard and check,
 in [SYSTEM_MAP.md](SYSTEM_MAP.md).
 
 ## 1. The idea
 
-Zen is a chat assistant on an open model (Gemma 4 26B through llama-server). A **workspace** is a project: one
+Zen is a chat assistant on an open model through llama-server (Qwen 3.6 35B-A3B since 2026-10-16, Gemma 4 26B-A4B
+before - section 12). A **workspace** is a project: one
 folder of real files, each named by its path - the same name for the user, the model, the helpers, a script and
 the search index - with its chats and one search index. Nothing crosses its edge except through a card the user
 clicks (a download, a delete, changing the user's own file).
@@ -35,7 +37,8 @@ browser (web/)  --HTTP + server-sent events-->  FastAPI (app/main.py, app/api/as
 | Process | What it is | Who starts it |
 |---|---|---|
 | The app | `uvicorn app.main:app` - the API and the chat page on http://localhost:8000 | you |
-| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today the 26B on Kaggle, reached through `C:\zen-data\kaggle\bridge.py` (a local address forwarding to the notebook's tunnel); a local llama-server works the same way | you |
+| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today Qwen 3.6 35B-A3B on Kaggle's two T4s, reached through `C:\zen-data\kaggle\bridge.py` (a local address forwarding to the notebook's tunnel; it names itself, so the page says the model runs on Kaggle); a local llama-server works the same way | you |
+| Or a cloud model | for testing the harness with a stronger model: `BIZ_LLM_PROVIDER=gemini`, `nvidia` or `groq` and its key in `.env` (app/providers/cloud.py) - each free plan measured too small for the full tests (section 12) | you |
 | The embedding server | llama-server with EmbeddingGemma and its picture projector, port 8070, this computer only | the app, on first use; stopped when it exits (app/rag/embed_server.py) |
 | The browser | Playwright MCP (Edge, headless, no profile) for pages a plain read can't get | the app, on first use; closed when idle (app/tools/browser.py) |
 
@@ -54,9 +57,9 @@ Playwright MCP, pages that need a browser are reported as unreadable. The prompt
 | `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence and the guards before a call (`evidence.py`), the result checks (`checks.py`) |
 | `app/tools/` | the tools, each a plain function returning one result shape (`core.py`); the workspace (`workspace.py`), file types in one place (`filetypes.py`), agent.md (`agent_md.py`), the sandbox (`sandbox.py`), runs and the console (`run.py`, `console.py`), the search index (`search_index.py`) |
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
-| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`), Groq for testing, a scripted model for tests |
+| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`); a cloud's OpenAI-compatible API (`cloud.py`) - Google's Gemini API, NVIDIA Build, Groq - for testing; a scripted model for tests |
 | `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat), `api.js`, `cards.js` (answer cards), `charts.js`, `steps.js` (the work behind a reply, the trace), `files.js` (the file panel), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
-| `tests/` | pytest, 617 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description; no model needed |
+| `tests/` | pytest, 628 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description; no model needed |
 | `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn
@@ -91,8 +94,15 @@ LangGraph graph (agent -> tools -> agent ... -> end), streamed to the page; ever
   confirm. After a reply, checks only advise, once per turn, with a hidden [App check]: a reply that announces
   an action without doing it, claims one no tool did, says it will remember without writing agent.md, or says it
   saved a file that isn't in the workspace.
+- **Cut off by the length limit.** A reply cut off in its text gets another step; one that thought until the
+  limit and said nothing asks the user to try again quickly. One cut off while it wrote a call (a whole file in
+  `content`) is told so, with the call's size, and how to write a long file in parts - not to think less (measured:
+  a helper told only "cut off" was cut off three times running, 3.5 minutes each); the same again ends the turn
+  with a plain message. A helper ends with what it has after the same call is cut twice, or three cut-offs of any
+  kind in a row.
 - **What the page sees while it works.** The steps (and a helper's own steps inside them) at the top of the
-  reply; once the reply has text, what is happening now ("Checking the answer...") at its end.
+  reply; once the reply has text, what is happening now ("Checking the answer...") at its end. A call being
+  written shows its file and size as they grow ("Writing game.html · 3.2 KB..."), from the stream.
 - **After the turn.** The turn is indexed for recall, the workspace's new files are indexed, a new chat is
   named, and a trace is stored - main's steps and tokens, every tool call, each helper's steps and checks -
   opened from a button under the answer.
@@ -124,11 +134,13 @@ work done so far as the result.
 failed is stopped with why and runs when confirmed; a table nobody inspected is inspected first; a choice only the
 user can make (inspect_data's question, e.g. day first or month first) is asked, and its cleaning step applied by
 code; a fourth web search in a row is refused until a page is read; at most 6 pages of one site in a task; at most
-2 questions to the user in a task.
+2 questions to the user in a task; cut-offs in a row as in section 4.
 
 **Programs are files.** The analyst-programmer writes a program with files write, runs it with run, changes it
 with files edit and runs it again; the file is the state, so the next task - or the same task after a Stop - goes
-on from it. Each run keeps the file's report: what it says it does, then facts the app writes (passed or failed,
+on from it. One it writes only to get the answer goes under `work/` with the tables it writes along the way (the
+user's decision, 2026-10-15); a program the task asks for goes where the task says. The page keeps `work/` out of
+the way: inside the helper's step in the chat, and in a closed "Zen's working files" section of the file panel. Each run keeps the file's report: what it says it does, then facts the app writes (passed or failed,
 what it printed, what it made). It sees pictures - what its script drew, an image it reads or the task names - in
 its own conversation.
 
@@ -147,11 +159,12 @@ derivatives, integrals, limits, sums, matrices - run in the sandbox with a time 
 
 The helpers': **web_search** and **read_webpage** (section 8); **recall** (earlier chats); the data tools -
 **inspect_data** (a first look: types, roles, problems, suggested cleaning, questions for the user),
-**clean_data**, **query_data** (one read-only DuckDB query over tables named by their files, time-limited),
+**clean_data** (dropping rows with a gap in any column may not remove most of a table: refused, naming the mostly
+empty columns), **query_data** (one read-only DuckDB query over tables named by their files, time-limited),
 **make_chart** (line, area, bar, scatter, histogram, box, heatmap, pie - computed from all the rows, kept as a
-chart file), **compare** (is a difference, correlation, association or A/B result real), **forecast** (trend,
+chart file; also_y draws more number columns beside y, one line or bar group each), **compare** (is a difference, correlation, association or A/B result real), **forecast** (trend,
 season, the next periods with a range, against a baseline), **predict** (a model of one column from the others:
-tested against a baseline, its drivers and their direction), **find_patterns** (segments, unusual periods or
+tested against a baseline, its drivers and their direction, drawn as a chart file), **find_patterns** (segments, unusual periods or
 rows, items bought together), **analyze_text** (themes, labels, similar texts, by meaning); **files** in each
 helper's own modes; **run** (a Python file of the workspace, in the sandbox).
 
@@ -219,14 +232,14 @@ files open by their names (sandbox.py): 30 s by default, at most 120; a clean en
 characters. Files it writes are the workspace's - a new file is registered, a file the assistant made gets a new
 version; changing one of the user's own files is refused, with the advice to write the result under a new name
 (the user is asked when main changes one); CSV and Parquet become tables, a chart() call writes a chart file the
-page draws. An audit hook refuses reading outside the workspace and
+page draws (`from chart import chart` and `import zen` work too). An audit hook refuses reading outside the workspace and
 Python's installation, writing outside the workspace's files, deleting or moving them, starting programs and the
 network. It is a limit for one user's own assistant, not a security boundary; all runs go through one engine
 interface (`sandbox.ENGINE`), so a real sandbox can replace it in one place.
 
 **The console** (console.py) is the same program started by the user from its file - in the file panel or on its
 card in the chat: what it prints streams to the page as it is written, each line the user types goes to its
-input(). Stop, Run again; at most 15 minutes, 5 with nothing typed. When it ends, its files are registered and the
+input(). Stop, Run again, Close (which stops a program still running); at most 15 minutes, 5 with nothing typed. When it ends, its files are registered and the
 session - what it printed and what the user typed - is kept in the file's report, so the model can read it.
 
 ## 10. The page
@@ -235,7 +248,8 @@ One chat page (web/): projects and chats on the left; answers with their cards -
 screen, download as PNG or CSV), tables, pictures, diagrams, a file's card (an .html file runs in it; a Python
 file has Run, opening the console), sources (a video opens in the viewer at 16:9), questions; the work behind each
 reply (steps, a helper's steps, the trace); the live state at the end of a reply; a dot in the header for the
-model's state (ready, loading, unreachable - said in plain words). The file panel: paths, a search box (find), the
+model's state (ready, loading, unreachable - said in plain words) and where it runs (this computer, Kaggle or a
+cloud). The file panel: paths, a search box (find), the
 Memory section with agent.md, pins, earlier versions and restore, editing text files, previews (Markdown, HTML in a
 sealed frame with no network, PDF, tables, charts, code). The message box: @ to point at a file or pin it, pinned
 files as chips in the header.
@@ -256,3 +270,27 @@ On the real model (`bench/`, llama-server running): each phase's acceptance - `p
 `phase4.py` (find, pins, agent.md), `phase5.py` (routing probes, a dev and a held-out half) - and `combos.py`, 20
 jobs of 3-6 tools each from new stores with fixed data: 10 for finding what fails, 10 held out and run once. Their
 reports are kept beside them; REBUILD_PLAN.md section 8 records the results as they came.
+
+## 12. The testing pass (2026-10-16)
+
+The user's live chats were read turn by turn and every failure sorted into the app's or the model's: the app's
+were fixed once (the cut-off loop, the cleaning that kept 34 of 344 rows, a script's `import chart`, a chart of two
+columns, predict's chart, the console's close, a long write that looked frozen, helpers' working files in the chat,
+the page saying "this computer" of a model on Kaggle); the model's are recorded in SYSTEM_MAP.md section 5.
+
+To tell harness failures from model limits, the same tests ran on a second model. Free cloud plans were measured
+too small (Gemini's free tier: 20 requests a day per Flash model; NVIDIA Build's free endpoints refused one model
+and stalled on another; Groq: 8,000 tokens a minute), so the second model is Qwen 3.6 35B-A3B on the same Kaggle
+setup - Gemma's exact server settings, without the model's built-in MTP (with MTP and the IQ4_XS file it wrote 10.6
+words a second; without, with Q4_K_S, 47.9). Results, one run each (`bench/models/`):
+
+| | Gemma 4 26B-A4B (2026-10-15) | Qwen 3.6 35B-A3B (2026-10-16) |
+|---|---|---|
+| Routing probes, held out | 18/19, 551 s | 18/19, 810 s |
+| 10 dev jobs | 8/10, 1,071 s | 8/10, 1,039 s |
+| 10 held-out jobs | 8/10, 492 s | 8/10, 614 s |
+
+The same score. Qwen passed the two jobs Gemma failed in every run (a slide deck given to the wrong helper; a live
+exchange rate in an exact sum) and failed four that Gemma passed - two with right answers (a strict check; a built
+tool skipped for SQL), one tool skipped for a matplotlib picture, one file not written as a checklist. Today's fixes
+were in Qwen's run only. Qwen became the working model.

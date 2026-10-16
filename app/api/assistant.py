@@ -116,8 +116,10 @@ def assistant_status(request: Request) -> dict:
         state = "ready" if ok_ else "down"
     ready = state == "ready"
     loaded = getattr(main, "loaded_model", None)
+    where = getattr(main, "location", None)
     return {"ready": ready, "state": state, "message": message,
             "model": (loaded() if ready and loaded else None) or main.name,
+            **({"where": where()} if ready and where else {}),
             "assistant": settings.assistant_name, "user": settings.assistant_user_name}
 
 

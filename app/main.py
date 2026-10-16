@@ -23,7 +23,9 @@ from app.assistant import main as main_slot
 from app.assistant.store import Store
 from app.config import settings
 from app.providers import LlamaCppProvider, Provider
+from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
+from app.providers.nvidia import NvidiaProvider
 from app.rag.embed import make_embedder
 
 from .api import assistant
@@ -70,6 +72,13 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
         own_store = assistant_parts is None
         if own_store:
             def slot(n: int) -> Provider:
+                if settings.llm_provider == "gemini":
+                    return GeminiProvider(settings.gemini_model, settings.gemini_api_key,
+                                          thinking=settings.assistant_thinking, cancel=main_slot.STOP,
+                                          slot_tokens=settings.gemini_slot or None)
+                if settings.llm_provider == "nvidia":
+                    return NvidiaProvider(settings.nvidia_model, settings.nvidia_api_key,
+                                          thinking=settings.assistant_thinking, cancel=main_slot.STOP)
                 if settings.llm_provider == "groq":
                     return GroqProvider(settings.groq_model, settings.groq_api_key, thinking=settings.assistant_thinking,
                                         cancel=main_slot.STOP)

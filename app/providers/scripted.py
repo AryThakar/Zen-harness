@@ -48,4 +48,4 @@ class ScriptedProvider:
         # still says so.
         stop = turn.stop if allow_tools or turn.stop == "max_tokens" else "end"
         return ModelTurn(text=turn.text, tool_calls=list(turn.tool_calls) if allow_tools else [],
-                         raw=None, stop=stop, model=self.model, usage=turn.usage)
+                         raw=None, stop=stop, model=self.model, usage=turn.usage, cut_call=turn.cut_call)

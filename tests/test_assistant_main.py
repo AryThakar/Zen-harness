@@ -236,6 +236,22 @@ def test_a_reply_cut_off_in_its_text_gets_another_step(store, chat):
     assert [r["budget"] for r in main.requests] == [None, None]  # no thinking budget
 
 
+def test_a_call_cut_off_by_the_limit_is_said_to_be_too_long_and_a_second_one_ends_plainly(store, chat):
+    """Measured: a whole file written into a call takes minutes; cut off, it was taken for thinking too long."""
+    cut = ModelTurn(text="", stop="max_tokens", cut_call={"name": "files", "chars": 11_800})
+    main = ScriptedProvider([cut, tools_turn(call("files", mode="write", name="game.html", content="<p>hi</p>")),
+                             answer("It is in game.html.")])
+    events = run(send(store, chat["id"], "Make me a game page.", main, ScriptedProvider([])))
+    assert events[-1]["answer"] == "It is in game.html."
+    told = main.requests[1]["messages"][-1]["content"]
+    assert told.startswith("[App check: your call to files was cut off") and "11,800 characters" in told
+    assert "files(mode='edit')" in told and not [e for e in events if e["type"] == "question"]
+    again = ScriptedProvider([cut, cut])
+    events = run(send(store, chat["id"], "Make it longer.", again, ScriptedProvider([])))
+    assert events[-1]["type"] == "error" and "files call grew past the model's length limit twice" in events[-1]["message"]
+    assert len(again.requests) == 2
+
+
 def test_thinking_until_the_limit_lets_the_user_try_again_quickly(store, chat):
     """The user's design: no thinking budget; a reply that thought until the limit and said nothing shows
     a card, and 'Try again, answer quickly' retries that once with a thinking budget."""

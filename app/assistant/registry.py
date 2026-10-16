@@ -265,6 +265,8 @@ class ChartIn(_In):
                                "histogram: the number; box: the groups (or the number, for one box); heatmap: "
                                "the columns' categories")
     y: str | None = Field(None, description="the number column, combined by agg; omit to count rows")
+    also_y: list[str] | None = Field(None, description="line, area, bar: more number columns drawn beside y, one line "
+                                                       "or bar group each, e.g. ['min_c'] with y='max_c'")
     by: str | None = Field(None, description="split into groups: one line each (line), stacked (area), grouped bars "
                                              "(bar), one colour each (scatter), one spread each (histogram), or the "
                                              "heatmap's rows")
@@ -347,7 +349,7 @@ TYPED = "what a person would type when the program asks (input()), one line per 
 
 
 class RunIn(_In):
-    file: str = Field(description="the Python file to run, by its name, e.g. 'scripts/age_by_class.py'")
+    file: str = Field(description="the Python file to run, by its name, e.g. 'work/age_by_class.py'")
     input: str | None = Field(None, description=TYPED)
     timeout: int = Field(30, ge=1, le=120, description=TIMEOUT)
 
@@ -469,7 +471,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "picture. Use it for every chart the user needs. Not for a chart only a program can compute (a script's "
        "chart()).",
        ChartIn, lambda c, a: make_chart.make_chart(c.ws, a.data, a.type, a.x, a.y, a.by, a.agg, a.time_unit, a.top,
-                                                   a.stacked, a.title),
+                                                   a.stacked, a.title, a.also_y),
        labels=("Drawing a chart", "Drew a chart")),
     Tool("compare", "Statistical test: is a difference, correlation, association or A/B result real, or chance? The "
        "test is chosen from the columns - Mann-Whitney or Kruskal-Wallis for a number across groups, Spearman for two "

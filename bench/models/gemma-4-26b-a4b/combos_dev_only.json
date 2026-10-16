@@ -1,0 +1,69 @@
+[
+ {
+  "id": "expense_memo",
+  "split": "dev",
+  "why": "messy table -> clean -> compare months -> chart -> Word memo -> note",
+  "ok": true,
+  "problem": null,
+  "seconds": 191.5,
+  "truth": {
+   "grew": "Travel",
+   "growth": 4500
+  },
+  "tools": [
+   "main:analyze_or_code(ok)",
+   "engineer:inspect_data(ok)",
+   "engineer:clean_data(ok)",
+   "engineer:query_data(ok)",
+   "engineer:make_chart(invalid_arguments)",
+   "engineer:make_chart(ok)",
+   "engineer:query_data(invalid_arguments)",
+   "engineer:query_data(ok)",
+   "main:files(invalid_arguments)",
+   "main:files(ok)",
+   "main:files(ok)"
+  ],
+  "cards": [],
+  "answers": [
+   "I've processed your Q1 spending data, Ary.\n\nThe category that grew the most from January to March was **Travel**, with an absolute increase of **4500.0**.\n\nI've completed the following:\n*   Cleaned your data and saved it as `expenses-cleaned.csv`.\n*   Created a one-page memo in `memo.docx` containing the summary and your monthly spending chart.\n*   Saved the growth note to `fastest_growing_category.txt`."
+  ],
+  "errors": [],
+  "store": null
+ },
+ {
+  "id": "cancel_download",
+  "split": "dev",
+  "why": "a permission refused -> nothing done, said plainly",
+  "ok": true,
+  "problem": null,
+  "seconds": 7.2,
+  "truth": {},
+  "tools": [
+   "main:files(None)"
+  ],
+  "cards": [
+   {
+    "question": "Download README.md (11.0 KB) from GitHub into this workspace?",
+    "options": [
+     "Download",
+     "Cancel"
+    ],
+    "approval": {
+     "action": "download_file",
+     "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/README.md",
+     "name": "README.md",
+     "type": "text/plain",
+     "bytes": 11251,
+     "host": "raw.githubusercontent.com",
+     "github": true
+    },
+    "via": null
+   }
+  ],
+  "answers": [
+   "I'm sorry, Ary, but the download was cancelled."
+  ],
+  "errors": [],
+  "store": null
+ }
+]

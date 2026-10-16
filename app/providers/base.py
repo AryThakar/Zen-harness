@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 # on_event(kind, text): kind "text" streams answer text; "restart" means the
-# provider is re-issuing the turn, so text streamed so far should be discarded.
+# provider is re-issuing the turn, so text streamed so far should be discarded; "writing" is a call being
+# written, as JSON {"name": the tool, "file": the name it writes when it has one, "chars": its length so far} -
+# a long file takes minutes, and the page shows it growing instead of a line that seems stuck.
 EventCallback = Callable[[str, str], None]
 
 
@@ -45,6 +47,10 @@ class ModelTurn:
     usage: dict | None = None
     # The model's thinking, when it thought: measured (how long thinking runs), never sent back to it.
     thinking: str = ""
+    # A call the length limit cut off part way (stop "max_tokens"): {"name", "chars"} - it never runs, and the
+    # model is told it was too long rather than to think less (measured: a web helper's reply was cut off three
+    # times in a row, 3.5 minutes each, told each time only that it was cut off).
+    cut_call: dict | None = None
 
 
 IMAGE_TOKENS = 560  # an image's most (llama-server --image-max-tokens 560; a chart measured about 290)

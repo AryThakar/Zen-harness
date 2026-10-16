@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .workspace import Workspace, resolve_column
 
@@ -284,8 +285,15 @@ def predict(ws: Workspace, data: str, target: str, features: list[str] | None = 
         notes.append("The predictions are no more useful than the average guess: say so rather than use them.")
     if notes:
         result["notes"] = notes
-    artifact = {"type": "table", "title": f"What predicts {target}", "columns": ["column", "importance", "direction"],
-                "rows": [[d["column"], d["share"], d["direction"]] for d in drivers], "notes": [verdict]}
+    if not drivers:  # nothing worth drawing: the verdict says why
+        return ok(result, {"type": "table", "title": f"What predicts {target}", "columns": ["column", "importance"],
+                           "rows": [], "notes": [verdict]})
+    # The drivers as a chart file, like forecast's and find_patterns' (measured: without it the analyst copied the
+    # importances into a script and a table of its own to chart them - two working files, numbers typed by hand).
+    artifact = {"type": "chart", "chart": "bar", "title": f"What predicts {target}", "x_label": "column",
+                "y_label": "share of the prediction", "x": [d["column"] for d in drivers],
+                "y": [d["share"] for d in drivers], "notes": [verdict]}
+    artifact["id"] = result["chart_file"] = save_chart(ws, artifact, parent=data)
     return ok(result, artifact)
 
 

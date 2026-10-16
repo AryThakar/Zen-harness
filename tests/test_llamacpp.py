@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from app.providers import LlamaCppProvider, ProviderError
-from app.providers.llamacpp import parse_turn, to_openai_messages
+from app.providers.llamacpp import _read_stream, parse_turn, to_openai_messages
 from app.assistant.registry import TOOLS
 
 TOOL_SPECS = [TOOLS[n].spec() for n in ("calculate", "get_weather")]
@@ -52,6 +52,21 @@ def test_truncated_or_tool_less_turns_run_no_tools():
     assert parse_turn("Hi", call, "tool_calls", False, "m").stop == "end"
     unreadable = parse_turn("", call, "tool_calls", True, "m")
     assert unreadable.stop == "tool_use" and unreadable.tool_calls[0]["input"] == '{"sql": "SEL'
+    assert parse_turn("", call, "length", True, "m").cut_call == {"name": "run_sql", "chars": 12}
+    assert parse_turn("Thought, then", [], "length", True, "m").cut_call is None  # cut while thinking or saying
+
+
+def test_a_call_being_written_is_reported_as_it_grows():
+    """A long file written into a call takes minutes: the page shows it growing, not a line that seems stuck."""
+    content = "x" * 1_000
+    args = json.dumps({"mode": "write", "name": "game.html", "content": content})
+    pieces = [args[i:i + 50] for i in range(0, len(args), 50)]
+    lines = [f'data: {json.dumps({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"name": "files" if not i else "", "arguments": piece}}]}}]})}'.encode()
+             for i, piece in enumerate(pieces)] + [b"data: [DONE]"]
+    events = []
+    _read_stream(lines, lambda kind, text: events.append((kind, json.loads(text))))
+    assert [kind for kind, _ in events] == ["writing"] * len(events) and len(events) == 3  # every 400 characters
+    assert events[0][1] == {"name": "files", "chars": 50, "file": "game.html"} and events[-1][1]["chars"] == 850
 
 
 class QuietServer(ThreadingHTTPServer):
@@ -63,7 +78,7 @@ class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
     def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False, fail_first=0,
-                 page=None):  # page: an HTML error page, as a proxy or tunnel sends it
+                 page=None, host=None):  # page: an HTML error page, as a proxy or tunnel sends it; host: a bridge's
         self.requests = []
         fake = self
 
@@ -78,6 +93,8 @@ class FakeServer:
                     return self.page()
                 body = json.dumps(props).encode() if props is not None and self.path == "/props" else b""
                 self.send_response(status)
+                if host:
+                    self.send_header("X-Model-Host", host)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -160,7 +177,8 @@ def test_streams_text_and_assembles_tool_calls(fake):
     assert turn.text == "Let me check." and turn.stop == "tool_use"
     assert [(c["id"], c["name"], c["input"]) for c in turn.tool_calls][0] == ("call_1", "run_sql", {"sql": "SELECT 1"})
     assert turn.tool_calls[1]["input"] == {"expression": "2*3"} and turn.tool_calls[1]["id"].startswith("call_")
-    assert events == [("text", "Let me "), ("text", "check.")]
+    assert [e for e in events if e[0] == "text"] == [("text", "Let me "), ("text", "check.")]
+    assert [json.loads(t)["name"] for kind, t in events if kind == "writing"] == ["run_sql", "calculate"]
     assert turn.usage == {"output_tokens": 42, "prompt_tokens": 3500, "cached_tokens": 1200, "tokens_per_second": 13.4,
                           "thinking_chars": 0}
 
@@ -252,7 +270,7 @@ def test_the_slot_size_comes_from_the_server():
                                "default_generation_settings": {"n_ctx": 32768}, "modalities": {"vision": True}})
     try:
         model = LlamaCppProvider("m", server.url, max_tokens=4096)
-        assert model.ready() == (True, "gemma-4-26B (local, llama.cpp)")
+        assert model.ready() == (True, "gemma-4-26B (llama.cpp, on this computer)")
         assert model.slot_tokens == 32768 and prompt_limit(model) == 32768 - 4096 and model.sees_images()
     finally:
         server.close()
@@ -261,7 +279,10 @@ def test_the_slot_size_comes_from_the_server():
 
 
 def test_ready_reports_loading_and_missing_server(fake):
-    assert LlamaCppProvider("m", fake().url).ready() == (True, "m (local, llama.cpp)")
+    assert LlamaCppProvider("m", fake().url).ready() == (True, "m (llama.cpp, on this computer)")
+    # through the Kaggle bridge: said as it is (measured: the page said 'running on this computer' of a model on Kaggle)
+    bridged = LlamaCppProvider("m", fake(host="Kaggle").url)
+    assert bridged.ready() == (True, "m (llama.cpp, on Kaggle)") and bridged.location() == "on Kaggle"
     loading = LlamaCppProvider("m", fake(status=503).url).ready()
     assert not loading[0] and "loading" in loading[1]
     missing = LlamaCppProvider("m", "http://127.0.0.1:9").ready()

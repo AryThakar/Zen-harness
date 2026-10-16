@@ -1,7 +1,8 @@
 """make_chart: a chart computed from a table by code, ready for the UI to draw.
 
     line       x = a date (bucketed by time_unit) or number; y = a number combined by agg;
-               by = one line per group
+               by = one line per group; also_y = more number columns beside y, one line each (a week's highs and
+               lows) - its own field: a field of two types is shown to the model untyped
     area       a line with its area filled; with by, the groups stacked (each one's share of the whole)
     bar        x = a category; y combined by agg (largest first, top N); by = grouped bars,
                stacked=true stacks them
@@ -40,18 +41,28 @@ MAX_SERIES = 6  # lines, bar groups or colours: more can't be told apart
 MAX_BOXES = 15
 MAX_CELLS = 30  # per side of a heatmap
 PIE_SLICES = 5
+SEVERAL = ("line", "area", "bar")  # the kinds that draw several y columns, one line or bar group each
+SERIES, VALUE = "__column__", "__value__"  # several y columns, stacked into one: which column, its value
 
 
 @tool
 def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, y: str | None = None,
                by: str | None = None, agg: Agg = "sum", time_unit: TimeUnit = "auto", top: int = 20,
-               stacked: bool = False, title: str | None = None) -> ToolResult:
+               stacked: bool = False, title: str | None = None, also_y: list[str] | None = None) -> ToolResult:
     """Draw a chart of a table: line, area, bar, scatter, histogram, box, heatmap or pie - kept as a chart file."""
     df = ws.table(data)
-    if x is None and not (type == "box" and y):
+    if also_y and not y:
+        raise ToolError("also_y draws beside y: give the first number column as y.", field="also_y")
+    ys = list(dict.fromkeys(([y] if y else []) + list(also_y or [])))
+    if x is None and not (type == "box" and ys):
         raise ToolError(f"A {type} chart needs x (a column).", field="x")
     x = resolve_column(df, x, "x") if x else None
-    y = resolve_column(df, y, "y") if y else None
+    order = several = None
+    if len(ys) > 1:  # several columns: stacked into one, one line or bar group per column, in the order given
+        df, several = _several(df, type, x, ys, by)
+        y, by, order = VALUE, SERIES, several
+    else:
+        y = resolve_column(df, ys[0], "y") if ys else None
     by = resolve_column(df, by, "by") if by else None
     if by and by in (x, y):  # 'bar of tip by day' given as x=day, by=day: the split is x itself
         by = None
@@ -83,19 +94,39 @@ def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, 
                             field="agg")
         chart, summary = _pie(df, x, y, agg)
     elif type in ("line", "area"):
-        chart, summary = _line(df, x, y, agg, time_unit, by)
+        chart, summary = _line(df, x, y, agg, time_unit, by, order)
     else:
-        chart, summary = _bar(df, x, y, agg, top, by)
+        chart, summary = _bar(df, x, y, agg, top, by, order)
 
-    y_label = chart.pop("y_label", None) or (f"{agg} of {y}" if y and agg != "count" else "rows")
-    title = title or _title(type, x, y, by, y_label)
+    if several:
+        y_label = ", ".join(several) if agg == "sum" else f"{agg} of {', '.join(several)}"
+        title = title or f"{' and '.join(several)} by {x}"
+        by = None  # the columns are the lines, not groups of rows
+    else:
+        y_label = chart.pop("y_label", None) or (f"{agg} of {y}" if y and agg != "count" else "rows")
+        title = title or _title(type, x, y, by, y_label)
     artifact = {"type": "chart", "chart": type, "title": title, "x_label": x, "y_label": y_label,
-                **({"unit": unit} if unit else {}), **({"stacked": True} if stacked and by and type == "bar" else {}),
+                **({"unit": unit} if unit else {}), **({"stacked": True} if stacked and (by or several) and type == "bar" else {}),
                 **chart}
     warning = ws.issues_warning(data)
     artifact["id"] = save_chart(ws, artifact, parent=data)  # the chart file: drawn live, a picture when a document needs one
     return ok({"chart": type, "data": data, "title": title, **summary, **({"data_warning": warning} if warning else {}),
                "chart_file": artifact["id"]}, artifact)
+
+
+def _several(df: pd.DataFrame, type: str, x: str | None, ys: list[str], by: str | None) -> tuple[pd.DataFrame, list[str]]:
+    """Several y columns as one long table (x, which column, its value) for the by path; the columns, as resolved."""
+    if type not in SEVERAL:
+        raise ToolError(f"also_y draws only on a line, area or bar chart; a {type} chart takes one y.", field="also_y")
+    if by:
+        raise ToolError("y and also_y draw one line each already; by splits one y column into groups - give "
+                        "one or the other.", field="by")
+    if len(ys) > MAX_SERIES:
+        raise ToolError(f"At most {MAX_SERIES} y columns can be told apart on one chart.", field="y")
+    cols = [resolve_column(df, c, "y") for c in ys]
+    for c in cols:
+        _need_number(df, c, "y")
+    return df[[x, *cols]].melt(id_vars=[x], value_vars=cols, var_name=SERIES, value_name=VALUE), cols
 
 
 def _title(type, x, y, by, y_label) -> str:
@@ -150,7 +181,7 @@ def _dates_or_numbers(frame: pd.DataFrame, x: str) -> pd.DataFrame:
     return frame
 
 
-def _line(df, x, y, agg, time_unit, by):
+def _line(df, x, y, agg, time_unit, by, order=None):
     frame = _dates_or_numbers(df.dropna(subset=[x]), x)
     if frame.empty:  # (a date range over no dates can't be made: it ended in an internal error)
         raise ToolError(f"'{x}' has no values to draw.", invalid=False)
@@ -161,7 +192,7 @@ def _line(df, x, y, agg, time_unit, by):
                         "categories use a bar chart.", field="x")
     notes = []
     if by:
-        groups, total = _largest_groups(frame, by, y, agg, MAX_SERIES)
+        groups, total = (order, len(order)) if order else _largest_groups(frame, by, y, agg, MAX_SERIES)
         notes += _left_out(len(groups), total, by)
         keys = frame[by].astype(str)
         frame = frame[keys.isin(groups)].assign(**{by: keys})
@@ -218,7 +249,7 @@ def _values(v: pd.Series) -> list:
     return [None if pd.isna(a) else number(a) for a in v]
 
 
-def _bar(df, x, y, agg, top, by):
+def _bar(df, x, y, agg, top, by, order=None):
     frame = df.dropna(subset=[x])
     if pd.api.types.is_datetime64_any_dtype(frame[x]):
         raise ToolError(f"'{x}' holds dates; use a line chart for values over time.", field="x")
@@ -237,7 +268,7 @@ def _bar(df, x, y, agg, top, by):
             summary["note"] = notes[0]
         return {"x": [str(k) for k in shown.index], "y": [number(v) for v in shown]}, summary
     sub = frame[keys.isin(shown.index)]
-    groups, total = _largest_groups(sub, by, y, agg, MAX_SERIES)
+    groups, total = (order, len(order)) if order else _largest_groups(sub, by, y, agg, MAX_SERIES)
     notes += _left_out(len(groups), total, by)
     split = sub[by].astype(str)
     sub = sub[split.isin(groups)]

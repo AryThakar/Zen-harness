@@ -63,6 +63,30 @@ def test_a_programs_chart_is_a_live_chart_too(ctx):
     bad = files(ctx.ws, ctx.index, "write", name="bad.py", helper=True, content="chart('line', x=[1, 2], y=[1])\n")
     assert "x has 2 values but y has 1" in execute(ctx, "run", {"file": "bad.py"}).result["errors"]
     assert bad.status == "ok"
+    # imported, as a script may (measured: 'from chart import chart' stopped one with "chart is not installed")
+    files(ctx.ws, ctx.index, "write", name="imports.py", helper=True,
+          content="from chart import chart\nimport zen\nt = zen.table('titanic.csv')\n"
+                  "print(chart('bar', x=['a', 'b'], y=[1, 2], title='Imported'), len(t))\n")
+    out = execute(ctx, "run", {"file": "imports.py"}).result
+    assert "charts/imported.chart.json 8" in out["output"] and not out.get("errors")
+
+
+def test_several_number_columns_draw_one_line_each(ctx):
+    """Measured: a week's highs and lows were reshaped by a script, because make_chart took one y."""
+    r = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "line", "x": "month", "y": "sales", "also_y": ["age"]})
+    spec = spec_of(ctx.ws, r.result["chart_file"])
+    assert [s["name"] for s in spec["series"]] == ["sales", "age"] and spec["series"][0]["y"][:2] == [10, 12]
+    assert spec["title"] == "sales and age by month"
+    bars = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "bar", "x": "survived", "y": "sales",
+                                       "also_y": ["age"], "agg": "mean"})
+    assert bars.status == "ok" and len(spec_of(ctx.ws, bars.result["chart_file"])["series"]) == 2
+    both = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "line", "x": "month", "y": "sales",
+                                       "also_y": ["age"], "by": "survived"})
+    assert both.status == "invalid_arguments" and "one line each already" in both.result["error"]["message"]
+    pie = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "pie", "x": "survived", "y": "sales", "also_y": ["age"]})
+    assert pie.status == "invalid_arguments" and "line, area or bar" in pie.result["error"]["message"]
+    alone = execute(ctx, "make_chart", {"data": "titanic.csv", "type": "line", "x": "month", "also_y": ["age"]})
+    assert alone.status == "invalid_arguments" and "give the first number column as y" in alone.result["error"]["message"]
 
 
 def test_a_document_takes_a_charts_picture(ctx):

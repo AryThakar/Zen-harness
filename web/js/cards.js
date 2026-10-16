@@ -4,7 +4,7 @@
 import { api, iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
 import { consoleEl } from "./console.js";
-import { canView, htmlFrame, isHtml, openItem } from "./files.js";
+import { canView, htmlFrame, isHtml, madeKind, openItem } from "./files.js";
 import { openViewer } from "./viewer.js";
 import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, plural, polish, svg } from "./util.js";
 
@@ -282,8 +282,7 @@ function fileCard(a) {
   if (/\.py$/i.test(a.name || "")) {  // a program: it runs here, the user typing while it runs
     el.append(action("button", "play", "Run", { type: "button", onclick: () => {
       el.querySelector(".console")?.remove();
-      el.querySelector(".below").append(consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path,
-        kind: f.id.startsWith("data_") ? "table" : f.id.startsWith("image_") ? "image" : "file" }) }));
+      el.querySelector(".below").append(consoleEl(item, { openFile: f => openItem({ id: f.id, name: f.path, kind: madeKind(f) }) }));
     } }));
   }
   if (canView(item)) el.append(action("button", "eye", "View", { type: "button", onclick: () => openItem(item) }));
@@ -317,13 +316,13 @@ export function codeCard(a) {
   // a run on its own: what it printed is its result, so that tab starts open
   el.append(runEl(runParts(a), lineCount(a.output) <= 12 ? "output" : null));
   const files = (a.files || []).filter(f => f.id);
-  const made = files.filter(f => f.id.startsWith("image_")), others = files.filter(f => !f.id.startsWith("image_"));
+  const made = files.filter(f => madeKind(f) === "image"), others = files.filter(f => madeKind(f) !== "image");
   if (made.length) el.append(pictures(made.map(f => f.id)));
   if (others.length) {
     el.append(h("div", { class: "tags" }, others.map(f => {
-      const item = { id: f.id, kind: f.id.startsWith("data_") ? "table" : "file", name: f.path };
+      const item = { id: f.id, kind: madeKind(f), name: f.path };
       return canView(item) ? h("button", { class: "tag", type: "button", onclick: () => openItem(item) }, f.path)
-        : f.id.startsWith("file_") ? h("a", { class: "tag", href: itemUrl(f.id), download: f.path }, `${f.path} ↓`)
+        : item.kind === "file" ? h("a", { class: "tag", href: itemUrl(f.id), download: f.path }, `${f.path} ↓`)
         : h("span", { class: "tag" }, f.path);
     })));
   }

@@ -1,4 +1,4 @@
-# System map - after the rebuild (2026-10-15)
+# System map - after the rebuild (2026-10-15) and the testing pass (2026-10-16)
 
 Who owns what, and every guard, check and nudge, read from the code after the seven phases of
 [REBUILD_PLAN.md](REBUILD_PLAN.md). How it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md). The first map
@@ -17,7 +17,7 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | Server | app/main.py (108), app/config.py (74), app/api/assistant.py (543) | the app, settings, the HTTP API |
 | Turn | app/assistant/main.py (769), context.py (254), snapshot.py (129), checks.py (182), prompts.py (205), registry.py (674), store.py (284) | main's turn, what every call sees and how it fits, the pinned files' snapshot, main's checks, the prompts and nudges, every tool's contract and handler, the chat store |
 | Helpers | app/assistant/workers/ contracts (185), runner (529), evidence (209), checks (132), __init__ (98) | the helpers' contracts and profiles, their step loop, the evidence and guards, the result checks |
-| Providers | app/providers/ base (103), llamacpp (449), gemma_calls (268), groq (119), scripted (51) | model calls, streaming, exact counting, the model server's state, Gemma's text-written calls |
+| Providers | app/providers/ base (109), llamacpp (505), gemma_calls (268), cloud (136) with gemini (45), nvidia (34), groq (51), scripted (51) | model calls, streaming (a call's size as it is written), exact counting, the model server's state and where it runs, Gemma's text-written calls, a cloud's API for tests |
 | Tools | app/tools/ - 40 modules (10,238) | each tool: one function, one result shape (core.py); the workspace, the sandbox, the console, the search index |
 | Search | app/tools/search_index.py (335), files.py (404), memory.py (76), app/rag/ (714) | FTS5 + embeddings, documents, find, recall |
 | Page | web/ (4,683) | the chat page; card types checked against what the server sends |
@@ -38,7 +38,8 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | Fitting the slot | `context.py` (cut_turns, shorten_tool_results, shorten_call_args) and the provider's exact count | main and the runner use the same ladder |
 | Running a program | `sandbox.py` (the set-up, the audit hook, the clean environment): run_python to its end, start for the console | run.py (the helper's run, the report), console.py (the user's session) |
 | What a run left | `run.keep_report` - the facts, and a console session as it went | the next task and the model read the file's report |
-| The model server's state | `LlamaCppProvider.health` - ready, loading or down, in plain words | /status, the header's dot, the start screen |
+| The model server's state | `LlamaCppProvider.health` - ready, loading or down, in plain words; and `location` - this computer, Kaggle (the bridge names itself, X-Model-Host) or a cloud | /status, the header's dot, the start screen |
+| A helper's working files | `work/` - its scripts and in-between tables (the engineer's prompt and run's contract say so) | the page: inside the helper's step in the chat; a closed section of the file panel |
 | How a tool is named while it works | `Tool.labels` in registry.py, served at /tools | the page keeps no list of its own |
 | Instructions | prompts.py (roles, nudges), registry.py (tools), contracts.py (delegates), the tools' own results | each rule in one place (tests/test_prompts.py: no model reads a sentence twice) |
 
@@ -61,6 +62,9 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | runner: a repeat | one that worked gets its earlier result back; one that failed is stopped with why | serves the model | `confirm: true` |
 | runner: web searching without reading | a fourth search in a row is refused until a page is read | judgment | read a page, or `confirm: true` |
 | runner: one site | at most 6 pages of one site in a task | politeness | read another site |
+| runner: cut-offs in a row | the same call cut off twice, or three cut-offs of any kind: the helper ends with what it has (measured: three in a row, 3.5 minutes each, until the user stopped it) | serves the model | - |
+| main and runner: a call cut off | told the call was too long, with its size, and to write a long file in parts - not to think less; main's second in a row ends the turn with a plain message | serves the model | a shorter call |
+| clean_data: drop_missing over every column | refused when it would remove most of the rows, naming the mostly empty columns (measured: 34 of 344 rows kept, the answer built on them silently) | truth | name the columns, or drop the empty ones first |
 | web: a refusing site | not tried again in the chat | politeness | one other page, said in the caveats |
 | result checks | web: pages cited were read, file links in downloads; knowledge: sources a tool returned; analyst: every number in a tool result or a run | truth | one chance to fix, then a warning main passes on |
 | runner nudges | cut off, no call, the conversation full, steps left, fix the finish, the pictures it is shown | serves the model | - |
@@ -77,9 +81,12 @@ consistent is a limit to record, not a prompt to bend (section 5).
   the folder; no key in any result a model reads.
 - `test_console.py`, `test_pins_snapshot.py`, `test_assistant_main.py` (the slot never overflows, the snapshot is
   never stored), `test_main_checks.py` (each check from a measured failure, and the replies it must leave alone),
-  and the tools' own tests - 617 in all, no model needed.
+  and the tools' own tests - 628 in all, no model needed.
 
 ## 5. Known limits (measured, recorded - not prompted around)
+
+Seen on Gemma 4 26B-A4B and, since 2026-10-16, on Qwen 3.6 35B-A3B (the same tests: ARCHITECTURE.md section 12) -
+a limit both models show is the models' class, not one model:
 
 - **main writes a method into a helper's task** ("analyze correlations between left and ..."); the analyst then
   tests columns one pair at a time instead of predict - the answer was right, but pairwise tests can mislead when
@@ -88,6 +95,14 @@ consistent is a limit to record, not a prompt to bend (section 5).
   call more (phase 5, 2 of 2).
 - **main can hand its own work to a helper**: a slide deck given to analyze_or_code, against its contract ("not
   for documents - Word, slides"), came back as one slide built in a script (phase 7, dev).
+- **Both models write the method into a helper's task** (Qwen: "do correlation analysis", "use a time series
+  method (e.g. Holt-Winters/ETS)"), and both analysts **skip a built tool** now and then (Qwen: a spike found with
+  SQL instead of find_patterns - right answer; a Fibonacci chart drawn with matplotlib instead of a live chart).
+- **Qwen: a casual remark can call a tool** ("rainy afternoon" -> get_weather), and emoji in 2 of 4 casual replies
+  (the aim is at most 1).
+- **A long file in one call**: a reply holds 4,096 tokens, thinking included (measured: a 2 KB game written by
+  main took 3,425 of them, most of it thinking), so only a few KB fit one call; a longer one is now told, with its
+  size, to be written in parts.
 - **The analyst can skip a built tool for a script** - item pairs counted in a script instead of find_patterns,
   giving popularity rather than lift (phase 5 held-out). If this keeps happening, the answer is a library door to
   the analysis tools from scripts (REBUILD_PLAN section 7), not more wording.
