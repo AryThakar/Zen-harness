@@ -183,7 +183,8 @@ DELEGATES = {
                      "statistical tests (is a difference, a link or an A/B result real), trends and forecasts, machine "
                      "learning (classification or regression: what predicts or drives a column, predictions), "
                      "clustering customers into segments, unusual days, items bought together, themes in text - and "
-                     "for programs: a script it runs and tests, a simulation, a game, a conversion, editing a picture, "
+                     "for programs: a script it runs and tests, a simulation, a game played by typing, a conversion, "
+                     "editing a picture, "
                      "a file in another language. Not for maths typed in the chat (calculate), documents - Word, "
                      "slides, Markdown (files, mode='write', with its charts' pictures by name) - or anything on the "
                      "web: it has no internet, so a web file is brought in first (files, mode='download').",

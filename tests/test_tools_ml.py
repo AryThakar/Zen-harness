@@ -231,6 +231,24 @@ def test_forecast_counts_rows_and_checks_inputs(ws):
     assert r.status == "failed" and "at least 10" in r.result["error"]["message"]
 
 
+def test_a_share_price_on_trading_days_is_averaged_and_forecast_for_the_coming_weekdays(ws):
+    """Measured 2026-10-17: a month of MRF closes was '26% gaps' to forecast (weekends), and a year of them forecast
+    by week with the default sum came out as five closes added (~600,000 a week)."""
+    days = [d for d in pd.bdate_range("2026-09-16", "2026-10-16") if d != pd.Timestamp("2026-10-02")]  # a holiday
+    month = pd.DataFrame({"Date": days, "Close": [125010.0 - 130 * i + (i % 3) * 200 for i in range(len(days))]})
+    r = forecast(ws, ws.add_table(month, "mrf"), value="Close")
+    assert r.status == "ok", r.result
+    res = r.result
+    assert res["period"] == "weekday" and res["combined_by"] == "mean" and res["trend"]["direction"] == "falling"
+    assert [p["period"] for p in res["forecast"]] == ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"]
+    assert any("weekdays only" in n for n in res["notes"])
+    year = pd.DataFrame({"Date": pd.bdate_range("2025-10-17", "2026-10-16")})
+    year["Close"] = 120000.0 + np.arange(len(year)) * 10
+    weekly = forecast(ws, ws.add_table(year, "mrf_year"), value="Close").result
+    assert weekly["period"] == "week" and weekly["combined_by"] == "mean"
+    assert 115000 < weekly["forecast"][0]["forecast"] < 130000  # a price, not five of them added
+
+
 def test_flag_columns_made_from_the_target_are_never_inputs(ws):
     from app.tools.clean_data import clean_data
     data = ws.add_table(customers(), "customers")

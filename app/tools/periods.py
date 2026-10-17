@@ -14,8 +14,9 @@ import numpy as np
 import pandas as pd
 
 CODE = {"day": "D", "week": "W", "month": "M", "quarter": "Q", "year": "Y"}
-WORD = {v: k for k, v in CODE.items()}
-OFFSET = {"D": "D", "W": "W-MON", "M": "MS", "Q": "QS", "Y": "YS"}  # period starts; weeks start on Monday
+# "B": days of a weekdays-only series (trading or office days) - forecast's own grain for them (weekdays_only)
+WORD = {**{v: k for k, v in CODE.items()}, "B": "weekday"}
+OFFSET = {"D": "D", "W": "W-MON", "M": "MS", "Q": "QS", "Y": "YS", "B": "B"}  # period starts; weeks start on Monday
 
 
 ORDER = "DWMQY"  # finest to coarsest
@@ -29,17 +30,48 @@ def native_freq(dates: pd.Series) -> str:
     return "D" if gap <= 1.5 else "W" if gap <= 8 else "M" if gap <= 35 else "Q" if gap <= 100 else "Y"
 
 
+# A level - a price, a rate, a temperature, a balance, a score - is averaged over a period, never added up; amounts
+# (sales, quantities, costs) are summed. Measured 2026-10-17: a share's daily closes, forecast by week with the default
+# sum, came out as ~600,000 a week (five closes added) and were drawn as the price.
+LEVEL_WORDS = {"price", "prices", "close", "open", "high", "low", "adj", "rate", "rates", "ratio", "balance", "temp",
+               "temperature", "humidity", "nav", "index", "level", "score", "rating", "pct", "percent", "percentage",
+               "share", "yield", "speed", "age", "weight", "height", "aqi", "cpi", "margin", "avg", "average", "mean"}
+
+
+def level_column(name) -> bool:
+    """A column whose name says it holds a level (averaged per period), not an amount (summed)."""
+    return bool(set(re.split(r"[^a-z]+", str(name).lower())) & LEVEL_WORDS)
+
+
+def default_agg(columns) -> str:
+    """How values combine per period when the model didn't say: the mean for levels, else the sum."""
+    columns = [c for c in columns if c]
+    return "mean" if columns and all(level_column(c) for c in columns) else "sum"
+
+
 def coarsest(*freqs: str) -> str:
     return max(freqs, key=ORDER.index)
 
 
 def bucket(dates: pd.Series, freq: str) -> pd.Series:
     """The start of each date's period."""
+    if freq == "B":
+        return dates.dt.normalize()
     return dates.dt.to_period(freq).dt.start_time
 
 
+def weekdays_only(dates) -> bool:
+    """Dates on weekdays only, over two weeks or more: trading or office days, whose calendar has no weekends
+    (measured 2026-10-17: a month of share prices was '26% gaps' to forecast, and charted down to 0 each weekend)."""
+    days = pd.DatetimeIndex(pd.Series(dates).dropna()).normalize().unique()
+    return len(days) >= 8 and (days.max() - days.min()).days >= 13 and not (days.dayofweek >= 5).any()
+
+
 def full_range(index: pd.Index, freq: str) -> pd.DatetimeIndex:
-    """Every period start from the first to the last, so empty periods show as gaps or zeros."""
+    """Every period start from the first to the last, so empty periods show as gaps or zeros - a weekdays-only
+    series' days without its weekends."""
+    if freq == "D" and weekdays_only(index):
+        return pd.bdate_range(index.min(), index.max())
     return pd.date_range(index.min(), index.max(), freq=OFFSET[freq])
 
 
@@ -50,7 +82,7 @@ def drop_partial_edges(y: pd.Series, dates: pd.Series, freq: str) -> tuple[pd.Se
     """Leave out a first / last period that the data's dates cover only partly - unless each row
     already stands for a whole period or more (monthly data dated the 1st, charted by month)."""
     notes = []
-    if freq == "D" or len(y) <= 2:
+    if freq in ("D", "B") or len(y) <= 2:
         return y, notes
     step = pd.tseries.frequencies.to_offset(OFFSET[freq])
     distinct = pd.Series(dates.dropna().dt.normalize().unique()).sort_values()

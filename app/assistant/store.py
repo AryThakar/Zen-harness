@@ -170,8 +170,8 @@ class Store:
         and tables are synced. Nothing starts when there is nothing to do; one run at a time per workspace (a call
         during a run makes it run once more)."""
         ws, index = self._open[ws_id]
-        if not index.stale() and not _items_differ(ws, index):
-            return
+        if index.embedder is None or not index.stale() and not _items_differ(ws, index):
+            return  # no embedding model: keyword search is all there is, and it is current
         with self._lock:
             if ws_id in self._refreshing:
                 self._refreshing[ws_id] = True

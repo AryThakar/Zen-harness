@@ -3,6 +3,8 @@ test chat, and each check through a whole main turn with a scripted model."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.providers.base import ModelTurn
@@ -182,6 +184,17 @@ def test_a_helper_task_with_made_up_data_is_refused(store, chat):
     assert coder.requests == []
 
 
+def test_dates_in_a_task_are_not_made_up_numbers():
+    """Measured 2026-10-17: 'next week, Oct 19-23' was refused as inventing 19 and 23."""
+    from app.assistant.checks import invented_numbers
+    said = [{"role": "user", "text": "MRF's last month, and what next week may look like"}]
+    dated = {"name": "analyze_or_code", "input": {"task": "Chart Sep 16 - Oct 16, 2026 and say what next week "
+                                                           "(Oct 19-23) may look like; from 2026-09-16 on."}}
+    assert invented_numbers(dated, said) is None
+    figures = {"name": "analyze_or_code", "input": {"task": "Chart sales of 1,250, 1,410 and 1,388 for Oct 19-21."}}
+    assert "1,250" in invented_numbers(figures, said)  # the figures still count
+
+
 def test_made_up_data_the_user_asked_for_runs_once_confirmed_and_is_labelled(store, chat):
     """Measured on the 26B: a demo table for 'show me the plan tool' was refused twice as invented data, main
     rewrote the whole task each time, and the user stopped the turn."""
@@ -288,6 +301,74 @@ def test_a_task_that_spells_out_how_is_sent_back_for_what_the_user_wants(store, 
     assert helper.requests == []
 
 
+def test_a_reply_with_numbers_no_result_holds_is_checked_once(store, chat):
+    """Measured 2026-10-17: under the analyst's real chart and forecast, main retyped a price table of its own -
+    Saturdays in it, a 'support level' below the real low."""
+    said = "MRF closed at 124,585 on 17 Sep and 122,790 on 16 Oct. Chart it and tell me the trend."
+    main = ScriptedProvider([turn(call("analyze_or_code", task=said)),
+                             answer("Closes: 125,200 (19 Sep), 124,800 (22 Sep), 121,310 (15 Oct) - support at 121,300."),
+                             answer("It fell from 124,585 to 122,790: the chart shows the month.")])
+    helper = ScriptedProvider([ModelTurn(text="", stop="tool_use", tool_calls=[call(
+        "finish", answer="The close fell from 124,585 to 122,790 over the month.")])])
+    events = list(send(store, chat["id"], said, main, helper))
+    nudges = [m for m in store.messages(chat["id"]) if m.get("check")]
+    assert len(nudges) == 1 and nudges[0]["content"].startswith("[App check: your reply gives numbers that no tool")
+    assert "125,200" in nudges[0]["content"]
+    assert [e for e in events if e["type"] == "done"][-1]["answer"].startswith("It fell from 124,585")
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="pages are checked with node")
+def test_a_page_whose_script_does_not_parse_is_fixed_before_it_is_called_ready(store, chat):
+    """Measured 2026-10-17: a cup game's whole script failed on 'await' outside an async function (line 478), and the
+    reply said 'Here's your game! Click Start Game'."""
+    broken = "<button id=go>Start</button>\n<script>\nfunction play() {\n  await sleep(400);\n}\n</script>\n"
+    main = ScriptedProvider([turn(call("files", mode="write", name="cups.html", content=broken)),
+                             answer("Here's your game! Click Start."),
+                             turn(call("files", mode="edit", name="cups.html", old_text="function play()",
+                                       new_text="async function play()")),
+                             answer("Fixed and ready: click Start.")])
+    events = list(send(store, chat["id"], "make a cup game I can play", main, ScriptedProvider([])))
+    written = [m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"]
+    assert "does not parse" in written and "line 4 of the file" in written
+    nudges = [m for m in store.messages(chat["id"]) if m.get("check")]
+    assert len(nudges) == 1 and "cups.html's script does not parse" in nudges[0]["content"]
+    assert [e for e in events if e["type"] == "done"][-1]["answer"] == "Fixed and ready: click Start."
+
+
+def test_numbers_in_a_chat_without_a_helper_are_mains_own():
+    from app.assistant.checks import unfounded_numbers
+    turn_ = [{"role": "user", "text": "explain compound interest with an example"}]
+    assert unfounded_numbers("10,000 at 8% for 3 years grows to 12,597.12.", turn_, turn_) == []
+
+
+def test_a_found_table_typed_into_a_task_is_sent_to_be_downloaded_first():
+    """Measured 2026-10-17: research_web gave MRF's closes and the page to download them from; main typed 22 closes
+    into the analyst's task, the helper drew them with matplotlib and no forecast ran."""
+    from app.assistant.checks import typed_table
+    page = "https://www.indiainfoline.com/company/mrf-ltd-historical-data"
+    closes = [125010 - 211 * i for i in range(12)]
+    web = {"role": "tool", "name": "research_web", "tool_call_id": "w1", "is_error": False,
+           "content": json.dumps({"status": "ok", "answer": "\n".join(f"| Sep {i + 1}, 2026 | {c:,} |"
+                                                                     for i, c in enumerate(closes)),
+                                  "downloads": [page]})}
+    turn_ = [{"role": "user", "text": "chart MRF's last month and say what next week may look like"},
+             {"role": "assistant", "tool_calls": [{"id": "w1", "name": "research_web", "input": {"task": "MRF"}}]}, web]
+
+    def task(text, **extra):
+        return {"id": "c1", "name": "analyze_or_code", "input": {"task": text, **extra}}
+
+    typed = task("Chart MRF's daily closes: " + ", ".join(f"Sep {i + 1}: {c}" for i, c in enumerate(closes)))
+    refused = typed_table(typed, turn_)
+    assert refused and f"files(mode='download', link='{page}')" in refused and "confirm: true" in refused
+    assert typed_table(task("Chart MRF's daily closes for the last month and say what next week may look like."),
+                       turn_) is None
+    fetched = turn_ + [{"role": "assistant", "tool_calls": [
+        {"id": "f1", "name": "files", "input": {"mode": "download", "link": page}}]}]
+    assert typed_table(typed, fetched) is None  # the table came in: the numbers are the user's data now
+    no_link = [*turn_[:2], {**web, "content": json.dumps({"status": "ok", "answer": web["content"], "downloads": []})}]
+    assert typed_table(typed, no_link) is None  # nothing to bring in: the found numbers are all there is
+
+
 def test_what_tasks_the_users_own_words_and_a_picture_to_edit_are_not_recipes():
     from app.assistant.checks import dictated_how
 
@@ -301,3 +382,17 @@ def test_what_tasks_the_users_own_words_and_a_picture_to_edit_are_not_recipes():
     edit = task("Blur the two labels in 'a-dramatic-side-by-side-video-game.jpg' and add ARY at the top.")
     assert dictated_how(edit, said, exists=lambda name: name == "a-dramatic-side-by-side-video-game.jpg") is None
     assert dictated_how(task("Use seaborn for the chart."), said) is not None
+    # measured 2026-10-17: a numbered recipe for "what drives a big basket? use machine learning"
+    basket = task("Find what drives a big basket. Steps:\n\n1. Clean the data.\n\n2. Create one row per bill: group by "
+                  "bill_no.\n\n3. Keep per-bill features.\n\n4. Model: random forest regression + SHAP or feature "
+                  "importance.\n\n5. Produce a bar chart of the top 5 drivers.")
+    refused = dictated_how(basket, [{"role": "user", "text": "what drives a big basket? use machine learning"}])
+    assert refused and "group by" in refused
+    wants = task("For the store owner:\n1. total revenue by store\n2. a chart of it\n3. whether the gap is real")
+    assert dictated_how(wants, said) is None  # a numbered list of what is wanted is not a recipe
+    # measured 2026-10-17: a method named for "is the difference real?" - the analyst scripted it instead of compare
+    chance = [{"role": "user", "text": "is the difference between categories real or just chance?"}]
+    refused = dictated_how(task("Is Electronics' revenue really higher than Accessories'? Run a permutation test."), chance)
+    assert refused and "permutation test" in refused
+    named = [{"role": "user", "text": "use a t-test to check if the difference is real"}]
+    assert dictated_how(task("Check with a t-test whether the difference between categories is real."), named) is None

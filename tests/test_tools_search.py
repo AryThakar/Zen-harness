@@ -99,7 +99,7 @@ def test_recall_returns_question_with_answer_and_skips_retrieval_calls(index):
     remember_turn(index, "c2", "Draw the sales process", "Here is the diagram of the sales process.")
     r = recall(index, "total revenue 2015")
     turn = r.result["turns"][0]
-    assert turn["conversation"] == "c1" and turn["when"] == "2026-10-01 10:00"
+    assert turn["source"] == "conversation c1" and turn["when"] == "2026-10-01 10:00"
     assert "user: What is total revenue" in turn["text"] and "817,860.05" in turn["text"]
     assert "assistant called query_data" in turn["text"] and "secret passage" not in turn["text"]
     assert recall(index, "total revenue 2015", exclude_conversation="c1").result["turns"] == []
@@ -115,16 +115,16 @@ def test_recall_reaches_the_current_chats_cut_turns_only(index):
     remember_turn(index, "other", "Budget for the trip?", "The trip budget is 5 thousand.",
                   when="2026-10-02T09:00:00.000+05:30")
     nothing_cut = recall(index, "budget", exclude_conversation="this").result["turns"]
-    assert {t["conversation"] for t in nothing_cut} == {"other"}
+    assert {t["source"] for t in nothing_cut} == {"conversation other"}
     cut = recall(index, "budget", exclude_conversation="this", visible_since="2026-10-04T12:00:00.000+05:30")
-    found = {(t["conversation"], t["when"]) for t in cut.result["turns"]}
+    found = {(t["source"].removeprefix("conversation "), t["when"]) for t in cut.result["turns"]}
     assert found == {("other", "2026-10-02 09:00"), ("this", "2026-10-04 10:37")}  # not the turn still in view
 
 
 def test_documents_and_chats_do_not_mix(ws, index, policy):
     remember_turn(index, "c1", "Tell me about phone returns", "Opened phones can be returned within 14 days.")
     assert [f["path"] for f in find_files(ws, index, "phone returns").result["files"]] == ["store_policy.md"]
-    assert all(t["conversation"] == "c1" for t in recall(index, "phone returns").result["turns"])
+    assert all(t["source"] == "conversation c1" for t in recall(index, "phone returns").result["turns"])
 
 
 # ---------------------------------------------------------------- with the real embedding model

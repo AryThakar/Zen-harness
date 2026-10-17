@@ -53,6 +53,20 @@ def test_a_program_reaches_main_as_facts_not_code(ctx):
     assert ctx.ws.report("file_1").startswith("# Prints a Fibonacci number")
 
 
+def test_a_program_whose_last_run_failed_is_not_called_fixed(ctx):
+    """Measured 2026-10-17: "I fixed the indentation and ran the script successfully" - its last run had failed."""
+    broken = "def demo():\n    for x in [1, 2]:\n    print(x)\n\ndemo()\n"
+    model = ScriptedProvider([turn(call("files", mode="write", name="work/demo.py", content=broken)),
+                              turn(call("run", file="work/demo.py")),
+                              done("I fixed the indentation error and the script ran successfully."),
+                              done("demo.py still fails with an IndentationError at line 3: the loop body needs "
+                                   "indenting.")])
+    out = run_worker(model, ENGINEER, "make demo.py run", ctx)
+    sent_back = model.requests[3]["messages"][-1]["content"]  # the finish's result: sent back, with why
+    assert "the latest run of work/demo.py" in sent_back and "IndentationError" in sent_back
+    assert out["answer"].startswith("demo.py still fails")  # said plainly: it stands
+
+
 def test_the_next_task_goes_on_from_the_file(ctx):
     run_worker(ScriptedProvider([turn(call("files", mode="write", name="fib.py", content=FIB)),
                                  turn(call("run", file="fib.py")), done()]), ENGINEER, "fib", ctx)
@@ -110,7 +124,7 @@ def test_a_full_conversation_finishes_with_what_is_done(ctx):
                               turn(call("run", file="big.py")),
                               turn(call("files", mode="write", name="big2.py", content="y = 2\n" + "# more\n" * 600)),
                               done("Wrote both.")])
-    model.slot_tokens, model.max_tokens = 9_500, 500  # a small slot: the prompt (~6,400) and one file fit, two do not
+    model.slot_tokens, model.max_tokens = 10_400, 500  # a small slot: the prompt (~7,300) and one file fit, two do not
     out = run_worker(model, ENGINEER, "write two files", ctx)
     sent = [m for r in model.requests for m in r["messages"]]
     assert any("shortened here: the rest is in the file" in json.dumps(m.get("tool_calls") or []) for m in sent)

@@ -29,7 +29,7 @@ from scipy import stats
 
 from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
-from .periods import CODE, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq
+from .periods import CODE, WORD, bucket, coarsest, default_agg, drop_partial_edges, full_range, native_freq
 from .values import parse_dates
 from .workspace import Workspace, resolve_column
 
@@ -47,13 +47,15 @@ SERIES, VALUE = "__column__", "__value__"  # several y columns, stacked into one
 
 @tool
 def make_chart(ws: Workspace, data: str, type: ChartType, x: str | None = None, y: str | None = None,
-               by: str | None = None, agg: Agg = "sum", time_unit: TimeUnit = "auto", top: int = 20,
+               by: str | None = None, agg: Agg | None = None, time_unit: TimeUnit = "auto", top: int = 20,
                stacked: bool = False, title: str | None = None, also_y: list[str] | None = None) -> ToolResult:
-    """Draw a chart of a table: line, area, bar, scatter, histogram, box, heatmap or pie - kept as a chart file."""
+    """Draw a chart of a table: line, area, bar, scatter, histogram, box, heatmap or pie - kept as a chart file.
+    agg omitted: the mean for levels (a price, a rate), else the sum (periods.default_agg)."""
     df = ws.table(data)
     if also_y and not y:
         raise ToolError("also_y draws beside y: give the first number column as y.", field="also_y")
     ys = list(dict.fromkeys(([y] if y else []) + list(also_y or [])))
+    agg = agg or default_agg(ys)
     if x is None and not (type == "box" and ys):
         raise ToolError(f"A {type} chart needs x (a column).", field="x")
     x = resolve_column(df, x, "x") if x else None
@@ -209,9 +211,12 @@ def _line(df, x, y, agg, time_unit, by, order=None):
     else:
         table = _combine(frame.groupby(key), y, agg).to_frame("value")
     table = table.sort_index()
+    # One row per period (and group): nothing was combined - a series already per day (prices, readings, totals), whose
+    # missing period is unknown, not zero (measured: a share's close drawn down to 0 on a holiday)
+    combined = bool((frame.groupby([key, frame[by]]) if by else frame.groupby(key)).size().max() > 1)
     if is_date:
         table = table.reindex(full_range(table.index, freq))
-        if agg in ("sum", "count"):
+        if agg == "count" or (agg == "sum" and combined):
             table = table.fillna(0.0)  # no rows in a period = nothing happened
             kept, edge_notes = drop_partial_edges(table.iloc[:, 0], frame[x], freq)
             table, notes = table.loc[kept.index], notes + edge_notes

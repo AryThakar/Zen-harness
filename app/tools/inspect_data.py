@@ -63,11 +63,13 @@ def inspect_data(ws: Workspace, data: str) -> ToolResult:
     sample = df.head(SAMPLE_ROWS).astype(object).where(df.head(SAMPLE_ROWS).notna(), None).to_dict("records")
     # Remembered on the table, so tools working on it can warn until a cleaned copy is used. (Repeats that
     # may be real are not a problem until the user says they are copies.)
-    ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions if not q.get("optional")])
+    skipped = ws.skipped_note(data)
+    ws.set_meta(data, "issues", [s["why"] for s in steps] + [q["question"] for q in questions if not q.get("optional")]
+                + ([skipped] if skipped else []))
     roles = table_roles(ws, data, df)
     result = {"data": data, "name": ws.entry(data)["name"], "rows": len(df), "columns": columns, "roles": roles,
               "duplicate_rows": duplicates, "sample_rows": sample, "suggested_steps": steps, "questions": questions}
-    note = " ".join(filter(None, [missing_note, split_time_note(df, data), *role_notes(df, roles)]))
+    note = " ".join(filter(None, [skipped, missing_note, split_time_note(df, data), *role_notes(df, roles)]))
     if note:
         result["note"] = note
     role_of = {column: role for role, column in roles.items()}

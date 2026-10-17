@@ -30,7 +30,7 @@ from app.tools.workspace import ITEM_REF, present
 
 from ..context import (IMAGES_SHOWN, context_block, counter, fewer_images, now_line, prompt_limit, shorten_call_args,
                        shorten_tool_results)
-from ..prompts import FIX_FINISH, FULL, HELPER_CUT_OFF, NO_CALL, PICTURES, STEPS_LEFT, call_cut_off
+from ..prompts import FIX_FINISH, FULL, HELPER_CUT_OFF, NO_CALL, PICTURES, SHORT_FINISH, STEPS_LEFT, call_cut_off
 from ..registry import ToolContext, execute, split_confirm, typed_optionals
 from .contracts import BRIEF, DELEGATE_OF, MAX_ASKS, Profile, WebResult, WorkResult
 from .evidence import SEARCHES_BEFORE_READING, Trace, _guessed, _repeat, _unread, _uninspected
@@ -165,8 +165,11 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     retried, shortened, cut = False, 0, 0
     cuts: list[dict] = []  # the cut-offs in a row: each one's cut call ({} for one cut while thinking)
     progress({"type": "worker_start", "worker": profile.name, "task": task, "limit": limit})
-    for step in range(profile.max_steps + 1):
-        last = step == profile.max_steps
+    short_again = False  # the last step's finish was cut off: one step more, for a short one (SHORT_FINISH)
+    for step in range(profile.max_steps + 2):
+        if step > profile.max_steps and not short_again:
+            break
+        last = step >= profile.max_steps
         visible, shortened = shorten_tool_results(fewer_images(messages), limit, count, shortened)
         if count(visible) > limit:  # results shortened and still too long: the calls' own long texts next
             visible, cut = shorten_call_args(visible, limit, count, cut)
@@ -198,6 +201,12 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task,
                          stopped=f"its replies ran past the length limit {len(cuts)} times in a row")
         if not turn.tool_calls:  # cut off by the length limit (a call is required otherwise)
+            if last and not short_again:  # measured 2026-10-17: 9 searches and 14 pages read, the finish cut off
+                # by the length limit, and main got an empty answer - and ran the whole search again
+                short_again = True
+                messages.append({"role": "user", "content": SHORT_FINISH.format(finish=profile.finish)})
+                progress({"type": "worker_hint", "worker": profile.name, "text": messages[-1]["content"]})
+                continue
             if last:
                 return _done(ctx, profile, {"answer": ""}, trace, ["the helper ran out of steps without finishing"],
                              task=task)
@@ -243,6 +252,11 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             elif call["name"] == "web_search" and not confirmed and trace.searches_in_a_row >= SEARCHES_BEFORE_READING:
                 trace.not_run += 1
                 result = _read_instead(trace)
+            elif (call["name"] in ("web_search", "read_webpage") and trace.table_pages and not trace.table_said
+                  and not confirmed):
+                trace.not_run += 1
+                trace.table_said = True  # said once: a wall refused ten calls in a row (measured), a nudge doesn't
+                result = _table_found(trace)
             elif isinstance(args, dict) and (repeat := _repeat(trace, call["name"], args, confirmed)):
                 result = repeat
                 trace.not_run += 1
@@ -317,6 +331,17 @@ def _approved(ctx: ToolContext, profile: Profile, result: ToolResult) -> ToolRes
         ctx.emit({"tool": f"{profile.name}_worker", **shown})
     return ToolResult("ok" if told.get("allowed") and told.get("status") != "failed" else "failed",
                       {k: v for k, v in told.items() if k != "status"})
+
+
+def _table_found(trace: Trace) -> ToolResult:
+    """A page read already holds the data table: finish with it, instead of hunting its rows elsewhere (measured
+    2026-10-17, twice: the table found at 77 s, then 6 more minutes of searches and reads for single days' closes - the
+    prompt's 'one such page is enough' did not stop it)."""
+    page = trace.table_pages[0]
+    return ToolResult("invalid_arguments", {"error": {"message": (
+        f"Not run: {page} already holds the data table - main brings it in exact, every row. Give its link in "
+        "downloads and call submit_result now, with a short summary. If the task needs another table (another "
+        "company, another period), make the same call with confirm: true.")}})
 
 
 def _read_instead(trace: Trace) -> ToolResult:

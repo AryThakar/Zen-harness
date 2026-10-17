@@ -382,8 +382,10 @@ details.fold summary::before { content: ""; width: 6px; height: 6px; border: sol
 details.fold[open] summary::before { transform: rotate(45deg); }
 details.fold summary:hover { color: var(--ink); }
 details.fold pre.code { margin-top: 8px; border-radius: 10px; background: var(--code); box-shadow: 0 0 0 1px var(--line); }
-.diagram { display: grid; place-items: center; min-height: 120px; margin-top: 10px; overflow-x: auto; }  /* full size: a wide one scrolls, never shrinks */
-.diagram svg { flex: none; }
+/* a wide diagram fits the card, whole (measured: a 2,203 px flowchart centred in a 374 px card overflowed on both sides -
+   its left half out of scroll's reach - and showed blank); a click opens it larger, to zoom */
+.diagram { display: grid; place-items: safe center; min-height: 120px; margin-top: 10px; overflow-x: auto; }
+.diagram svg { flex: none; max-width: 100%; height: auto; }
 .media { padding: 0; overflow: hidden; max-width: 460px; }
 .media img { display: block; width: 100%; height: auto; }
 .media-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; font-size: 13px; color: var(--muted); }
@@ -460,7 +462,7 @@ button:focus-visible, .opt:focus-visible, a:focus-visible, [tabindex]:focus-visi
 .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 31; width: min(420px, 100vw); display: flex; flex-direction: column;
   background: var(--grain) fixed, var(--side-base); box-shadow: -12px 0 40px rgba(0,0,0,.25);
-  transform: translateX(105%); transition: transform .25s ease; }
+  transform: translateX(calc(100% + 64px)); transition: transform .25s ease; } /* past its shadow too */
 body.drawer-open .scrim { opacity: 1; pointer-events: auto; }
 body.drawer-open .drawer { transform: none; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 10px 8px 18px; }
@@ -480,6 +482,9 @@ body.drawer-open .drawer { transform: none; }
 .work-sec > summary::-webkit-details-marker { display: none; }
 .work-sec > summary > span:first-child::after { content: " ▸"; }
 .work-sec[open] > summary > span:first-child::after { content: " ▾"; }
+.work-count { display: inline-flex; align-items: center; gap: 10px; }
+.work-clear { padding: 2px 10px; border-radius: 999px; font-size: 12.5px; color: var(--muted); background: var(--hover); }
+.work-clear:hover, .work-clear:focus-visible { color: var(--red); background: var(--active); }
 .item { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; }
 .item:hover { background: var(--hover); }
 .item > div { flex: 1; min-width: 0; }
@@ -586,6 +591,9 @@ kbd.key { display: inline-grid; place-items: center; min-width: 18px; height: 18
 .viewer-video { aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 24px 70px rgba(0, 0, 0, .45); }
 .viewer-video > iframe, .viewer-video > video { display: block; width: 100%; height: 100%; border: 0; }
 .viewer.is-video .viewer-zoom { display: none; }
+/* where the browser refuses full screen, the player fills the viewer under its title bar (viewer.js, theater) */
+.viewer.theater .viewer-item { transform: none !important; inset: 0; width: 100%; height: 100%; padding: 0 12px 12px; }
+.viewer.theater .viewer-video { width: 100% !important; height: 100%; aspect-ratio: auto; border-radius: 8px; }
 .viewer.is-video .viewer-item { cursor: default; }
 .viewer-panel .card { margin: 0; padding: 0; background: none; box-shadow: none; }
 :root .viewer .viewer-panel .plot { height: 440px; }  /* above the native layout's chart height */
@@ -779,12 +787,15 @@ body.fv-full .fv-wide .a { transform: rotate(180deg); }
 .grid-view tr:hover td { background: var(--hover); }
 
 /* HTML: run in a sealed frame - its own scripts only, no network, no access to the app (files.js) */
-.html-view { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
-.html-frame { position: relative; width: 100%; height: 100%; }
+.html-view { width: 100%; height: 100%; border: 0; display: block; background: var(--surface); transform-origin: 0 0; }
+.html-frame { position: relative; width: 100%; height: 100%; overflow: hidden; }  /* a page scaled down to fit (files.js) */
 .html-frame .frame-full { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 9px; display: grid;
   place-items: center; color: #fff; background: rgba(0, 0, 0, .55); opacity: .75; transition: opacity .15s; }
 .html-frame .frame-full:hover, .html-frame .frame-full:focus-visible { opacity: 1; }
 .html-frame .frame-full svg.i { width: 16px; height: 16px; stroke-width: 2.4; }
+.html-frame.max { position: fixed; inset: 0; z-index: 70; width: auto; height: auto; aspect-ratio: auto; max-width: none;
+  margin: 0; border-radius: 0; background: #fff; }
+.html-frame.max .frame-full { top: 12px; right: 12px; opacity: 1; }
 /* in the chat: the page under its file's card, 16:10, never wider than the chat */
 .html-live { flex-basis: 100%; width: 100%; aspect-ratio: 16 / 10; max-height: 460px; margin-top: 10px; border-radius: 12px;
   overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
@@ -955,6 +966,7 @@ body.landed .side, body.landed .main { animation: none; }
 .chat-row .del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 8px;
   display: none; place-items: center; color: var(--soft); }
 .chat-row:hover .del, .chat-row:focus-within .del { display: grid; }
+@media (hover: none) { .chat-row.on .del { display: grid; } }  /* touch has no hover: the open chat's is always there */
 .chat-row .del:hover { color: var(--red); background: var(--hover); }
 .chat-row .del svg.i { width: 16px; height: 16px; }
 .chat-empty { padding: 10px; font-size: 13.5px; color: var(--soft); }
@@ -1128,6 +1140,11 @@ body.busy .send { opacity: 1 !important; cursor: pointer; }
 .foot { margin-top: 2px; }
 .act-head .spin { display: inline-flex; }
 .activity:not(.running) .spin, .activity:not(.running) .timer { display: none; }
+/* the model's words between its steps (steps.js note): quiet, a few lines, the whole on hover */
+.step-say { margin: 4px 0 8px 2px; color: var(--muted); font-size: 13.5px; line-height: 1.5; display: -webkit-box;
+  -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.step-say.draft { padding-left: 10px; border-left: 2px solid var(--line); }
+.step-say b { font-weight: var(--w-strong); color: var(--soft); }
 .activity.running .chev-wrap { opacity: .6; }
 .chev-wrap { display: inline-flex; }
 .table-wrap.mini-wrap { margin: 6px 0 0; }
@@ -1139,7 +1156,7 @@ body.busy .send { opacity: 1 !important; cursor: pointer; }
 .outputs img { height: auto; }
 /* a site's icon: on a light backing in dark, where a dark icon would vanish */
 :root:not([data-theme="light"]) img.fav { background: #f2f2f2; padding: 2px; border-radius: 5px; }
-.answer .cite { white-space: nowrap; }
+.answer .cite { white-space: nowrap; cursor: pointer; }  /* opens the file it names (app.js) */
 .fav.letter { background: var(--hover); color: var(--muted); }
 img.fav { object-fit: contain; }
 .site .fav { background: none; }

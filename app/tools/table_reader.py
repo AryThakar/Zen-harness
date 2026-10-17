@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,17 +131,21 @@ def _read_csv(path: Path) -> RawTable:
 
     bad_lines: list[tuple[int, list[str]]] = []
     try:
-        df = pd.read_csv(
-            io.StringIO(text), sep=delimiter, skiprows=header_idx, header=0, dtype=str,
-            keep_default_na=False, skip_blank_lines=False, index_col=False,
-        )
+        with warnings.catch_warnings():
+            # A row wider than the header only warns, and pandas cuts it (measured: '16 Sep 2026,1,25,010' under
+            # 'Date,Close' was read as a close of 1): such rows go to the tolerant read, set aside and reported.
+            warnings.simplefilter("error", pd.errors.ParserWarning)
+            df = pd.read_csv(
+                io.StringIO(text), sep=delimiter, skiprows=header_idx, header=0, dtype=str,
+                keep_default_na=False, skip_blank_lines=False, index_col=False,
+            )
         # With blank lines kept, data row i sits on file line header + 2 + i -
         # unless a quoted value spans lines; then count lines the slow way.
         if '"' in text and df.apply(lambda col: col.str.contains("\n", regex=False)).to_numpy().any():
             df.index = _record_lines(text, delimiter, header_idx)[:len(df)]
         else:
             df.index = range(header_idx + 2, header_idx + 2 + len(df))
-    except pd.errors.ParserError:
+    except (pd.errors.ParserError, pd.errors.ParserWarning):
         df, bad_lines = _read_csv_tolerant(lines, delimiter, header_idx)
 
     return _finish(df, header_idx + 1, bad_lines, encoding=encoding, delimiter=delimiter)

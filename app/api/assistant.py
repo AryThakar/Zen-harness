@@ -53,7 +53,7 @@ from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
 from app.assistant.store import Store
 from app.config import settings
-from app.tools import agent_md, caption, console, file_ops, filetypes
+from app.tools import agent_md, approval, caption, console, file_ops, filetypes
 from app.tools import files as files_tool
 from app.tools import web
 from app.tools.core import ToolError, jsonable
@@ -325,8 +325,9 @@ def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
                     raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
                                         f"The file is larger than {limit // (1 << 20)} MB.")
                 out.write(chunk)
-        try:
-            kept = files_tool.store_file(ws, index, path, by="user")
+        try:  # a document's meaning-search vectors come after the answer, in the background (refresh, below):
+            # measured 2026-10-17, a 1,923-page PDF kept the upload - and the message waiting on it - for minutes
+            kept = files_tool.store_file(ws, index, path, by="user", embed=False)
         except ToolError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message) from exc
     if kept.get("same"):  # the same bytes are here already: that file, not a copy
@@ -338,6 +339,7 @@ def upload(ws_id: str, file: UploadFile, request: Request) -> dict:
         if named:
             kept.update(named)
     _store(request).sync_items(ws_id)  # searchable by what it shows, holds or says
+    _store(request).refresh(ws_id)  # a document's vectors, in the background
     return kept
 
 
@@ -347,6 +349,27 @@ def _item(request: Request, ws_id: str, item_id: str):
     if not ITEM.match(item_id) or item_id not in ws.ids():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such item.")
     return ws
+
+
+@router.delete("/workspaces/{ws_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(ws_id: str, item_id: str, request: Request) -> Response:
+    """The user deletes a file from the file panel (the page asks first) - before, only asking Zen could. agent.md
+    stays: it is the project's memory (its text is cleared instead)."""
+    ws = _item(request, ws_id, item_id)
+    if agent_md.is_agent(ws.entry(item_id)["name"]):
+        raise HTTPException(status.HTTP_409_CONFLICT, "agent.md is Zen's memory for this project: clear its text instead.")
+    approval.delete(ws, _store(request).open(ws_id)[1], [item_id])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/workspaces/{ws_id}/working")
+def clear_working(ws_id: str, request: Request) -> dict:
+    """Zen's working files - work/: the helpers' scripts and in-between tables - deleted at once (the page asks first);
+    the user's own files and what the answers made stay."""
+    _workspace(request, ws_id)
+    ws, index = _store(request).open(ws_id)
+    working = [k for k in ws.ids() if ws.entry(k)["name"].startswith("work/")]
+    return {"deleted": len(approval.delete(ws, index, working).result["deleted"])}
 
 
 @router.get("/workspaces/{ws_id}/items/{item_id}/file")

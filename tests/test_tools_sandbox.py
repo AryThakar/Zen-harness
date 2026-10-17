@@ -50,6 +50,11 @@ def test_open_figures_are_saved_once(ws):
     assert [f["path"] for f in in_work["files"]] == ["work/line.png"]
     left_open = run_python(ws, plot + "plt.show()", name="work/look.py").result
     assert [f["path"] for f in left_open["files"]] == ["work/figure_1.png"]
+    # a run that failed leaves no picture: its figure is half drawn (measured: empty axes shown as figure_1.png)
+    crashed = run_python(ws, "import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\n1 / 0", name="work/bad.py")
+    assert crashed.result.get("files", []) == [] and "ZeroDivisionError" in crashed.result["errors"]
+    ended = run_python(ws, plot + "import sys\nsys.exit(0)", name="ends.py").result  # sys.exit(0) finished it
+    assert [f["path"] for f in ended["files"]] == ["figure_1.png"]
 
 
 def test_a_missing_module_is_said_once_with_what_is_installed(ws):

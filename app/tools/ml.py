@@ -171,7 +171,12 @@ def predict(ws: Workspace, data: str, target: str, features: list[str] | None = 
     time_col = _time_column(df, time_column)
     frame = df.dropna(subset=[target])
     if len(frame) < MIN_ROWS:
-        raise ToolError(f"Only {len(frame)} rows have {target}; learning it needs at least {MIN_ROWS}.", invalid=False)
+        # What can still be said, with it (measured 2026-10-17: refused at 17 bills, the analyst fitted a ridge
+        # regression on them in a script and reported its coefficients as the drivers)
+        raise ToolError(f"Only {len(frame)} rows have {target}; learning it needs at least {MIN_ROWS}, so no model "
+                        "here would be reliable - say so. What goes with a higher or lower value can still be shown, as "
+                        f"associations: compare(question='correlation', columns=[a number column, '{target}']) or "
+                        f"(question='difference', columns=[a category, '{target}']), one candidate each.", invalid=False)
     notes = []
     if len(frame) > MAX_TRAIN:
         notes.append(f"Learned and tested on a random {MAX_TRAIN:,} of the {len(frame):,} rows with {target}.")

@@ -18,6 +18,9 @@ from ..registry import CONFIRMABLE, ToolContext
 
 SCRIPT_TOOLS = ("run",)  # a run of the same file can give a new result once the file or its inputs changed
 SEARCHES_BEFORE_READING = 3  # web searches in a row before the next one is refused: read a page they found
+# A page table this long is a series - a month of trading days is ~21 rows - and ends the hunt for its rows; a
+# shorter one (measured: a quote page's 7-row order book) may not be the data the task needs.
+SERIES_ROWS = 15
 
 
 @dataclass
@@ -49,10 +52,16 @@ class Trace:
     searches_in_a_row: int = 0  # web searches since the last page read
     listed: dict[str, int] = field(default_factory=dict)  # page -> how many searches listed it
     last_output: str = ""  # what the latest run printed
+    table_pages: list[str] = field(default_factory=list)  # pages read holding a table of SERIES_ROWS+ rows (data_table)
+    table_said: bool = False  # the helper was told once to finish with that page (runner._table_found)
+    run_files: dict[str, str | None] = field(default_factory=dict)  # program -> its latest run's error (None: it ran)
 
     def add(self, name: str, args: dict, result: ToolResult) -> None:
         self.calls[_call_key(name, args)] = result
         self.counts[name] = self.counts.get(name, 0) + 1
+        held = re.search(r"\((\d+) rows", str(result.result.get("data_table") or ""))
+        if name == "read_webpage" and held and int(held.group(1)) >= SERIES_ROWS and result.result.get("url"):
+            self.table_pages.append(result.result["url"])
         if name in ("make_chart", "forecast") and result.status in ("ok", "partial") and result.artifact:
             self.charts += 1
         self.outputs.append(json.dumps(result.result, ensure_ascii=False, default=str))
@@ -104,6 +113,8 @@ class Trace:
             self.python_runs.append(((result.artifact or {}).get("code", ""), result.status == "ok"))
             self.python_outputs.append(res.get("output", ""))
             self.last_output = res.get("output", "") or self.last_output
+            if args.get("file"):  # each program's latest run, and why it failed
+                self.run_files[str(args["file"])] = None if result.status == "ok" else _last_error(res)
 
     def cited(self, source) -> str | None:
         """The page a finish cites: by the number its read gave it, or by its link as read; None otherwise."""
@@ -112,6 +123,13 @@ class Trace:
             return self.pages[n - 1] if 1 <= n <= len(self.pages) else None
         url = str(source).strip()
         return url if url in self.read_urls else None
+
+
+def _last_error(res: dict) -> str:
+    """A failed run's error, by its last line (the exception), short."""
+    said = str(res.get("errors") or (res.get("error") or {}).get("message") or "it failed")
+    lines = [ln.strip() for ln in said.strip().splitlines() if ln.strip()]
+    return (lines[-1] if lines else "it failed")[:160]
 
 
 def _unread(trace: Trace) -> list[str]:

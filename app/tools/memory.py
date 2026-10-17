@@ -68,7 +68,9 @@ def recall(index: SearchIndex, query: str, k: int = 4, exclude_conversation: str
                           "otherwise say so - don't guess what was said.")
         return ok(result)
     hits.sort(key=lambda h: h.created)  # relevance picked them; shown in the order they were said
-    result["turns"] = [{"when": h.created[:16].replace("T", " "), "conversation": h.ref,
+    # Each turn names its source as the helper's sources must copy it (measured 2026-10-17: with none shown, the
+    # helper cited "recall: query='...'", was refused twice and its answer went back as partial)
+    result["turns"] = [{"source": f"conversation {h.ref}", "when": h.created[:16].replace("T", " "),
                         "text": h.text if len(h.text) <= MAX_TEXT else h.text[:MAX_TEXT] + " ..."} for h in hits]
     result["note"] = ("Earlier turns as they were said, " + ("oldest first: where they differ, a later one supersedes "
                       "an earlier one. " if len(hits) > 1 else "") + "Mention when, and that things may have changed since.")

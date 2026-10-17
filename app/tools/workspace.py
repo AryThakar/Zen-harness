@@ -466,6 +466,16 @@ class Workspace:
     def column_notes(self, key: str) -> dict[str, dict]:
         return self.entry(key).get("meta", {}).get("columns", {})
 
+    def skipped_note(self, key: str) -> str | None:
+        """Rows set aside when the table was read - wider than its header (measured: a close written 1,25,010 split
+        into three values) - said, not lost in silence."""
+        lines = self.entry(key).get("meta", {}).get("skipped_lines") or []
+        if not lines:
+            return None
+        shown = ", ".join(map(str, lines[:8])) + (" ..." if len(lines) > 8 else "")
+        return (f"{len(lines)} row(s) had more values than the header and were left out (file lines {shown}): a value "
+                "with commas in it (1,25,010) must be in quotes, or written without the commas.")
+
     def issues_warning(self, key: str) -> str | None:
         """For results computed on a table that inspect_data found problems in (summary rows, numbers
         stored as text, duplicates ...): say so, so the numbers aren't trusted as they are."""

@@ -74,7 +74,7 @@ async function drawMermaid(box, code, failed) {
     mermaid ??= (await import("https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.esm.min.mjs")).default;
     const dark = document.documentElement.dataset.theme !== "light";
     mermaid.initialize({ startOnLoad: false, securityLevel: "strict", suppressErrorRendering: true, theme: "base",
-      flowchart: { curve: "basis", padding: 14, useMaxWidth: false },  // full size: a wide one scrolls, never shrinks
+      flowchart: { curve: "basis", padding: 14, useMaxWidth: false },  // its own size; the card fits it (app.css .diagram)
       themeVariables: { darkMode: dark, fontFamily: css("--font"), fontSize: "14px", primaryColor: css("--bubble"), primaryTextColor: css("--ink"),
         primaryBorderColor: css("--data"), lineColor: css("--soft"), secondaryColor: css("--surface"), tertiaryColor: css("--surface"),
         edgeLabelBackground: css("--surface") } });

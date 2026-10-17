@@ -81,6 +81,17 @@ def test_read_in_lines_with_the_next_step(ws, index):
     assert run(ws, index, "read").result["error"]["message"] == "read needs name: a file's name, e.g. 'report.md'."
 
 
+def test_a_kind_word_inside_a_term_does_not_filter_the_search(ws, index):
+    """Measured 2026-10-17: 'K28 D-code disparity 8b/10b' searched code files only ('code' in D-code), and the PDF
+    holding the K-codes was reported 'not searchable'."""
+    run(ws, index, "write", name="spec.md", content="# 8b/10b\n\nK28.5 is the COM symbol; running disparity balances it.")
+    run(ws, index, "write", name="work/demo.py", content="print('K28.5 demo')\n")
+    hits = find_files(ws, index, "K28 D-code disparity 8b/10b").result
+    assert hits["files"][0]["path"] == "spec.md" and "note" not in hits
+    pictures = find_files(ws, index, "pictures of the K28.5 disparity").result  # no picture: the files that match
+    assert pictures["files"][0]["path"] == "spec.md" and pictures["note"].startswith("No image file matches")
+
+
 def test_write_new_files_by_kind(ws, index):
     md = run(ws, index, "write", name="report", content="# Sales\n\nRevenue grew in **March**.").result
     assert md["name"] == "report.md" and md["kind"] == "document"  # no suffix: Markdown, and searchable
@@ -213,3 +224,32 @@ def _png() -> bytes:
     out = io.BytesIO()
     Image.new("RGB", (4, 4), "red").save(out, "PNG")
     return out.getvalue()
+
+
+# ---------------------------------------------------------------- a page Zen writes is checked before it is "ready"
+
+BROKEN_GAME = ("<button id=start>Start Game</button><p id=say>Press start</p><script>\n"
+               "async function play() { document.getElementById('say').textContent = 'Shuffling'; await sleep(300); }\n"
+               "document.getElementById('start').onclick = play;\n</script>")
+
+
+def test_a_page_that_fails_when_used_comes_back_broken(ws, index, monkeypatch):
+    """Measured 2026-10-17: a cup game parsed, but Start died on 'sleep is not defined' and Zen said it was ready."""
+    from app.tools import browser
+    monkeypatch.setattr(browser, "try_page", lambda html: {"errors": ["sleep is not defined"], "clicked": ["Start Game"]})
+    r = files(ws, index, "write", name="cups.html", content=BROKEN_GAME)
+    assert r.result["broken"] == ("cups.html fails when used: sleep is not defined (tried in a browser: after 'Start "
+                                  "Game'). Fix it with files(mode='edit') before saying it works.")
+    monkeypatch.setattr(browser, "try_page", lambda html: {"errors": [], "clicked": ["Start Game", "cup"]})
+    fine = files(ws, index, "write", name="ok.html", content="<button>Start</button>")
+    assert "broken" not in fine.result and "2 controls clicked - with no errors" in fine.result["not_run"]
+
+
+@pytest.mark.real_browser
+def test_the_real_browser_catches_what_only_using_the_page_shows():
+    from app.tools import browser
+    if not browser.available():
+        pytest.skip("no headless browser here")
+    tried = browser.try_page(BROKEN_GAME)
+    assert tried and tried["errors"] == ["sleep is not defined"] and "Start Game" in tried["clicked"]
+    assert browser.try_page("<button onclick=\"this.textContent='Done'\">Go</button>")["errors"] == []

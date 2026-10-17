@@ -140,7 +140,17 @@ export function activityEl(onStatus = () => {}) {
     el, steps,
     running(text) { unpause(); el.hidden = false; el.classList.remove("done", "waiting"); el.classList.add("running"); say.classList.add("shimmer"); tell(text); },
     checking() { view.running("Checking the answer…"); },  // a hidden check sent the model back: say so, not a stuck reply
-    writing() { if (!steps.size) el.hidden = true; else { view.fold(); view.running("Writing…"); } },
+    // the steps stay open while the turn works (they fold when it is done): folding at every word written between
+    // steps collapsed the list into one line, again and again (measured 2026-10-17)
+    writing() { if (!steps.size) el.hidden = true; else view.running("Writing…"); },
+    // what the model said between its steps ("Let me rewrite it…") - part of the work, so it goes with the steps, not
+    // in the answer, where the next reply replaced it; a draft the app's check sent back the same way
+    note(text, draft = false) {
+      const plain = text.replace(/\*\*|__|`/g, "").trim();
+      if (!plain) return;
+      body.append(h("div", { class: `step-say${draft ? " draft" : ""}`, title: plain },
+        draft ? h("b", {}, "First answer, sent back by the app's check: ") : null, plain));
+    },
     composing(d) { composed = d; view.running(composing(d)); },  // main writing a call: its file
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
@@ -233,11 +243,13 @@ export function activityEl(onStatus = () => {}) {
     finish(seconds) {  // seconds: a live turn's length (a saved chat has none)
       clearInterval(tick);
       const all = [...steps.values()];
-      if (!all.length) { el.remove(); return; }
+      const drafted = body.querySelector(".step-say.draft");  // a reply the check sent back, without tool steps
+      if (!all.length && !drafted) { el.remove(); return; }
       el.hidden = false;
       el.classList.remove("waiting", "running");
       el.classList.add("done");
       say.classList.remove("shimmer");
+      if (!all.length) { tell("Answer checked and written again"); view.fold(); return; }
       const failed = all.filter(s => s.el.classList.contains("err")).length;
       tell([seconds ? `Worked for ${clock(seconds)}` : null, plural(all.length, "step"), helperActions ? plural(helperActions, "helper action") : null,
             failed ? `${failed} didn't work` : null].filter(Boolean).join(" · "));

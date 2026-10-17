@@ -35,12 +35,12 @@ from scipy import stats
 from .chart_image import save_chart
 from .core import ToolError, ToolResult, number, ok, tool
 from .periods import (CODE, OFFSET, WORD, bucket, coarsest, drop_partial_edges, full_range, native_freq,
-                      split_dates, split_time)
+                      default_agg, split_dates, split_time, weekdays_only)
 from .roles import table_roles
 from .workspace import Workspace, resolve_column
 
-SEASON = {"D": 7, "W": 52, "M": 12, "Q": 4, "Y": 1}
-HORIZON = {"D": 14, "W": 8, "M": 6, "Q": 4, "Y": 2}
+SEASON = {"D": 7, "W": 52, "M": 12, "Q": 4, "Y": 1, "B": 5}
+HORIZON = {"D": 14, "W": 8, "M": 6, "Q": 4, "Y": 2, "B": 5}  # a weekdays-only series: the coming week
 MIN_POINTS = 10
 MAX_GROUPS = 5
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -51,14 +51,16 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 @tool
 def forecast(ws: Workspace, data: str, date: str | None = None, value: str | None = None, horizon: int | None = None,
              time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = "auto",
-             agg: Literal["sum", "mean", "last", "count"] = "sum", by: str | None = None) -> ToolResult:
-    """Forecast ``value`` (combined per period by ``agg``; row count without value), with its trend."""
+             agg: Literal["sum", "mean", "last", "count"] | None = None, by: str | None = None) -> ToolResult:
+    """Forecast ``value`` (combined per period by ``agg``: omitted, the mean for a level - a price, a rate - else the
+    sum; row count without value), with its trend."""
     df = ws.table(data)
     df, date, made = _date_column(ws, data, df, date)
     if value:
         value = resolve_column(df, value, "value")
         if not pd.api.types.is_numeric_dtype(df[value]) or pd.api.types.is_bool_dtype(df[value]):
             raise ToolError(f"'{value}' is not a number column.", field="value")
+        agg = agg or default_agg([value])
     else:
         agg = "count"
     by = resolve_column(df, by, "by") if by else None
@@ -69,6 +71,10 @@ def forecast(ws: Workspace, data: str, date: str | None = None, value: str | Non
     label = value or "rows"
     warning = ws.issues_warning(data)
     notes = made + ([warning] if warning else [])
+    if freq == "D" and weekdays_only(frame[date]):  # trading or office days: a weekend is no gap
+        freq = "B"
+        notes.append("The dates are weekdays only (trading or office days): weekends are not gaps, and the forecast "
+                     "is for the coming weekdays.")
     if by:
         return _by_group(ws, frame, date, value, by, agg, freq, horizon, data, label, notes)
     y, series_notes = _series(frame, date, value, agg, freq)
@@ -346,17 +352,17 @@ def _season_facts(y: pd.Series, freq: str) -> dict:
 
 
 def _positions(index: pd.DatetimeIndex, freq: str) -> np.ndarray:
-    return {"D": index.dayofweek, "W": np.minimum(index.isocalendar().week.to_numpy(), 52),
+    return {"D": index.dayofweek, "B": index.dayofweek, "W": np.minimum(index.isocalendar().week.to_numpy(), 52),
             "M": index.month, "Q": index.quarter}[freq]
 
 
 def _season_word(freq: str) -> str:
-    return {"D": "weekly", "W": "yearly, by week", "M": "yearly", "Q": "yearly"}[freq]
+    return {"D": "weekly", "B": "weekly", "W": "yearly, by week", "M": "yearly", "Q": "yearly"}[freq]
 
 
 def _position_name(p, freq: str) -> str:
     p = int(p)
-    return {"D": lambda: WEEKDAYS[p], "W": lambda: f"week {p}", "M": lambda: MONTHS[p - 1],
+    return {"D": lambda: WEEKDAYS[p], "B": lambda: WEEKDAYS[p], "W": lambda: f"week {p}", "M": lambda: MONTHS[p - 1],
             "Q": lambda: f"Q{p}"}[freq]()
 
 

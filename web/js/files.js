@@ -46,14 +46,79 @@ const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" conten
   `script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; ` +
   `font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'">`;
 
+// The page around the HTML a model writes: the head, a base style and Zen's own colours as CSS variables - so the
+// model writes only what is on the page (its HTML, <style> and <script>) and it looks like Zen in either theme. A
+// whole document keeps its own head, the base first so its own styles win. (The contract, for the model: the files
+// tool's HTML_PAGE in registry.py.)
+const TOKENS = { bg: "--surface", ink: "--ink", muted: "--muted", line: "--line", accent: "--accent", "on-accent": "--on-accent",
+  green: "--k-green", blue: "--k-blue", red: "--k-red", orange: "--k-orange", yellow: "--k-yellow", purple: "--k-purple" };
+function zenHead() {
+  const css = getComputedStyle(document.documentElement);
+  const vars = Object.entries(TOKENS).map(([k, v]) => `--zen-${k}:${css.getPropertyValue(v).trim()}`).join(";");
+  const scheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  return `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<style>:root{${vars};color-scheme:${scheme};scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.4) transparent}` +
+    `*,*::before,*::after{box-sizing:border-box}::-webkit-scrollbar{width:10px;height:10px}` +
+    `::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(127,127,127,.4);` +
+    `border-radius:8px;border:2px solid transparent;background-clip:padding-box}` +
+    `html,body{margin:0}body{background:var(--zen-bg);color:var(--zen-ink);` +
+    `font:16px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}img,video{max-width:100%;height:auto}` +
+    `button,input,select,textarea{font:inherit}</style>` +
+    // the page says how tall it is, so its card in the chat fits it - no scrollbar inside (htmlFrame)
+    `<script>(()=>{const say=()=>parent.postMessage({zenHeight:document.documentElement.scrollHeight},"*");` +
+    `addEventListener("load",()=>{say();new ResizeObserver(say).observe(document.body)});})()</script>`;
+}
+export function pageOf(text) {
+  const head = zenHead();
+  if (/<head[\s>]/i.test(text)) return text.replace(/<head(\s[^>]*)?>/i, m => m + head);
+  if (/<html[\s>]/i.test(text)) return text.replace(/<html(\s[^>]*)?>/i, m => `${m}<head>${head}</head>`);
+  return `<html><head>${head}</head><body>${text}</body></html>`;
+}
+// The narrowest a page is laid out: in a narrower card it is shown scaled down, whole - never cut (measured: a cup
+// game's side cups cut off in a 419 px chat)
+const DESIGN_W = 720;
+
 // An HTML file running in the sealed frame, with a full-screen button (the file panel and its card in the chat)
 export function htmlFrame(text, title) {
   const frame = h("iframe", { class: "html-view", sandbox: "allow-scripts allow-modals allow-pointer-lock",
-    srcdoc: SEALED + text, title: title || "HTML preview" });
+    srcdoc: SEALED + pageOf(text), title: title || "HTML preview" });
   const full = h("button", { class: "frame-full", type: "button", title: "Full screen", "aria-label": `Show ${title || "the page"} full screen`,
     html: svg("expand") });
-  full.addEventListener("click", () => frame.requestFullscreen?.());
-  return h("div", { class: "html-frame" }, frame, full);
+  const wrap = h("div", { class: "html-frame" }, frame, full);
+  const fit = () => {
+    const w = wrap.clientWidth, ht = wrap.clientHeight, s = Math.min(1, w / DESIGN_W);
+    if (!w || !ht) return;
+    Object.assign(frame.style, s < 1 ? { width: `${w / s}px`, height: `${ht / s}px`, transform: `scale(${s})` }
+      : { width: "", height: "", transform: "" });
+  };
+  new ResizeObserver(fit).observe(wrap);
+  // In the chat, the card is as tall as the page (as drawn, at its scale) - up to most of the window; the file
+  // panel and the filled view keep their own size
+  addEventListener("message", function sized(e) {
+    if (!wrap.isConnected && wrap.dataset.shown) return removeEventListener("message", sized);  // its card is gone
+    if (wrap.isConnected) wrap.dataset.shown = "1";
+    const tall = e.source === frame.contentWindow && Number(e.data?.zenHeight);
+    const card = wrap.parentElement;
+    if (!tall || !card?.classList.contains("html-live") || wrap.classList.contains("max")) return;
+    const s = Math.min(1, wrap.clientWidth / DESIGN_W);
+    const want = Math.min(Math.ceil(tall * s), Math.round(innerHeight * 0.8));
+    if (Math.abs(card.clientHeight - want) > 2) Object.assign(card.style, { aspectRatio: "auto", height: `${want}px`, maxHeight: "none" });
+  });
+  // Where the browser refuses full screen (an embedded browser: "Permissions check failed"), the page fills the
+  // window instead; the button or Esc puts it back
+  const fill = on => {
+    wrap.classList.toggle("max", on);
+    full.innerHTML = svg(on ? "cross" : "expand");
+    full.setAttribute("aria-label", on ? "Back to the chat" : `Show ${title || "the page"} full screen`);
+    if (on) addEventListener("keydown", esc); else removeEventListener("keydown", esc);
+  };
+  const esc = e => { if (e.key === "Escape") fill(false); };
+  full.addEventListener("click", () => {
+    if (wrap.classList.contains("max")) return fill(false);
+    frame.requestFullscreen?.()?.catch(() => {});  // granted, refused, or neither (measured): filled unless granted
+    setTimeout(() => { if (!document.fullscreenElement) fill(true); }, 300);
+  });
+  return wrap;
 }
 
 /* ═══ The file panel ════════════════════════════════════════════════════ */
@@ -65,7 +130,7 @@ const runnable = item => item?.kind === "file" && ext(item.name) === "py";
 const dirty = () => fv.editing && fv.draft !== fv.text;
 const keepOrDrop = async () => !dirty() || await confirmDialog("Discard your changes?", `${fv.item.name} has changes that aren't saved.`, "Discard");
 
-export async function openItem(item, from) {
+export async function openItem(item, from, { page = null } = {}) {  // page: where a PDF opens (a source tag's)
   const kind = shape(item);
   if (kind !== "image" && kind !== "video" && fileOpen() && !await keepOrDrop()) return;
   if (kind === "video") return openViewer(from || null, "video", { src: itemUrl(item.id), name: item.name, title: item.name });
@@ -77,11 +142,13 @@ export async function openItem(item, from) {
   if (!kind) { location.href = itemUrl(item.id); return; }
   closeDrawer();
   fv.item = item; fv.mode = "preview"; fv.text = fv.table = null; fv.editing = false; fv.output = null; fv.versions = [];
+  fv.page = page;
   if (fv.blob) { URL.revokeObjectURL(fv.blob); fv.blob = null; }
   const name = item.name || item.title || item.id;
   const icon = fileTile(item.kind === "table" ? `${name}.csv`.replace(/\.csv\.csv$/, ".csv") : name);
   $("#fvIcon").replaceWith(Object.assign(icon, { id: "fvIcon" }));
   $("#fvName").textContent = name;
+  $("#fvDelete").hidden = !!item.memory;  // agent.md is the project's memory: its text is cleared, not the file
   $("#fvMeta").textContent = "Loading…";
   $("#fvModes").hidden = !(kind === "md" || kind === "html");
   $("#fvActions").hidden = true;
@@ -122,6 +189,18 @@ export async function openItem(item, from) {
   show();
 }
 
+// The user deletes a file themselves (before, only asking Zen could), after saying yes
+async function deleteOpen() {
+  const item = fv.item;
+  if (!item || !await confirmDialog(`Delete ${item.name}?`, "It is removed from the project with its earlier versions, "
+      + "and Zen can no longer find it. This can't be undone.", "Delete")) return;
+  try { await api(`/workspaces/${state.ws.id}/items/${encodeURIComponent(item.id)}`, { method: "DELETE" }); }
+  catch (e) { toast(e.message, true); return; }
+  closeFile();
+  toast(`Deleted ${item.name}`);
+  await hooks.loadItems();
+}
+
 function show() {
   const item = fv.item, kind = shape(item), body = $("#fvBody");
   const lang = kind === "code" ? CODE[ext(item.name)] : kind === "md" ? "markdown" : kind === "html" ? "xml" : "plaintext";
@@ -147,7 +226,7 @@ function show() {
     body.append(h("div", { class: "chart-view" }, chartCard({ type: "chart", ...fv.chart, id: item.id })));
     status = ["Chart", fv.chart.chart, "drawn live"];
   } else if (kind === "pdf") {
-    body.append(h("iframe", { class: "pdf-view", src: fv.blob, title: item.name }));
+    body.append(h("iframe", { class: "pdf-view", src: fv.blob + (fv.page ? `#page=${fv.page}` : ""), title: item.name }));
     status = ["PDF"];
   } else if (fv.editing) {
     body.append(editPane());
@@ -268,6 +347,7 @@ export async function closeAsked() { if (await keepOrDrop()) closeFile(); }  // 
 
 function wireFilePanel() {
   $("#fvClose").addEventListener("click", closeAsked);
+  $("#fvDelete").addEventListener("click", deleteOpen);
   $("#fvEdit").addEventListener("click", async () => {
     if (fv.editing && !await keepOrDrop()) return;
     fv.editing = !fv.editing;
@@ -392,7 +472,22 @@ export function fillDrawer() {
     h("div", { class: "sec" }, h("span", {}, title), h("span", {}, String(list.length))), ...list.map(make)]),
     ...(working.length ? [h("details", { class: "work-sec" },  // closed until opened: the answers are above
       h("summary", { class: "sec", title: "What Zen's helpers made along the way: their scripts and in-between tables" },
-        h("span", {}, "Zen's working files"), h("span", {}, String(working.length))), ...working.map(generic))] : []));
+        h("span", {}, "Zen's working files"), h("span", { class: "work-count" }, String(working.length),
+          h("button", { class: "work-clear", type: "button", title: "Delete Zen's working files", onclick: clearWorking },
+            "Clear"))), ...working.map(generic))] : []));
+}
+
+// Zen's working files deleted at once, after the user says yes (the scripts and in-between tables piled up)
+async function clearWorking(e) {
+  e.preventDefault(); e.stopPropagation();  // a button in the summary: not a toggle of the section
+  const n = state.items.filter(i => isWorking(i.name)).length;
+  if (!await confirmDialog(`Delete Zen's ${plural(n, "working file")}?`, "The scripts and in-between tables its helpers "
+      + "made along the way (work/). Your own files and the results stay; a picture an earlier answer showed from them "
+      + "won't show any more. This can't be undone.", "Delete")) return;
+  let r;
+  try { r = await api(`/workspaces/${state.ws.id}/working`, { method: "DELETE" }); } catch (err) { toast(err.message, true); return; }
+  toast(`Deleted ${plural(r.deleted, "working file")}`);
+  await hooks.loadItems();
 }
 
 /* ═══ Attachments ═══════════════════════════════════════════════════════ */

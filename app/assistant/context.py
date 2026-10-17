@@ -61,8 +61,8 @@ def now_line(now: datetime | None = None) -> str:
 
 
 def context_block(ws: Workspace) -> str:
-    """A worker task's view: the workspace and agent.md."""
-    return "\n\n".join(p for p in (ws.listing(), agent_md.in_view(ws)) if p)
+    """A worker task's view: the workspace and agent.md (the user's notes, to follow - main keeps them)."""
+    return "\n\n".join(p for p in (ws.listing(), agent_md.in_view(ws, keeper=False)) if p)
 
 
 SNAPSHOT_ITEMS = 5  # newest items in a snapshot; files(mode='list') shows them all
@@ -149,6 +149,32 @@ def fit_turns(messages: list[dict], limit: int, count: Count, dropped: int = 0) 
     """(the messages to send, how many turns are dropped). ``dropped`` is the cut used last time."""
     visible, dropped, _ = cut_turns(messages, limit, count, dropped)
     return visible, dropped
+
+
+PAST_RESULT = 1_500  # characters an earlier turn's tool result keeps in main's view
+PAST_ARG = 400  # characters an earlier turn's long call text keeps (a file's whole text: the file keeps it)
+
+
+def lean_past(messages: list[dict]) -> list[dict]:
+    """main's earlier turns without their bulk: tool results and long call texts (a written file's whole text)
+    shortened; the current turn - from the user's latest message - stays whole. Its answer says what mattered, a file
+    can be read again. Each turn is shortened once, when the next one starts, so the prompt before it stays cached.
+    Measured 2026-10-17: a 15-turn chat carried two whole games, a 747-line program and its reads - 57k of the 64k
+    tokens - and every cut of the window then re-read 41k tokens (58 s for one step)."""
+    start = max((i for i, m in enumerate(messages) if m["role"] == "user" and not m.get("hidden")), default=0)
+    out = []
+    for i, m in enumerate(messages):
+        if i < start and m["role"] == "tool" and len(str(m.get("content") or "")) > PAST_RESULT:
+            m = {**m, "content": str(m["content"])[:PAST_RESULT] + " ... [an earlier turn's result, shortened: its "
+                                                                    "answer says what mattered]"}
+        elif i < start and m["role"] == "assistant" and m.get("tool_calls"):
+            calls = [{**c, "input": {k: (v[:PAST_ARG] + " ... [shortened: the file keeps it]"
+                                         if isinstance(v, str) and len(v) > PAST_ARG * 2 else v)
+                                     for k, v in c["input"].items()}} if isinstance(c.get("input"), dict) else c
+                     for c in m["tool_calls"]]
+            m = {**m, "tool_calls": calls}
+        out.append(m)
+    return out
 
 
 def cut_turns(messages: list[dict], limit: int, count: Count, dropped: int = 0) -> tuple[list[dict], int, bool]:

@@ -50,13 +50,16 @@ def body(ws: Workspace) -> str:
     return (kept[len(HEADER):] if kept.startswith(HEADER) else kept).strip()
 
 
-def in_view(ws: Workspace) -> str:
+def in_view(ws: Workspace, keeper: bool = True) -> str:
     """What the model reads: agent.md's whole text, as it is in the file - so an edit quotes it exactly (measured on
-    the 26B: shown only what was remembered, its first edit guessed the header's words and failed) - and how to change
-    it."""
+    the 26B: shown only what was remembered, its first edit guessed the header's words and failed) - and, for main
+    (``keeper``), how to change it. A helper reads it as the user's standing notes: told to write it, the web helper
+    was told to call a tool it doesn't have."""
     if key(ws) is None:
         return ""
     held = text(ws).strip() + ("\n(nothing remembered yet)" if not body(ws) else "")
+    if not keeper:
+        return f"[agent.md - the user's standing notes for this project (main keeps them); follow what they say:\n{held}]"
     return ("[agent.md - your standing memory for this project, in view in every chat; to remember something, or when "
             "the user says how things should always be done, call files(mode='write', name='agent.md', content=...) "
             "with content = the text below plus your line. Its whole text as it is now - no need to read it:"

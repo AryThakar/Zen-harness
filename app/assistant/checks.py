@@ -13,6 +13,9 @@ main itself, each from a measured failure in the user's own test chat (found in 
     how, not what       a task for analyze_or_code that spells out the files to save, the libraries or the code steps
                         (none of them the user's words) is stopped: say what is wanted, the helper picks its tools
                         (its tested chart, forecast and model tools went unused behind main's recipes) - or confirm
+    a typed-out table   a task for analyze_or_code carrying a found table's numbers by hand, when research_web named
+                        the page to bring the table in from, is stopped: download it first (a month of share prices
+                        was typed into the task and charted with matplotlib) - or confirm
     pictures again      a third generate_image in one turn is stopped: the model is told to show the best one and
                         let the user ask for another try (it judged its own pictures and made 4 in a row, ~2 min,
                         2026-10-16) - or to confirm it, when the user asked for several
@@ -41,13 +44,16 @@ against its run, vision after generate_image.
 
 from __future__ import annotations
 
+import json
 import re
 
 from collections.abc import Callable
 
-from .prompts import ANNOUNCE_NUDGE, CLAIM_NUDGE, FILE_NUDGE, REMEMBER_NUDGE
+from .prompts import (ANNOUNCE_NUDGE, BROKEN_CODE_NUDGE, BROKEN_NUDGE, CLAIM_NUDGE, FILE_NUDGE, NUMBERS_NUDGE,
+                      REMEMBER_NUDGE)
 from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
+from .workers.checks import JSON_BREAKS
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
 PICTURES_PER_TURN = 2  # generate_image calls in one turn before another is refused
@@ -141,11 +147,22 @@ def pictures_again(turn: list[dict], call: dict) -> str | None:
 # Forest regressor", the helper followed them in its own scripts, and across all traced turns it made 39 script calls
 # to make_chart 12, predict 1, forecast 0 - its tested tools went unused.
 SAVE_AS = re.compile(r"\b[\w./-]+\.(?:png|jpe?g|svg|gif|webp)\b", re.I)
-LIBRARY = re.compile(r"\b(?:matplotlib|seaborn|plotly|mplfinance|sklearn|scikit-learn|statsmodels|xgboost|lightgbm)\b"
-                     r"|\b(?:plt|sns)\.\w+", re.I)
+LIBRARY = re.compile(r"\b(?:matplotlib|seaborn|plotly|mplfinance|sklearn|scikit-learn|statsmodels|xgboost|lightgbm"
+                     r"|shap|prophet|pandas|numpy)\b|\b(?:plt|sns|pd|np)\.\w+", re.I)
 CODE_STEP = re.compile(r"\bdatetime index\b|\bfeature engineering\b|\b(?:train[/ -]test|split the data|split data)\b"
                        r"|\btrain an? [\w -]{0,30}(?:regressor|classifier)\b|\bload the (?:csv|file|data)\b"
-                       r"|\bdropna\b|\bgroupby\b|\brolling\b|\bhigh dpi\b|\bdpi\b", re.I)
+                       r"|\bdropna\b|\bgroupby\b|\bgroup by\b|\brolling\b|\bhigh dpi\b|\bdpi\b"
+                       r"|\bfeature importances?\b|\bone-hot\b|\bcross[- ]validat\w*|\b\d[\d,]* iterations\b", re.I)
+# A method named for the helper is the how itself: its compare, forecast, predict and find_patterns choose and test
+# theirs (measured 2026-10-17: "run a permutation test ... 10,000 iterations ... also do a bootstrap" for "is the
+# difference between categories real?" - the analyst wrote a script instead of compare).
+METHOD = re.compile(r"\b(?:permutation tests?|bootstrap\w*|t-tests?|t tests?|chi-?squared?|anova|mann-whitney|kruskal\w*"
+                    r"|wilcoxon|arima|sarima\w*|holt-winters|k-means|kmeans|dbscan|random forests?|gradient boost\w*"
+                    r"|(?:linear|logistic) regression|monte carlo)\b", re.I)
+# A numbered list of steps is one sign more (measured 2026-10-17: "Steps: 1. Clean ... 2. group by bill_no ... 4. random
+# forest regression + SHAP ..." for "what drives a big basket? use machine learning") - a list of what is wanted, alone,
+# passes: a refusal needs two signs.
+NUMBERED = re.compile(r"^\s*(?:step\s*)?\d+[.):]\s", re.I | re.M)
 
 
 def dictated_how(call: dict, messages: list[dict], exists: Callable[[str], bool] = lambda name: False) -> str | None:
@@ -158,9 +175,11 @@ def dictated_how(call: dict, messages: list[dict], exists: Callable[[str], bool]
     task = str(given.get("task") or "")
     said = " ".join(str(m.get("text") or m.get("content") or "") for m in messages
                     if m["role"] == "user" and not m.get("hidden")).lower()
-    found = [f for f in dict.fromkeys(m.group(0) for p in (SAVE_AS, LIBRARY) for m in p.finditer(task))
+    found = [f for f in dict.fromkeys(m.group(0) for p in (SAVE_AS, LIBRARY, METHOD) for m in p.finditer(task))
              if f.lower() not in said and not (SAVE_AS.fullmatch(f) and exists(f))]
     steps = [f for f in dict.fromkeys(m.group(0) for m in CODE_STEP.finditer(task)) if f.lower() not in said]
+    if len(NUMBERED.findall(task)) >= 3 and len(NUMBERED.findall(said)) < 3:
+        steps.append("numbered steps")
     if not found and len(steps) < 2:
         return None
     return (f"Not run: the task says how to do the work ({', '.join((found + steps)[:5])}). Give the helper what the "
@@ -169,10 +188,52 @@ def dictated_how(call: dict, messages: list[dict], exists: Callable[[str], bool]
             "same call again with confirm: true.")
 
 
+TYPED_MIN = 10  # numbers of a found table typed into one analyst task before it is stopped
+
+
+def typed_table(call: dict, turn: list[dict]) -> str | None:
+    """For a task to analyze_or_code: why it is stopped when it carries a table's numbers typed out of research_web's
+    answer while research_web named where that table is (its downloads) and nothing was brought in this turn. Measured
+    (2026-10-17): a month of MRF closes, some marked '~' as estimates, went into the task by hand - no table, so the
+    helper drew with matplotlib and main guessed next week itself; the page's table came in exact with one download."""
+    given, _ = split_confirm(call["input"])
+    if call["name"] != "analyze_or_code" or not isinstance(given, dict):
+        return None
+    found, links = [], []
+    for m in turn:
+        if m["role"] == "tool" and m.get("name") == "research_web" and not m.get("is_error"):
+            try:
+                links += json.loads(m.get("content") or "{}").get("downloads") or []
+            except (ValueError, AttributeError):
+                continue
+            found.append(str(m.get("content")))
+    calls = [c for m in turn if m["role"] == "assistant" for c in m.get("tool_calls") or []]
+    if not links or any(c["name"] == "files" and isinstance(g := split_confirm(c["input"])[0], dict)
+                        and g.get("mode") == "download" for c in calls):
+        return None
+    pool = {abs(v) for text in found for _, v, _, _ in numbers_in(JSON_BREAKS.sub(" ", text))}
+    typed = {abs(v) for raw, v, _, _ in numbers_in(str(given.get("task") or ""))
+             if abs(v) > 10 and not _year(raw) and abs(v) in pool}
+    if len(typed) < TYPED_MIN:
+        return None
+    return (f"Not run: the task carries {len(typed)} numbers typed out of research_web's answer, and research_web "
+            f"named where their table is. Bring it in first - files(mode='download', link='{links[0]}'), the user "
+            "approves it - then give the helper the table by its name: its charts, tests and forecasts run on the exact "
+            "data." + CONFIRMABLE)
+
+
 def _key(call: dict) -> str | None:
     """A call's identity, its confirm aside (the confirmed call is the same call)."""
     given, _ = split_confirm(call["input"])
     return _call_key(call["name"], given) if isinstance(given, dict) else None
+
+
+# Dates are not data: 'Oct 19-23', '16 September', '2026-10-16' (measured 2026-10-17: a task for "next week, Oct 19-23"
+# was refused as inventing the numbers 19 and 23)
+MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+DATES = re.compile(rf"\b{MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{{1,2}}(?:st|nd|rd|th)?)?\b"
+                   rf"|\b\d{{1,2}}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{{1,2}})?\s+{MONTH}"
+                   r"|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b", re.I)
 
 
 def invented_numbers(call: dict, messages: list[dict]) -> str | None:
@@ -181,7 +242,7 @@ def invented_numbers(call: dict, messages: list[dict]) -> str | None:
     given, _ = split_confirm(call["input"])
     if call["name"] not in DELEGATES or not isinstance(given, dict):
         return None
-    task = str(given.get("task") or given.get("question") or "")
+    task = DATES.sub(" ", str(given.get("task") or given.get("question") or ""))
     # Results that are data - not errors: a refusal quotes the very numbers it refused.
     evidence = [str(m.get("content") or "") for m in messages if m["role"] == "tool" and not m.get("is_error")]
     evidence += [str(m.get("text") or m.get("content") or "") for m in messages if m["role"] == "user"]
@@ -241,11 +302,56 @@ def missing_files(text: str, exists: Callable[[str], bool]) -> list[str]:
     return [n for n in dict.fromkeys(named) if "://" not in n and not exists(n)]
 
 
-def nudge_for(text: str, turn: list[dict], exists: Callable[[str], bool] | None = None) -> str | None:
+UNFOUNDED_MIN = 3  # numbers in main's reply that no result holds, in a turn a helper worked in, before it is checked
+DATA_HELPERS = ("analyze_or_code", "research_web", "ask_knowledge")
+
+
+def unfounded_numbers(text: str, turn: list[dict], history: list[dict]) -> list[str]:
+    """Numbers in main's reply that no tool result, user message or earlier reply in the chat holds - checked in a turn
+    a helper worked in (a chat's own examples and explanations are main's to give). Measured 2026-10-17: the analyst
+    charted and forecast MRF from the downloaded table and main answered with a 22-row price table of its own, four
+    of its dates Saturdays, and a 'support level' below the month's real low."""
+    if not any(m["role"] == "tool" and m.get("name") in DATA_HELPERS and not m.get("is_error") for m in turn):
+        return []
+    now = {id(m) for m in turn}  # this turn's own replies are not evidence; the chat's earlier ones are
+    evidence = [str(m.get("content") or m.get("text") or "") for m in history + turn
+                if m["role"] in ("tool", "user") or (m["role"] == "assistant" and id(m) not in now)]
+    missing = [n for n in ungrounded_numbers(text, evidence) if not _year(n)]
+    return missing if len(missing) >= UNFOUNDED_MIN else []
+
+
+def still_broken(turn: list[dict], now: Callable[[str], str | None] | None = None) -> list[tuple[str, str]]:
+    """(file, why) for each file this turn wrote or edited that still can't run, by its latest write - a Python file
+    or a page whose script doesn't parse or fails when used (file_ops.written_code). Measured 2026-10-17: a cup game
+    whose whole script failed on line 478 was answered with "Here's your game! Click Start Game"."""
+    latest: dict[str, str | None] = {}
+    for m in turn:
+        if m["role"] != "tool" or m.get("name") != "files" or m.get("is_error"):
+            continue
+        try:
+            res = json.loads(m.get("content") or "{}")
+        except ValueError:
+            continue
+        if isinstance(res, dict) and "not_run" in res and (name := res.get("name") or res.get("file")):
+            latest[name] = res.get("broken")
+    # ``now``: a program as it is at the reply - a helper may have fixed (or broken) it after main's own write (a page
+    # keeps its browser try's verdict: it parsing says nothing of its runtime error)
+    out = []
+    for name, why in latest.items():
+        if why and now is not None and name.lower().endswith(".py"):
+            why = now(name)
+        if why:
+            out.append((name, why))
+    return out
+
+
+def nudge_for(text: str, turn: list[dict], exists: Callable[[str], bool] | None = None,
+              history: list[dict] | None = None, problem: Callable[[str], str | None] | None = None) -> str | None:
     """The one nudge a tool-less reply gets, or None: asked to remember but nothing saved, then
     announced-not-done, then claimed-not-done, then a file named as made that isn't there (exists: whether the
-    workspace has a file of that name). None once the turn already had a nudge of these kinds. (A call written
-    out as text is made a real call where calls are read: providers/gemma_calls.py.)"""
+    workspace has a file of that name), then numbers no result holds (history: the chat before this turn). None once
+    the turn already had a nudge of these kinds. (A call written out as text is made a real call where calls are read:
+    providers/gemma_calls.py.)"""
     if any(m.get("check") for m in turn if m["role"] == "user"):
         return None
     said = next((str(m.get("text") or m.get("content") or "") for m in turn if m["role"] == "user"), "")
@@ -262,4 +368,12 @@ def nudge_for(text: str, turn: list[dict], exists: Callable[[str], bool] | None 
     missing = missing_files(text, exists) if exists else []
     if missing:
         return FILE_NUDGE.format(name=", ".join(missing))
+    broken = still_broken(turn, problem)
+    if broken:  # a program goes to analyze_or_code, which runs what it fixes (measured: main's own indentation edits
+        # went round for 15 minutes, then handed the user the fix); a page main fixes itself, tried in a browser
+        name, why = broken[0]
+        return (BROKEN_CODE_NUDGE if name.lower().endswith(".py") else BROKEN_NUDGE).format(why=why)
+    unfounded = unfounded_numbers(text, turn, history or [])
+    if unfounded:
+        return NUMBERS_NUDGE.format(numbers=", ".join(unfounded[:6]))
     return None

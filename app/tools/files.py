@@ -57,20 +57,21 @@ WEB_NOTE = ("web_pages are pages read in earlier research, as they were on the d
             "Say the date with anything taken from them; for a current fact, the web helper reads the page again.")
 
 
-def reindex(ws: Workspace, index: SearchIndex, item_id: str) -> bool:
+def reindex(ws: Workspace, index: SearchIndex, item_id: str, doc=None, embed: bool = True) -> bool:
     """A document's passages, from its file as it is now - none if it doesn't read (then False). The file's stamp
-    goes with them, so the next sync knows they are current."""
+    goes with them, so the next sync knows they are current. ``doc``: the file already read (a 1,923-page PDF takes
+    ~57 s to read, and an upload read it twice); ``embed=False``: vectors later, in the background."""
     name, path = ws.entry(item_id)["name"], ws.path(item_id)
     stamp = item_stamp(path.stat())
     try:
-        doc = extract(name, path.read_bytes())
+        doc = doc or extract(name, path.read_bytes())
     except DocumentError:
         index.remove("document", item_id)
         ws.set_meta(item_id, "passages", 0)
         ws.set_meta(item_id, "unreadable", stamp)
         return False
     passages = [Passage(c.text, c.page, c.section) for c in chunk(doc.blocks)]
-    embedded = index.replace("document", item_id, name, passages, meta=stamp)
+    embedded = index.replace("document", item_id, name, passages, meta=stamp, embed=embed)
     for key, value in (("title", doc.title), ("pages", doc.pages), ("words", doc.words), ("passages", len(passages)),
                        ("outline", outline(doc.blocks))):
         ws.set_meta(item_id, key, value)
@@ -235,7 +236,7 @@ def _picture_bytes(path: Path) -> bytes:
 
 
 def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user",
-               name: str | None = None) -> dict:
+               name: str | None = None, embed: bool = True) -> dict:
     """A file brought in (``by`` the user: an upload, a download) or written (by the assistant), kept by what it
     is through the workspace's one write path: a table (CSV, Excel) for the data tools, a document (PDF, Word,
     PowerPoint, text, Markdown) indexed for search, an image (PNG, JPEG, WebP, GIF), anything else a file a
@@ -246,7 +247,7 @@ def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by
     suffix = path.suffix.lower()
     dedupe = by == "user"
     if suffix in filetypes.DOCUMENT:
-        return {"kind": "document", **add_document(ws, index, path, by=by, name=name)}
+        return {"kind": "document", **add_document(ws, index, path, by=by, name=name, embed=embed)}
     kind = "table" if suffix in filetypes.TABLE else "image" if suffix in filetypes.IMAGE else "file"
     put = ws.put(name or path.name, path.read_bytes(), kind=kind, by=by, dedupe=dedupe)
     out = {"id": put.key, "kind": kind, "name": put.path, **({"same": True} if put.existed else {})}
@@ -256,8 +257,9 @@ def store_file(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by
 
 
 def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, by: str = "user",
-                 name: str | None = None) -> dict:
-    """Keep and index a document; returns its key, path and size. Raises ToolError if it doesn't read."""
+                 name: str | None = None, embed: bool = True) -> dict:
+    """Keep and index a document; returns its key, path and size. Raises ToolError if it doesn't read. ``embed=False``:
+    searchable by keywords at once, by meaning when the background refresh has added the vectors."""
     path = Path(path)
     data = path.read_bytes()
     try:
@@ -266,11 +268,12 @@ def add_document(ws: Workspace, index: SearchIndex | None, path: str | Path, *, 
         raise ToolError(str(exc), invalid=False) from exc
     put = ws.put(name or path.name, data, kind="file", by=by, dedupe=by == "user",
                  meta={"title": doc.title, "kind": doc.kind, "pages": doc.pages, "words": doc.words})
-    embedded = reindex(ws, index, put.key) if index is not None else True
+    embedded = reindex(ws, index, put.key, doc=doc, embed=embed) if index is not None else True
     passages = ws.entry(put.key).get("meta", {}).get("passages", 0)
     return {"file": put.key, "name": put.path, "pages": doc.pages, "passages": passages,
             **({"same": True} if put.existed else {}),
-            **({} if embedded else {"note": "Indexed for keyword search only (the embedding model is unavailable)."})}
+            **({} if embedded or not embed else {"note": "Indexed for keyword search only (the embedding model is "
+                                                         "unavailable)."})}
 
 
 def find_files(ws: Workspace, index: SearchIndex | None, query: str) -> ToolResult:
@@ -286,8 +289,13 @@ def find_files(ws: Workspace, index: SearchIndex | None, query: str) -> ToolResu
         index_items(ws, index)
     lines = ws.lines()
     said = [w for w in re.findall(r"\w+", query.casefold()) if w not in STOPWORDS and w not in FIND_STOP]
-    kinds = {k for w in said for k in KIND_WORDS.get(w, ())}
-    words = [w for w in said if w not in KIND_WORDS]
+    # A kind of file is asked for by a word of its own ("pictures of lions") - not one inside a term: "D-code" made
+    # the search code files only, and the 1,923-page spec holding the K-codes was 'not searchable' (2026-10-17)
+    alone = {w.strip(".,;:!?()[]{}\"'").casefold() for w in query.split()}
+    alone |= {t.rsplit(".", 1)[1] for t in alone if "." in t}  # a file name's extension ('polcy.md') names its kind
+    kinds = {k for w in said if w in alone for k in KIND_WORDS.get(w, ())}
+    words = [w for w in said if not (w in KIND_WORDS and w in alone)]
+    widened = False  # no file of the kind asked for matched: the others that do are shown, and said so
     wanted = [k for k in lines if not kinds or _kind(ws, k) in kinds]
     if not words:  # only a kind ("how many pictures"): every file of it
         named, best, used_meaning = wanted, {}, False
@@ -296,12 +304,18 @@ def find_files(ws: Workspace, index: SearchIndex | None, query: str) -> ToolResu
         best, used_meaning = {}, False
         if index is not None:
             hits, used_meaning = index.search(" ".join(words), FIND_SOURCES, FIND_CANDIDATES)
-            for h in hits:
-                if h.ref in wanted and h.ref not in best and (h.meaning or _holds(h, words)):
-                    best[h.ref] = h
+            for scope in (wanted, list(lines)):  # a kind that holds no match: the files that do, rather than none
+                for h in hits:
+                    if h.ref in scope and h.ref not in best and (h.meaning or _holds(h, words)):
+                        best[h.ref] = h
+                if best or named or not kinds:
+                    break
+                widened = True
     order = list(dict.fromkeys([*named, *best]))
     result = {"query": query, "found": len(order),
               "search": "names, keywords and meaning" if used_meaning else "names and keywords"}
+    if widened and order:
+        result["note"] = f"No {' or '.join(sorted(kinds))} file matches: these files of other kinds do."
     result["files"] = [{"path": ws.label(k), "about": lines[k].split(": ", 1)[-1],
                         "match": "; ".join(x for x in ("its name" if k in named else "", _match(best[k]) if k in best else "")
                                            if x)} for k in order[:FIND_SHOWN]]

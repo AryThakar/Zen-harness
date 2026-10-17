@@ -195,6 +195,54 @@ def page(url: str, check) -> tuple[str, str | None, str]:
         _empty(_output)  # nothing it downloaded or saved is kept
 
 
+# A page Zen wrote, tried before it is called ready (measured 2026-10-17: a cup game parsed but its Start button died on
+# 'sleep is not defined', and Zen said "Click Start Game"). It runs under the chat frame's own policy (web/js/files.js,
+# SEALED: nothing loads from anywhere), with dialogs answered so none can stop the try, every control clicked a few
+# rounds over, and its errors - thrown or a promise that failed - kept.
+PAGE_POLICY = ("default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; "
+               "img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; "
+               "frame-src 'none'")
+CATCH = ("<script>window.__errs=[];addEventListener('error',e=>__errs.push(String(e.message)+(e.lineno?' (line '+e.lineno"
+         "+')':'')));addEventListener('unhandledrejection',e=>__errs.push(String(e.reason&&e.reason.message||e.reason)));"
+         "window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>'';</script>")
+CLICK_THROUGH = """async () => {
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  await wait(800);
+  const clicked = [];
+  for (let round = 0; round < 3 && !window.__errs.length; round++) {
+    const targets = [...document.querySelectorAll('button, input[type=button], input[type=submit], [onclick], [role=button], '
+      + '[tabindex], [class*=cup], [class*=card], [class*=cell], [class*=tile], [class*=key], canvas')]
+      .filter(e => e.offsetParent !== null && !e.disabled).slice(0, 25);
+    for (const el of targets) {
+      el.click();
+      clicked.push((el.textContent || el.getAttribute('aria-label') || el.className || el.tagName).trim().slice(0, 30));
+      await wait(1000);
+      if (window.__errs.length) break;
+    }
+  }
+  await wait(1500);
+  return JSON.stringify({errors: window.__errs.slice(0, 5), clicked});
+}"""
+
+
+def try_page(html: str) -> dict | None:
+    """{errors, clicked}: the page opened headless, its controls clicked; None without a browser, or when the try
+    itself failed (then nothing is claimed either way)."""
+    if not available():
+        return None
+    import base64
+    page = f'<meta http-equiv="Content-Security-Policy" content="{PAGE_POLICY}">{CATCH}{html}'
+    url = "data:text/html;base64," + base64.b64encode(page.encode("utf-8")).decode("ascii")
+    browser = _server()
+    try:
+        browser.call("browser_navigate", {"url": url})
+        return json.loads(_result(browser.call("browser_evaluate", {"function": CLICK_THROUGH})))
+    except (McpError, ValueError, TypeError):
+        return None
+    finally:
+        _empty(_output)
+
+
 def _field(text: str, name: str) -> str | None:
     line = next((ln for ln in text.splitlines() if ln.strip().startswith(f"- {name}:")), None)
     value = line.split(":", 1)[1].strip() if line else ""

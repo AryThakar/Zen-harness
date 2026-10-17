@@ -1,7 +1,7 @@
 """A local model served by llama.cpp's ``llama-server`` (its OpenAI-compatible chat API).
 
-    llama-server -m gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf --alias local --temp 1.0 --top-p 0.95 --top-k 64 ...
-    BIZ_LLM_PROVIDER=llamacpp uvicorn app.main:app      (the full command: .claude/launch.json, "assistant-llm")
+    llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf --temp 1.0 --top-p 0.95 --top-k 20 --presence-penalty 1.5 ...
+    BIZ_LLM_PROVIDER=llamacpp uvicorn app.main:app      (the full command: the Kaggle notebook zen-qwen36-server)
 
 - Streams every turn: answer text appears as it is written, and tool calls arrive
   as deltas that are put together here. llama-server reads the calls out of the

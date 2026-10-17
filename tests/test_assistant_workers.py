@@ -148,6 +148,33 @@ def test_the_result_says_how_pages_were_read_and_which_failed(ctx, monkeypatch):
     assert out["failed"] == [{"url": "https://shop.example.com/rates", "why": "The site refused the request (HTTP 403)."}]
 
 
+def test_a_page_holding_the_data_table_ends_the_hunt(ctx, monkeypatch):
+    """Measured 2026-10-17, twice: the price table found at 77 s, then 6 more minutes of searching single days' closes."""
+    import json
+    from app.tools.web import DATA_TABLE_NOTE
+    page = "https://stockanalysis.com/quote/nse/MRF/history/"
+
+    def read(c, a):
+        rows = 250 if "history" in a.url else 7 if "quote" in a.url else 0
+        held = {"data_table": f"{DATA_TABLE_NOTE} ({rows} rows: Date, Close)"} if rows else {}
+        return ok({"url": a.url, "title": "MRF", "text": "MRF price history", **held}, {"type": "webpage", "url": a.url})
+
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "read", registry.ReadPageIn, read))
+    model = ScriptedProvider([
+        tools_turn(call("read_webpage", url="https://other.example.com/mrf-quote")),  # a 7-row order book: no series
+        tools_turn(call("read_webpage", url=page)),
+        tools_turn(call("read_webpage", url="https://other.example.com/mrf-oct-14")),  # hunting single days
+        tools_turn(call("read_webpage", url="https://other.example.com/mrf-oct-15")),  # told once: it runs now
+        submit(answer="MRF fell over the month.", sources=[2], downloads=[page]),
+    ])
+    out = run_worker(model, PROFILES["web"], "MRF's daily closes for the last month", ctx)
+    assert json.loads(model.requests[2]["messages"][-1]["content"])["status"] == "ok"  # after the order book: read on
+    refused = json.loads(model.requests[3]["messages"][-1]["content"])
+    assert refused["status"] == "invalid_arguments" and f"{page} already holds the data table" in refused["error"]["message"]
+    assert json.loads(model.requests[4]["messages"][-1]["content"])["status"] == "ok"  # a nudge, not a wall
+    assert out["downloads"] == [page]
+
+
 def test_citing_an_unread_page_gets_one_chance_to_fix(ctx, fake_web):
     model = ScriptedProvider([
         tools_turn(call("web_search", query="rates")),
@@ -242,6 +269,11 @@ def test_data_worker_passes_a_question_up_instead_of_guessing(ctx):
     # conventions of method pass; a made-up p-value does not
     ("p = 0.7717, well above 0.05; with 95% confidence it is fair.", ['{"p_value": 0.771668}'], []),
     ("p = 0.03, below 0.05.", ['{"chi2": 2.53}'], ["0.03"]),
+    # a fall is said as its size: measured 2026-10-17, "fell 2,220 (1.78%)" from a query's -2220 and -1.7758
+    ("It fell −₹2,220 (1.78%) over the month.", ['{"change": -2220, "pct_change": -1.77585793137}'], []),
+    ("It fell 2,300.", ['{"change": -2220}'], ["2,300"]),
+    # a run's output, kept as JSON: the number after each line break (measured: the 20 primes refused from 19 on)
+    ("The primes are 19, 23 and 71.", ['{"output": "First primes:\\r\\n19\\r\\n23\\r\\n71\\r\\n"}'], []),
 ])
 def test_number_grounding(answer, evidence, missing):
     assert ungrounded_numbers(answer, evidence) == missing
@@ -710,11 +742,17 @@ def test_a_reply_without_a_call_gets_one_hint_and_nothing_is_read_out_of_it(ctx,
     assert out["sources"] == ["https://news.example.com/rates"] and "warnings" not in out
 
 
-def test_a_reply_cut_off_at_the_last_step_ends_without_a_result(ctx, fake_web):
+def test_a_finish_cut_off_at_the_last_step_gets_one_short_try(ctx, fake_web):
+    """Measured 2026-10-17: 23 calls of work, the last step's finish cut off, and main got an empty answer."""
     steps = PROFILES["web"].max_steps
-    model = ScriptedProvider([tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
-                             + [ModelTurn(text="", stop="max_tokens")])
+    searches = [tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
+    model = ScriptedProvider(searches + [ModelTurn(text="", stop="max_tokens"),
+                                         submit(answer="I could not find it in the snippets.")])
     out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert "cut off by the length limit" in model.requests[-1]["messages"][-1]["content"]
+    assert out["answer"] == "I could not find it in the snippets."
+    twice = ScriptedProvider(searches + [ModelTurn(text="", stop="max_tokens")] * 2)
+    out = run_worker(twice, PROFILES["web"], "rates?", ctx)
     assert out["warnings"] == ["the helper ran out of steps without finishing"] and out["ran"].startswith("Ran web_search")
 
 
@@ -837,5 +875,8 @@ def test_a_web_answer_that_copies_a_pages_table_is_sent_back_for_the_page_link()
     handed = WebResult(answer="MRF fell about 7% over the month; the daily prices are on page 1.", sources=[1],
                        downloads=[page])
     assert _check_web(handed, trace, "") == []
+    # 2026-10-17: the page in downloads and its rows in the answer too - main typed the rows into a task instead
+    both = WebResult(answer=f"MRF closed lower over the month.\n{rows}", sources=[1], downloads=[page])
+    assert any("copies a table's rows from a page you gave in downloads" in p for p in _check_web(both, trace, ""))
     no_table = Trace(read_urls={page}, pages=[page], outputs=['{"url": "x", "text": "prose"}'])
     assert not any("copies" in p for p in _check_web(copied, no_table, ""))  # a quoted table from prose stands

@@ -86,9 +86,10 @@ def test_without_a_named_table_the_report_goes_on_the_one_it_inspected(ctx):
 def test_tables_made_in_the_task_are_named_in_the_facts(ctx):
     model = ScriptedProvider([turn(call("inspect_data", data="sales.csv")),
                               turn(call("query_data", sql='SELECT * FROM "sales.csv" WHERE amount > 160', save=True)),
-                              report(caveats="Use sales-query.csv: the rows over 160.", answer="1 row is over 160.")])
+                              report(caveats="Use work/sales-query.csv: the rows over 160.", answer="1 row is over 160.")])
     out = run_worker(model, ENGINEER, "rows over 160", ctx, files=["sales.csv"])
-    assert "- Tables made: sales-query.csv (1 rows, from sales.csv)" in out["report"]
+    # an in-between table goes with the working files (measured: '...-query (2).csv' filled the file list)
+    assert "- Tables made: work/sales-query.csv (1 rows, from sales.csv)" in out["report"]
 
 
 def test_a_task_that_touches_no_table_keeps_no_report(ctx):

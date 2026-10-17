@@ -30,6 +30,14 @@ def test_calculate_refuses(expr):
     assert calculate(expr).status == "invalid_arguments"
 
 
+def test_calculate_works_out_several_at_once():
+    """Measured 2026-10-17: ten ratios in one expression were refused ('Tuple is not available'), and main worked
+    them out in its head instead."""
+    r = calculate("136.7 * 1000 / 211.9, 141.3 * 1000 / 216.8, round(2/3, 2)")
+    assert r.result["results"] == pytest.approx([645.1156, 651.7528, 0.67], rel=1e-5)
+    assert "In '1/0': Division by zero" in calculate("1/0, 2 + 2").result["error"]["message"]
+
+
 # Written by the real model in bench/main/calc_probe (its own notation).
 @pytest.mark.parametrize("expr, value", [("10!", 3628800), ("12! / (3! * 9!)", 220), ("(2+3)!", 120),
                                          ("sin(30 degrees)", 0.5), ("tan(35°)$", 0.7002075382),

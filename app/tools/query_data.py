@@ -13,6 +13,8 @@ from __future__ import annotations
 import math
 from decimal import Decimal
 
+from pathlib import PurePosixPath
+
 import duckdb
 import sqlglot
 from sqlglot import exp
@@ -65,8 +67,11 @@ def query_data(ws: Workspace, sql: str, save: bool = False) -> ToolResult:
                 full = sql_guard.frame(con, res.sql)
             except sql_guard.SqlRejected as exc:
                 raise ToolError(str(exc), field="sql") from exc
-            new_id = ws.add_table(full, name=ws.derived_name(used[0], "query") if used else "query result",
-                                  parent=used[0] if used else None, meta={"sql": res.sql})
+            # An in-between table (a filter, a grouping for the next tool): with the working files, not beside the
+            # user's (measured 2026-10-17: 'retail_pos_messy-cleaned-query (2).csv' and its kin filled the file list)
+            name = ws.derived_name(used[0], "query") if used else "query result.csv"
+            name = name if name.startswith("work/") else f"work/{PurePosixPath(name).name}"
+            new_id = ws.add_table(full, name=name, parent=used[0] if used else None, meta={"sql": res.sql})
             result["saved_as"] = new_id
     finally:
         con.close()

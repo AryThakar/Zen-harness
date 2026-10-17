@@ -301,12 +301,17 @@ try:
     _pd_display.set_option("display.max_colwidth", 80)
 except ImportError:
     pass
-# The script runs as its own file, so its errors give its own line numbers.
+# The script runs as its own file, so its errors give its own line numbers. Open figures are saved only from a run
+# that finished: a failed run's figure is half drawn (measured: an empty set of axes shown as work/figure_1.png).
 try:
     with _open({script!r}, encoding="utf-8") as _f:
         _code = compile(_f.read(), {name!r}, "exec")
     exec(_code, globals())
-finally:
+except SystemExit as _exit:
+    if _exit.code in (None, 0):
+        _save_figures()
+    raise
+else:
     _save_figures()
 '''
 

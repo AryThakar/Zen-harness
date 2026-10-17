@@ -48,7 +48,7 @@ HELPER_MODES = ("find", "read", "write", "edit")  # a helper's files: what it re
 
 @tool
 def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | None = None, page: int = 1,
-          start: int | None = None, content: str | None = None, old_text: str | None = None,
+          start: int | None = None, end: int | None = None, content: str | None = None, old_text: str | None = None,
           new_text: str | None = None, new_name: str | None = None, link: str | None = None,
           query: str | None = None, helper: bool = False, table: int | None = None) -> ToolResult:
     mode = str(mode).strip().lower()
@@ -71,11 +71,15 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
     if mode == "edit":
         if new_text is None:
             raise ToolError("edit needs new_text: what replaces old_text ('' removes it).", field="new_text")
+        if old_text is None and start is not None and end is not None:
+            return _edit_lines(ws, index, _resolve(ws, name), start, end, str(new_text))
         # Measured: the whole new text of agent.md sent as an edit - the way out is said, not only what is missing
         return _edit(ws, index, _resolve(ws, name), _need(old_text, "old_text", "edit needs old_text: the passage "
-                                                                               "to change, exactly as in the file - or, "
-                                                                               "to give the file's whole new text, "
-                                                                               "mode='write' with content"),
+                                                                               "to change, exactly as in the file - or "
+                                                                               "start and end, the lines to replace as "
+                                                                               "the read numbered them - or, to give the "
+                                                                               "file's whole new text, mode='write' with "
+                                                                               "content"),
                      str(new_text))
     if mode == "rename":
         item = _resolve(ws, name)
@@ -163,6 +167,30 @@ def _edit(ws: Workspace, index: SearchIndex | None, item: str, old: str, new: st
     return _change(ws, index, item, text.replace(old, new, 1))
 
 
+SHOWN_AROUND = 2  # lines shown around an edit made by line numbers, so the next look needs no read
+
+
+def _edit_lines(ws: Workspace, index: SearchIndex | None, item: str, start: int, end: int, new: str) -> ToolResult:
+    """Lines start..end, as files(read) numbered them, replaced by ``new`` - the edit that needs no copying (measured
+    2026-10-17: Qwen retyped old_text from memory - 'old_text is not in the file' three times on a game, and a
+    747-line program's indentation fixes went round for 15 minutes). The result shows the lines as they are now."""
+    e = ws.entry(item)
+    if e["name"].lower().endswith(FROM_MARKDOWN) or e["kind"] == "image" or suffix(e["name"]) in BINARY:
+        raise ToolError(f"{e['name']} isn't edited by lines: give its whole text with mode='write'.", field="start")
+    lines = ws.path(item).read_text("utf-8", errors="replace").splitlines(keepends=True)
+    if not 1 <= start <= end <= len(lines):
+        raise ToolError(f"start and end are lines of the file: 1 to {len(lines)}, start before end.", field="start")
+    ending = "\n" if lines[end - 1].endswith("\n") else ""
+    put = new if not new or new.endswith("\n") else new + ending
+    done = _change(ws, index, item, "".join(lines[:start - 1]) + put + "".join(lines[end:]))
+    if done.status == "ok" and "file" in done.result:
+        now = ws.path(item).read_text("utf-8", errors="replace").splitlines()
+        last = start - 1 + len(put.splitlines())
+        lo, hi = max(1, start - SHOWN_AROUND), min(len(now), max(last, start) + SHOWN_AROUND)
+        done.result["now"] = "\n".join(f"{i:>{len(str(hi))}}| {now[i - 1]}" for i in range(lo, hi + 1))
+    return done
+
+
 def _rename(ws: Workspace, index: SearchIndex | None, item: str, new_name: str) -> ToolResult:
     from .files import index_report, reindex
     e = ws.entry(item)
@@ -199,8 +227,11 @@ def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str
         path.write_bytes(data)
         kept = store_file(ws, index, path, by="assistant", name=name)
     item = kept.get("id") or kept.get("file")
+    skipped = ws.skipped_note(item) if kept["kind"] == "table" else None
     return ok({"file": item, "name": kept["name"], "kind": kept["kind"], "bytes": len(data),
-               "note": "Saved; the user sees it in the chat.", **written_code(name, content)}, _card(ws, item, "written"))
+               "note": "Saved; the user sees it in the chat." + (f" But {skipped[0].lower()}{skipped[1:]} Write it again "
+                                                                 "fixed." if skipped else ""),
+               **written_code(name, content)}, _card(ws, item, "written"))
 
 
 def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: str) -> ToolResult:
@@ -226,9 +257,23 @@ def written_code(name: str, content: str) -> dict:
     # What the page does with it, said here (measured: main told the user to run a game "in your terminal" and to
     # open its HTML "in your web browser", then played the game itself in the chat - the page runs both).
     if suffix(name) in (".html", ".htm"):
-        return {"not_run": f"{name} works in the chat, under its card - a page or a game the user uses right there, no "
-                           "browser or server needed. You haven't seen it run: don't say how it behaves beyond what "
-                           "you wrote."}
+        out = {"not_run": f"{name} works in the chat, under its card - a page or a game the user uses right there, no "
+                          "browser or server needed. You haven't seen it run: don't say how it behaves beyond what "
+                          "you wrote."}
+        broken = page_script_problem(name, content)
+        if broken:
+            return {**out, "broken": broken}
+        from . import browser
+        tried = browser.try_page(content)
+        if tried is None:  # no browser here: nothing claimed either way
+            return out
+        if tried.get("errors"):
+            last = (tried.get("clicked") or ["opening it"])[-1]
+            return {**out, "broken": f"{name} fails when used: {tried['errors'][0]} (tried in a browser: after "
+                                     f"'{last}'). Fix it with files(mode='edit') before saying it works."}
+        return {**out, "not_run": f"{name} works in the chat, under its card. It was tried in a browser - opened and "
+                                  f"{len(tried.get('clicked') or [])} controls clicked - with no errors; how it plays "
+                                  "beyond that is not known."}
     out = {"not_run": f"{name} was written, not run: don't say what it prints before a run (run runs it in a helper; "
                       "main gives it to analyze_or_code)."
                       + (" The user can run it too, from its card in the chat (Run), and type into it while it runs."
@@ -239,6 +284,61 @@ def written_code(name: str, content: str) -> dict:
         except SyntaxError as exc:
             out["broken"] = f"{name} does not parse: {exc.msg} at line {exc.lineno}. Fix it before saying it works."
     return out
+
+
+def problem_now(ws: Workspace, name: str) -> str | None:
+    """Why a program or page as it is now can't run - Python that doesn't parse, a page's script that doesn't (the quick
+    checks, not the browser try) - else None (or no such file)."""
+    key = ws.find(name)
+    if key is None or suffix(name) not in (".py", ".html", ".htm"):
+        return None
+    text = ws.path(key).read_text("utf-8", errors="replace")
+    if suffix(name) != ".py":
+        return page_script_problem(name, text)
+    try:
+        compile(text, name, "exec")
+    except SyntaxError as exc:
+        return f"{name} does not parse: {exc.msg} at line {exc.lineno}. Fix it before saying it works."
+    return None
+
+
+SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.I | re.S)
+JS_TYPES = re.compile(r"""type\s*=\s*["']?(?:text/javascript|application/javascript|module)\b""", re.I)
+
+
+def page_script_problem(name: str, content: str) -> str | None:
+    """Why a page's own scripts can't run - a script that doesn't parse (node --check: measured 2026-10-17, a cup
+    game's whole script died on 'await is only valid in async functions' at line 478, and Zen said it was ready), or
+    one linked from the web, which the chat's sealed frame never loads. None when they parse, or without node."""
+    import shutil
+    import subprocess
+    for match in SCRIPT.finditer(content):
+        attrs, code = match.group(1), match.group(2)
+        if re.search(r"\bsrc\s*=", attrs, re.I):
+            return (f"{name} loads a script from a link, which never loads in the chat (nothing comes from the "
+                    "internet): put the code in the page itself.")
+        if re.search(r"\btype\s*=", attrs, re.I) and not JS_TYPES.search(attrs) or not code.strip():
+            continue  # a template or data block, not code
+        node = shutil.which("node")
+        if node is None:
+            return None
+        module = "module" in attrs.lower()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ("page.mjs" if module else "page.js")
+            path.write_text(code, encoding="utf-8")
+            try:
+                done = subprocess.run([node, "--check", str(path)], capture_output=True, text=True, timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+        if done.returncode == 0:
+            continue
+        said = done.stderr
+        line = re.search(r":(\d+)\r?\n", said)
+        error = next((ln.strip() for ln in said.splitlines() if re.match(r"\s*\w*Error\b", ln)), "a syntax error")
+        at = (content[:match.start(2)].count("\n") + int(line.group(1))) if line else None
+        return (f"{name}'s script does not parse - {error}" + (f" (line {at} of the file)" if at else "") + ". Nothing "
+                "on the page works until it does: fix it with files(mode='edit') before saying it is ready.")
+    return None
 
 
 def made_by_assistant(entry: dict) -> bool:

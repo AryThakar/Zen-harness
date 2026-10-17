@@ -147,6 +147,26 @@ def test_uploads_go_where_they_belong(app_and_slots):
     assert client.get(f"/assistant/workspaces/{ws_id}/items/data_9/rows").status_code == 404
 
 
+def test_the_user_deletes_a_file_and_clears_zens_working_files(app_and_slots):
+    """Before 2026-10-17 only asking Zen could delete a file, and the helpers' scripts and in-between tables piled up."""
+    client, _, store = app_and_slots
+    ws_id, _ = workspace_and_chat(client)
+    doc = client.post(f"/assistant/workspaces/{ws_id}/files",
+                      files={"file": ("policy.md", b"# Returns\n\nWithin 14 days with the bill.", "text/markdown")}).json()
+    ws, index = store.open(ws_id)
+    script = ws.add_bytes("file", b"print(1)", ".py", "work/check.py")
+    step = ws.add_table(__import__("pandas").DataFrame({"a": [1, 2]}), "work/sales-query.csv")
+    searchable = index.count(("document",))
+    assert client.delete(f"/assistant/workspaces/{ws_id}/items/{doc['file']}").status_code == 204
+    names = {i["name"] for i in client.get(f"/assistant/workspaces/{ws_id}/items").json()}
+    assert "policy.md" not in names and index.count(("document",)) < searchable  # gone from search too
+    memory = next(i["id"] for i in client.get(f"/assistant/workspaces/{ws_id}/items").json() if i.get("memory"))
+    assert client.delete(f"/assistant/workspaces/{ws_id}/items/{memory}").status_code == 409  # the memory stays
+    assert client.delete(f"/assistant/workspaces/{ws_id}/working").json() == {"deleted": 2}
+    assert script not in ws.ids() and step not in ws.ids() and memory in ws.ids()
+    assert client.delete(f"/assistant/workspaces/{ws_id}/items/data_9").status_code == 404
+
+
 def test_files_sent_with_a_message_are_shown_on_it_again(app_and_slots):
     client, slots, _ = app_and_slots
     ws_id, chat_id = workspace_and_chat(client)

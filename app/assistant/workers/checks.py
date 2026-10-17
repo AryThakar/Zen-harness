@@ -37,12 +37,16 @@ def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
             problems.append(f"there is no page {s}: you read {len(trace.pages)} page(s), numbered 1 to {len(trace.pages)}")
         else:
             problems.append(f"{s} is not a page you read: cite pages by the numbers their reads gave")
-    if not result.downloads and copied_rows(result.answer) >= COPIED_ROWS and any(DATA_TABLE_NOTE in o
-                                                                                  for o in trace.outputs):
+    if copied_rows(result.answer) >= COPIED_ROWS and any(DATA_TABLE_NOTE in o for o in trace.outputs):
         # Measured: a web helper copied a month of share prices out of a page into its answer - closes missing,
         # a high below its low - and the chart was drawn from that; the page's table comes in exact instead.
-        problems.append("your answer copies a table's rows from a page: give that page's link in downloads instead "
-                        "(main brings its table in as data, exact) and keep only a short summary in the answer")
+        # Even with the page in downloads (2026-10-17): main took the copied rows, some marked '~' as estimates,
+        # typed them into the analyst's task and never brought the table in - so no chart or forecast tool could run.
+        problems.append("your answer copies a table's rows from a page: keep only a short summary in the answer (a "
+                        "few key figures) and give that page's link in downloads - main brings its table in as data, "
+                        "exact" if not result.downloads else
+                        "your answer copies a table's rows from a page you gave in downloads: keep only a short "
+                        "summary in the answer (a few key figures) - main brings the table in as data, exact")
     if not result.sources and trace.read_urls and not result.question_for_user:
         problems.append("no sources given; list the numbers of the pages you used")
     if (not result.sources and not trace.read_urls and not result.question_for_user
@@ -90,6 +94,7 @@ NUMBER = re.compile(r"(?<![\w.])([-+]?\d[\d,]*(?:\.\d+)?)(\s?%|\s?(?:K|M|B|bn|th
 
 
 SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9}
+JSON_BREAKS = re.compile(r"\\[nrt]")  # a line break or tab as JSON writes it
 
 
 def numbers_in(text: str) -> list[tuple[str, float, float, bool]]:
@@ -116,11 +121,16 @@ CONVENTIONS = (0.001, 0.01, 0.05, 0.1, 0.5, 0.9, 0.95, 0.99, 90.0, 95.0, 99.0)
 def ungrounded_numbers(answer: str, evidence: list[str]) -> list[str]:
     """Numbers in the answer that no tool result (or the task itself) contains, allowing for the
     rounding the answer shows and for shares written as percentages (0.3003 -> '30%'). Small whole
-    numbers (up to 10) pass: 'top 5', '3 groups'; so do the conventions of method (CONVENTIONS)."""
-    pool = [v for text in evidence for _, v, _, _ in numbers_in(text)]
+    numbers (up to 10) pass: 'top 5', '3 groups'; so do the conventions of method (CONVENTIONS). Sizes are
+    compared, not signs: "fell 2,220 (1.78%)" is the -2220 and -1.7758 a query gave (measured: refused twice,
+    the analyst's chart answer went back as partial); a minus written as '−' isn't read as one anyway."""
+    # Evidence is mostly JSON: a line break is the text '\n', and the number after it touched the 'n' - unread
+    # (measured 2026-10-17: a run printing the 20 primes one per line, and 19 ... 71 refused as not in any result).
+    pool = [abs(v) for text in evidence for _, v, _, _ in numbers_in(JSON_BREAKS.sub(" ", text))]
     missing = []
     for raw, value, tol, percent in numbers_in(answer):
-        if value == int(value) and abs(value) <= 10 or any(abs(value - c) < 1e-9 for c in CONVENTIONS):
+        value = abs(value)
+        if value == int(value) and value <= 10 or any(abs(value - c) < 1e-9 for c in CONVENTIONS):
             continue
         if not any(abs(v - value) <= tol or (percent and abs(v * 100 - value) <= tol) for v in pool):
             missing.append(raw)
@@ -135,7 +145,19 @@ def _check_work(result: WorkResult, trace: Trace, context: str) -> list[str]:
     if not result.answer.strip():
         return ["answer is empty: say what you found or made"]
     said = " ".join(s for s in (result.answer, result.caveats) if s)
-    return _numbers_problem(said, trace, context)
+    # A program whose latest run failed is not "fixed and running" (measured 2026-10-17: "I fixed the indentation and
+    # ran the script successfully" - its last run had failed, and the next run failed again)
+    failing = [f"{f} ({why})" for f, why in trace.run_files.items() if why]
+    unsaid = [] if not failing or STILL_FAILS.search(said) else [
+        f"the latest run of {', '.join(failing)} failed: fix the cause and run it again - or say plainly in your answer "
+        "that it doesn't run yet"]
+    return unsaid + _numbers_problem(said, trace, context)
+
+
+# An answer that says the program doesn't run ("fixed the indentation error and ran it" is no such answer)
+STILL_FAILS = re.compile(r"\b(?:still (?:fails|failing|raises|errors|broken|has (?:an? )?errors?|doesn'?t)|doesn'?t run"
+                         r"|does not run|not (?:yet )?(?:running|working)|couldn'?t (?:fix|get it)|could not (?:fix|get it)"
+                         r"|fails (?:with|at|on)|is broken)", re.I)
 
 
 def _numbers_problem(text: str, trace: Trace, context: str) -> list[str]:

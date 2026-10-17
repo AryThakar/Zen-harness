@@ -67,6 +67,16 @@ def calculate(expression: str) -> ToolResult:
     # then trusted its memory) or a currency sign.
     raw = str(expression).replace("$", "").replace("\\u00b0", "°")  # the degree sign also came as its escape
     expr = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", raw.strip()).replace("^", "**")
+    parts = _top_level(expr)
+    if len(parts) > 1 and not EQUATION.search(expr):  # several at once: each worked out (measured 2026-10-17: ten
+        # ratios as one expression - "Tuple is not available" - and main worked them out in its head instead)
+        if len(parts) > MAX_PARTS:
+            raise ToolError(f"At most {MAX_PARTS} expressions at once.", field="expression")
+        done = [calculate(p) for p in parts]
+        for p, d in zip(parts, done):
+            if d.status != "ok":
+                raise ToolError(f"In '{p}': {d.result.get('error', {}).get('message', 'it failed')}", field="expression")
+        return ok({"expressions": parts, "results": [d.result["result"] for d in done]})
     if not expr or len(expr) > 500:
         raise ToolError("expression must be 1 to 500 characters.", field="expression")
     expr = _factorials(DEGREES.sub(r"(\1*pi/180)", expr))
@@ -97,6 +107,21 @@ def calculate(expression: str) -> ToolResult:
         result["note"] = (f"{', '.join(f'{f}({a})' for f, a in bare)} took the angle as radians. If degrees were "
                           f"meant, calculate again with {bare[0][1]}°.")
     return ok(result)
+
+
+MAX_PARTS = 20
+
+
+def _top_level(expr: str) -> list[str]:
+    """The expression split at its top-level commas ('a / b, c / d'), not those inside brackets (round(x, 2))."""
+    parts, depth, start = [], 0, 0
+    for i, ch in enumerate(expr):
+        depth += {"(": 1, "[": 1, ")": -1, "]": -1}.get(ch, 0)
+        if ch == "," and depth == 0:
+            parts.append(expr[start:i].strip())
+            start = i + 1
+    parts.append(expr[start:].strip())
+    return [p for p in parts if p]
 
 
 def _factorials(expr: str) -> str:

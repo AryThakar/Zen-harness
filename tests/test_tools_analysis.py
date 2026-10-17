@@ -180,6 +180,20 @@ def test_line_chart_reads_month_labels_as_dates(ws):
     assert r.status == "invalid_arguments" and "date column" in r.result["error"]["message"]
 
 
+def test_a_daily_price_is_drawn_on_trading_days_with_no_zeros(ws):
+    """Measured 2026-10-17: a share's closes were drawn down to 0 every weekend and on a holiday ('sum of close')."""
+    days = [d for d in pd.bdate_range("2026-09-16", "2026-10-16") if d != pd.Timestamp("2026-10-02")]
+    prices = ws.add_table(pd.DataFrame({"Date": days, "Close": [125010.0 - 130 * i for i in range(len(days))]}), "p")
+    r = make_chart(ws, prices, "line", x="Date", y="Close")
+    assert r.status == "ok" and r.result["points"] == 23  # the weekdays from first to last, weekends left out
+    assert r.result["lowest"][1] > 120000 and r.artifact["y_label"] == "mean of Close"
+    assert r.artifact["y"][r.artifact["x"].index("2026-10-02")] is None  # the holiday: a gap, not a 0
+    # sales on the same days still add up, and a day without any is a 0
+    sales = ws.add_table(pd.DataFrame({"day": days * 2, "amount": [5.0] * (2 * len(days))}), "s")
+    s = make_chart(ws, sales, "line", x="day", y="amount")
+    assert s.artifact["y"][s.artifact["x"].index("2026-10-02")] == 0 and s.result["highest"][1] == 10
+
+
 def test_a_query_that_matches_nothing_says_what_to_check(ws, sales):
     for sql in [f"SELECT * FROM {sales} WHERE region = 'north'", f"SELECT sum(amount) FROM {sales} WHERE region = 'north'"]:
         r = query_data(ws, sql)

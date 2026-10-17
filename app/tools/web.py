@@ -736,10 +736,24 @@ def page_tables(body: bytes) -> list:
                          or f"column {i + 1}" for i, c in enumerate(t.columns)]
         else:
             t.columns = [f"column {i + 1}" if str(c).startswith("Unnamed") else str(c) for i, c in enumerate(t.columns)]
+        t.columns = [_plain_header(c) for c in t.columns]
         t = t.dropna(how="all")
         if len(t) >= MIN_TABLE_ROWS and t.shape[1] >= 2:
             out.append(t)
     return out
+
+
+def _plain_header(name: str) -> str:
+    """A header with its tooltip read in too - 'Close Close price adjusted for splits.', 'Adj Close Adjusted close price
+    adjusted for splits and dividend ...' (Yahoo's price history, measured 2026-10-17: the analyst's columns became
+    close_close_price_adjusted_for_splits, one query failed on them) - is the header alone: 'Close', 'Adj Close'."""
+    words = str(name).split()
+    if len(words) < 5 or not str(name).rstrip().endswith("."):
+        return str(name)
+    for k in range(1, min(4, len(words) - 2)):
+        if words[k][:1].isupper() and words[k].lower().startswith(words[0].lower()[:3]):
+            return " ".join(words[:k])
+    return str(name)
 
 
 def _page_table(found: list, table: int | None, final: str) -> dict:

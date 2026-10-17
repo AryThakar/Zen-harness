@@ -97,7 +97,8 @@ class DiagramIn(_In):
 
 
 class CalcIn(_In):
-    expression: str = Field(description="one expression. Arithmetic: '2450 * 0.18', '(1410 - 1250) / 1250 * 100' (^ "
+    expression: str = Field(description="one expression, or several separated by commas (up to 20, each worked "
+                                        "out). Arithmetic: '2450 * 0.18', '(1410 - 1250) / 1250 * 100' (^ "
                                         "powers, n! factorials, sqrt ln log10, sin cos tan in radians - degrees as 35°). "
                                         "Maths, in SymPy's notation (x y z t n are symbols): 'x^3 - x^2 + x - 3 = 0', "
                                         "'diff(2/(1+x^2), x)', 'integrate(x*exp(x), x)', 'Integral(Abs(x-1), (x, 0, 2)).evalf()', "
@@ -148,9 +149,9 @@ def _files(c: ToolContext, a) -> ToolResult:
                 f"is unpinned." if a.mode == "pin" else f"{c.ws.label(key)} is unpinned.")
         return ok({"pinned": shown, "note": said},
                   {"type": "pins", "pins": [{"id": k, "name": c.ws.label(k)} for k in pins if k in c.ws.ids()]})
-    return file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start, content=a.content,
-                          old_text=a.old_text, new_text=a.new_text, new_name=a.new_name, link=a.link, query=a.query,
-                          table=a.table)
+    return file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start, end=a.end,
+                          content=a.content, old_text=a.old_text, new_text=a.new_text, new_name=a.new_name,
+                          link=a.link, query=a.query, table=a.table)
 
 
 def _run(c: ToolContext, a) -> ToolResult:
@@ -189,12 +190,23 @@ class SearchIn(_In):
 
 
 FILE_NAME = "the file's name, e.g. 'report.md' or 'charts/sales.png'"
+# The contract of a page the user uses in the chat (the page side: web/js/files.js, pageOf and htmlFrame). Measured
+# 2026-10-17: a cup game laid out at a fixed width had its side cups cut off in a narrow chat, and nothing told the
+# model the page is sealed (a CDN script or font would not load).
+HTML_PAGE = ("an .html page - a game, a tool, a page to use - runs in the chat: write what is on the page (its "
+             "HTML, <style> and <script>, all inline); the app adds the head, a base style and Zen's colours as CSS "
+             "variables (--zen-bg, --zen-ink, --zen-muted, --zen-line, --zen-accent, --zen-on-accent, --zen-green, "
+             "--zen-blue, --zen-red, --zen-orange, --zen-yellow, --zen-purple), lays it out at least 720 px wide and "
+             "scales it to fit; nothing loads from the internet (no CDN, web fonts or linked images)")
 QUERY = ("find: what to look for - words in a file's name or text, what a picture shows, a table's columns or values, "
          "e.g. 'lion', 'refund policy', 'revenue by region'")
-START = "read: the line to read from (the result's next says where to go on)"
+START_READ = "read: the line to read from (the result's next says where to go on)"
+START = START_READ + "; edit: the first line to replace, as numbered in the read"
+END = "edit: the last line to replace (with start: lines start to end, as numbered in the read, become new_text)"
 CONTENT = "write: the file's whole text (Markdown for .md, .docx and .pptx)"
-OLD_TEXT = "edit: the passage to change, exactly as it is in the file (spaces and line breaks too)"
-NEW_TEXT = "edit: the text to put instead ('' removes the passage)"
+OLD_TEXT = ("edit: the passage to change, exactly as it is in the file (spaces and line breaks too) - or give start and "
+            "end instead")
+NEW_TEXT = "edit: the text to put instead, with its indentation ('' removes the passage)"
 
 
 class FilesIn(_In):
@@ -204,6 +216,7 @@ class FilesIn(_In):
     query: str | None = Field(None, description=QUERY)
     page: int = Field(1, ge=1, description="list: which page")
     start: int | None = Field(None, ge=0, description=START)
+    end: int | None = Field(None, ge=1, description=END)
     content: str | None = Field(None, description=CONTENT)
     old_text: str | None = Field(None, description=OLD_TEXT)
     new_text: str | None = Field(None, description=NEW_TEXT)
@@ -219,6 +232,7 @@ class HelperFilesIn(_In):
     name: str | None = Field(None, description=FILE_NAME + " (read, write, edit)")
     query: str | None = Field(None, description=QUERY)
     start: int | None = Field(None, ge=0, description=START)
+    end: int | None = Field(None, ge=1, description=END)
     content: str | None = Field(None, description=CONTENT)
     old_text: str | None = Field(None, description=OLD_TEXT)
     new_text: str | None = Field(None, description=NEW_TEXT)
@@ -228,7 +242,7 @@ class ReaderFilesIn(_In):
     mode: Literal["find", "read"] = Field(description="find: which files match; read: one file's text")
     query: str | None = Field(None, description=QUERY)
     name: str | None = Field(None, description="read: " + FILE_NAME)
-    start: int | None = Field(None, ge=0, description=START)
+    start: int | None = Field(None, ge=0, description=START_READ)  # it reads and never edits
 
 
 class ReadPageIn(_In):
@@ -276,8 +290,9 @@ class ChartIn(_In):
     by: str | None = Field(None, description="split into groups: one line each (line), stacked (area), grouped bars "
                                              "(bar), one colour each (scatter), one spread each (histogram), or the "
                                              "heatmap's rows")
-    agg: Literal["sum", "mean", "median", "count", "min", "max"] = Field(
-        "sum", description="how y is combined in each category or period: sum for amounts, mean for rates or prices")
+    agg: Literal["sum", "mean", "median", "count", "min", "max"] | None = Field(
+        None, description="how y is combined in each category or period: sum for amounts, mean for rates or prices "
+                          "(omit: mean when y is named as a level - a price, close, rate, score - else sum)")
     time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
     top: int = Field(20, ge=1, le=50, description="bar and box: how many categories")
     stacked: bool = Field(False, description="bar with by: stack the groups instead of side by side")
@@ -312,8 +327,9 @@ class ForecastIn(_In):
     by: str | None = Field(None, description="a category column: one forecast per group (the 5 largest)")
     horizon: int | None = Field(None, ge=1, le=60, description="periods ahead")
     time_unit: Literal["auto", "day", "week", "month", "quarter", "year"] = Field("auto", description=TIME_UNIT)
-    agg: Literal["sum", "mean", "last", "count"] = Field(
-        "sum", description="how a period's values combine: sum (sales), mean (a rate), last (a balance), count")
+    agg: Literal["sum", "mean", "last", "count"] | None = Field(
+        None, description="how a period's values combine: sum (sales), mean (a rate, a price), last (a balance), count "
+                          "(omit: mean when the value is named as a level - a price, close, rate, score - else sum)")
 
 
 class PatternsIn(_In):
@@ -429,8 +445,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "did with it) - an image or a table says which tool reads it; write: a new file, or the whole new text of one "
        "(its version before is kept) - text, Markdown, CSV, JSON, code, and documents: a Word .docx or slides .pptx "
        "are made from Markdown (for slides each # heading starts a slide; a line that is only "
-       "![caption](charts/sales.chart.json) puts in that picture or chart); edit: change one passage - old_text "
-       "exactly as in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or "
+       "![caption](charts/sales.chart.json) puts in that picture or chart), and " + HTML_PAGE + "; edit: change one "
+       "passage - lines start to end as the read numbered them, or old_text exactly as in the file - to new_text; "
+       "rename; delete: one file; download: one "
+       "file from GitHub, or "
        "a data table from any public link - a CSV or Excel file, or a page's own table (a price history, a results "
        "table) - a repository's or folder's page lists its files, to pick one; pin: keep a file in view in this chat - the parts of it that match each message come with every turn "
        "(the user pins files too); unpin: stop. agent.md is your memory for this project, always in view: to "
@@ -662,13 +680,16 @@ HELPER_TOOLS: dict[str, Tool] = {
     "files": Tool("files", "The workspace's files, by name. Modes: find: which files match a query - by name and "
                   "by what is in them - each with the part that matched; read: a file's text from line start on, "
                   "with its report (an image or a table says what reads it); write: a new file, or the whole new "
-                  "text of one (its version before is kept) - a program is written here, then run with run; edit: "
-                  "change one passage - old_text exactly as in the file (line numbers as read may stay), new_text to "
-                  "put instead - then run it again. Returns the matches, the text, or what was written. Not for a "
+                  "text of one (its version before is kept) - a program is written here, then run with run, and "
+                  + HTML_PAGE + "; edit: "
+                  "change one passage - lines start to end as the read numbered them (the result shows them after), "
+                  "or old_text exactly as in the file - to new_text, then run it again. Returns the matches, the "
+                  "text, or what was written. Not for a "
                   "table's numbers (the data tools). A file the user brought is changed only if they allow it: they "
                   "are asked.", HelperFilesIn,
-                  lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, content=a.content,
-                                              old_text=a.old_text, new_text=a.new_text, query=a.query, helper=True),
+                  lambda c, a: file_ops.files(c.ws, c.index, a.mode, name=a.name, start=a.start, end=a.end,
+                                              content=a.content, old_text=a.old_text, new_text=a.new_text,
+                                              query=a.query, helper=True),
                   labels=("Working with files", "Worked with files"), mode_labels=FILE_MODE_LABELS),
     # the knowledge helper reads and never writes: files with find and read only
     "files:read": Tool("files", "The user's files. Modes: find: which files match a query - by name and by what is "

@@ -147,7 +147,7 @@ def test_an_allowed_import_becomes_a_table(ws, index):
 
 PRICES = b"""<html><body><h1>MRF share price history</h1>
 <table><tr><td>Nifty</td><td>up</td></tr></table>
-<table><thead><tr><th>Date</th><th>Close</th><th>High</th></tr></thead><tbody>
+<table><thead><tr><th>Date</th><th>Close <span class="tip">Close price adjusted for splits.</span></th><th>High</th></tr></thead><tbody>
 <tr><td>16 Oct 2026</td><td>1,22,790</td><td>1,23,255</td></tr>
 <tr><td>15 Oct 2026</td><td>1,22,270</td><td>1,22,515</td></tr>
 <tr><td>14 Oct 2026</td><td>1,22,365</td><td>1,22,800</td></tr>

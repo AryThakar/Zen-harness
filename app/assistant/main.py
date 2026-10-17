@@ -14,7 +14,7 @@ What the main model gets at each step:
              prompt stays the same turn after turn; a turn that alone outgrows the slot has its older
              tool results shortened). Each user message starts with its local time,
              "[Fri 03 Oct 2026, 14:05]", written once when it arrives.
-    tools    9 of its own (workers.MAIN_DIRECT) + 3 delegates to the helpers (research_web, ask_knowledge,
+    tools    7 of its own (workers.MAIN_DIRECT) + 3 delegates to the helpers (research_web, ask_knowledge,
              analyze_or_code). Its instructions and nudges are in prompts.py.
 
 ask_user pauses the turn: the question goes to the UI and into chats.pending; the user's answer comes
@@ -56,7 +56,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from app.providers.base import Cancelled, Provider, ProviderError
-from app.tools import agent_md
+from app.tools import agent_md, file_ops
 from app.tools.approval import carry_out
 from app.tools.ask import answer_result
 from app.tools.clean_data import clean_data
@@ -67,12 +67,12 @@ from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace, present
 
 from .checks import (SAMPLE_DATA, dictated_how, invented_numbers, nudge_for, pictures_again, repeated_failure,
-                     this_turn)
+                     this_turn, typed_table)
 from . import snapshot
-from .context import (counter, cut_turns, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
+from .context import (counter, cut_turns, lean_past, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
                       standing_instructions,
                       without_notes)
-from .prompts import MAIN, MAIN_CUT_OFF, QUICK, SHOWN, call_cut_off
+from .prompts import LAST_STEP, MAIN, MAIN_CUT_OFF, QUICK, SHOWN, call_cut_off
 from .registry import ToolContext, execute, split_confirm
 from .store import NEW_CHAT, Store
 from .workers import DELEGATES, main_tools
@@ -235,7 +235,7 @@ def _agent(state: TurnState, config) -> dict:
     system = f"{MAIN}\n\n{agent_md.in_view(t.ws)}" if agent_md.key(t.ws) else MAIN
     limit, exact = prompt_limit(t.main), counter(t.main, system, specs)
     count = lambda messages: exact(t.with_snapshot(messages))  # the snapshot rides on this turn's message: it counts
-    visible, dropped, fits = cut_turns(history, limit, count, t.dropped)
+    visible, dropped, fits = cut_turns(lean_past(history), limit, count, t.dropped)
     if dropped != t.dropped:
         if dropped > t.dropped:  # turns were cut: the prompt's start changed anyway, so a fresh snapshot
             visible = _snapshot_on_newest(t, history, visible, dropped)
@@ -254,6 +254,8 @@ def _agent(state: TurnState, config) -> dict:
                             "shortened. Ask for less at once, or start a new chat.")
     visible = t.with_snapshot(visible)  # the pinned and pointed-at files, for this turn only
     last = state["rounds"] >= MAX_ROUNDS
+    if last:  # said, not only tools taken away (measured: "I hit my tool limit - apply these edits yourself")
+        visible = visible + [{"role": "user", "content": LAST_STEP, "hidden": True}]
     started = time.perf_counter()
     stream = _Unstamped(t.write)
     quick = bool(history) and bool(history[-1].get("quick"))  # the user asked for a quick answer
@@ -297,7 +299,8 @@ def _agent(state: TurnState, config) -> dict:
         t.store.append(t.chat_id, nudge)
         new.append(nudge)
         return {"messages": new, "rounds": state["rounds"] + 1}
-    check = (nudge_for(turn.text, this_turn(history + [message]), exists=lambda name: t.ws.find(name) is not None)
+    check = (nudge_for(turn.text, this_turn(history + [message]), exists=lambda name: t.ws.find(name) is not None,
+                       history=history, problem=lambda name: file_ops.problem_now(t.ws, name))
              if not turn.tool_calls and not last else None)
     if check:  # announced or claimed an action no tool did: one hidden nudge per turn (checks.py)
         if t.live is not None:
@@ -341,7 +344,7 @@ def _tools(state: TurnState, config) -> dict:
         given, confirmed = split_confirm(call["input"])
         so_far = this_turn(state["messages"] + results)
         refused = None if confirmed else (repeated_failure(so_far, call) or pictures_again(so_far, call)
-                                          or invented_numbers(call, state["messages"])
+                                          or invented_numbers(call, state["messages"]) or typed_table(call, so_far)
                                           or dictated_how(call, state["messages"],
                                                           exists=lambda name: t.ws.find(name) is not None))
         if confirmed and isinstance(given, dict) and invented_numbers(call, state["messages"]):

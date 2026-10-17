@@ -121,6 +121,7 @@ export function closeViewer(now = false) {
   const done = () => {
     V.el.hidden = true;
     V.el.classList.remove("show");
+    if (V.el.classList.contains("theater")) theater(false);
     V.charts.forEach(c => c.destroy()); V.charts = [];
     if (V.url) { URL.revokeObjectURL(V.url); V.url = null; }
     V.item.replaceChildren();
@@ -136,6 +137,15 @@ export function closeViewer(now = false) {
 }
 
 const playing = () => V.el.classList.contains("is-video");
+let fullIcon = null;  // the button's own icon (index.html), back when the player is
+function theater(on) {
+  V.el.classList.toggle("theater", on);
+  const full = V.el.querySelector(".v-full");
+  fullIcon ??= full.innerHTML;
+  full.innerHTML = on ? svg("fit") : fullIcon;
+  full.setAttribute("aria-label", on ? "Back to the player's size" : "Full screen");
+  full.title = on ? "Back to the player's size" : "Full screen";
+}
 function keys(e) {
   if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeViewer(); }
   else if (playing()) return;  // a video's own keys (space, arrows) stay its own
@@ -158,7 +168,15 @@ export function wireViewer() {
   V.el.querySelector(".v-out").addEventListener("click", () => zoomBy(1 / 1.4));
   V.el.querySelector(".v-in").addEventListener("click", () => zoomBy(1.4));
   V.el.querySelector(".v-fit").addEventListener("click", () => fitView(true));
-  V.el.querySelector(".v-full").addEventListener("click", () => V.item.querySelector("iframe, video")?.requestFullscreen?.());
+  // Full screen - or, where the browser refuses it (an embedded browser: "Permissions check failed", and the button did
+  // nothing), the player fills the viewer instead; the button puts it back
+  const full = V.el.querySelector(".v-full");
+  full.addEventListener("click", () => {
+    if (V.el.classList.contains("theater")) return theater(false);
+    // (a request the browser neither grants nor refuses - measured with a real click - must not leave it dead)
+    V.item.querySelector("iframe, video")?.requestFullscreen?.()?.catch(() => {});
+    setTimeout(() => { if (!document.fullscreenElement) theater(true); }, 300);
+  });
   V.stage.addEventListener("wheel", e => {
     if (playing()) return;
     e.preventDefault();

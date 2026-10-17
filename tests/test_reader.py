@@ -47,6 +47,12 @@ def test_rows_with_extra_fields_are_set_aside(write_file):
     assert raw.bad_lines == [(3, ["2025-01-02", "Ink", "2", "EXTRA", "MORE"])]
 
 
+def test_a_number_split_by_its_commas_is_set_aside_not_cut(write_file):
+    """Measured 2026-10-17: '16 Sep 2026,1,25,010' under 'Date,Close' was read as a close of 1, with only a warning."""
+    raw = read_file(write_file("Date,Close\n16 Sep 2026,1,25,010\n17 Sep 2026,124585\n"))
+    assert raw.df["close"].tolist() == ["124585"] and [n for n, _ in raw.bad_lines] == [2]
+
+
 def test_excel_with_title_rows(tmp_path):
     path = tmp_path / "sales.xlsx"
     with pd.ExcelWriter(path) as writer:

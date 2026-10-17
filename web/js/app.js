@@ -124,6 +124,7 @@ function showProjects() {
   closeAsk(true);
   closeFile();
   closeDrawer();
+  document.title = "Zen";  // no chat open here (the last one's name stayed on the tab)
   document.body.classList.add("picking");
   const list = $("#projectList");
   const card = w => {
@@ -406,6 +407,17 @@ function metaEl({ seconds, first, stats, answer, stopped }, textEl) {
 
 // "[Source: ComicBook.com]" as the model writes it: shown as a small source pill
 const SOURCE_TAG = /\[(?:Source|Sources):\s*([^\]\n]{1,80})\]/gi;
+// A source tag ("[Source: notes.pdf, p. 24]") opens that file of the project - a PDF at its page
+document.addEventListener("click", e => {
+  const tag = e.target.closest?.(".answer .cite");
+  if (!tag) return;
+  const said = tag.textContent.trim().toLowerCase();
+  const item = (state.items || []).filter(i => i.name && said.includes(i.name.toLowerCase()))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+  if (!item) return;
+  const page = Number((said.match(/\bp(?:age|\.|g\.?)?\s*(\d+)/) || [])[1]) || null;
+  openItem(item, null, { page });
+});
 
 // One reply, built from the stream (or from a saved chat, through the same calls)
 function assistantView() {
@@ -424,6 +436,7 @@ function assistantView() {
   let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
   const pause = () => { flowing = false; syncLive(); repaint(); };  // the words stopped: the live line takes over
   const stats = [], web = new Map(), passages = [], traces = [];
+  const fileCards = new Map();  // a file's card in this reply: a later change replaces it (one card per file)
   let finished = false, traceBtn = null;
   // How the reply ran (the server's trace of each part of the turn): one small button beside the answer's
   // copy and read-aloud, opening the developer's view
@@ -446,6 +459,18 @@ function assistantView() {
     stick();
   };
   const repaint = () => { if (!frame) frame = requestAnimationFrame(paint); };
+  // The words of this step, moved from the answer into the steps: said before a tool call (narration), or a whole
+  // reply the app's check sent back (a draft). Before, they stayed in the answer and the next reply replaced them -
+  // text that appeared, then vanished (measured 2026-10-17, the user's chat)
+  const moveRound = draft => {
+    const said = text.slice(roundStart).trim();
+    if (!said) return;
+    activity.note(said, draft);
+    text = text.slice(0, roundStart).trimEnd();
+    roundStart = text.length;
+    syncLive();
+    repaint();
+  };
   const show = el => {
     if (!el) return;
     // a picture a helper made shows once: with the first card that carries it (the save, or its run)
@@ -493,11 +518,12 @@ function assistantView() {
       syncLive();
       repaint();
     },
-    round() { fresh = true; status = "Thinking…"; pause(); },  // the model's step ended; what it writes next starts a new reply
-    checking() { fresh = true; activity.checking(); pause(); },
+    // A saved chat's next step: a reply left from the step before it was a draft the app's check sent back
+    round() { moveRound(true); fresh = true; status = "Thinking…"; pause(); },
+    checking() { moveRound(true); fresh = true; activity.checking(); pause(); },
     composing(d) { activity.composing(d); },  // a call being written: its size grows on the activity line
     toolStart(d) {
-      if (text.slice(roundStart).trim()) text = text.trimEnd() + "\n\n";
+      moveRound(false);  // the words before a call are part of the work: into the steps, out of the answer
       roundStart = text.length;
       const step = activity.start(d);
       if (step?.delegate) current = step;
@@ -532,6 +558,16 @@ function assistantView() {
       } else if (CARD_TYPES.has(a.type) || !current) {
         const el = artifactCard(a);
         if (a.type === "file" && current && el) current.fileCard = el;
+        if (a.type === "file" && a.id && el) {  // the same file changed again in this reply: one card, the latest
+          // (measured: three "Updated work/pcie_protocol_demo.py" cards in a row, one per edit)
+          const before = fileCards.get(a.id);
+          if (before) {
+            el.times = (before.times || 1) + 1;
+            before.remove();
+            el.querySelector(".what")?.append(h("small", { class: "times" }, `changed ${el.times} times`));
+          }
+          fileCards.set(a.id, el);
+        }
         show(el);
       } else {  // a helper's working: shown in its step; its result tables and last code also as cards
         activity.evidence(current, a);

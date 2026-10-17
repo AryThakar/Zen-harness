@@ -116,12 +116,14 @@ class SearchIndex:
     # ------------------------------------------------------------------ writing
 
     def add(self, source: str, ref: str, title: str | None, passages: list[Passage], meta: str | None = None,
-            created: str | None = None) -> bool:
-        """Store passages; returns whether they got vectors (False = keyword search only)."""
+            created: str | None = None, embed: bool = True) -> bool:
+        """Store passages; returns whether they got vectors (False = keyword search only). ``embed=False``: keyword
+        search now, vectors later (stale() then says so, and the store's background refresh adds them)."""
         passages = [p for p in passages if p.text.strip()]
         if not passages:
             return True
-        vectors, model = self._embed([_text(p.section, p.text) for p in passages], [title] * len(passages))
+        vectors, model = (self._embed([_text(p.section, p.text) for p in passages], [title] * len(passages))
+                          if embed else (None, None))
         created = created or datetime.now().isoformat(timespec="seconds")
         rows = [(source, ref, title, p.page, p.section, p.text, created, meta,
                  vectors[i].tobytes() if vectors is not None else None, model) for i, p in enumerate(passages)]
@@ -137,9 +139,10 @@ class SearchIndex:
             self._version += 1
         return n
 
-    def replace(self, source: str, ref: str, title: str | None, passages: list[Passage], meta: str | None = None) -> bool:
+    def replace(self, source: str, ref: str, title: str | None, passages: list[Passage], meta: str | None = None,
+                embed: bool = True) -> bool:
         self.remove(source, ref)
-        return self.add(source, ref, title, passages, meta)
+        return self.add(source, ref, title, passages, meta, embed=embed)
 
     def add_picture(self, ref: str, title: str, text: str, data: bytes, stamp: str) -> bool:
         """A picture as one passage: ``text`` (its name, what made it) for keywords, the picture itself

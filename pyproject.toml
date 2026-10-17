@@ -50,3 +50,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["real_browser: runs the installed headless browser (Playwright MCP); skipped where there is none"]
