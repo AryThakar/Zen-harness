@@ -145,6 +145,40 @@ def test_an_allowed_import_becomes_a_table(ws, index):
     assert ws.table("data_1")["sales"].sum() == 30
 
 
+PRICES = b"""<html><body><h1>MRF share price history</h1>
+<table><tr><td>Nifty</td><td>up</td></tr></table>
+<table><thead><tr><th>Date</th><th>Close</th><th>High</th></tr></thead><tbody>
+<tr><td>16 Oct 2026</td><td>1,22,790</td><td>1,23,255</td></tr>
+<tr><td>15 Oct 2026</td><td>1,22,270</td><td>1,22,515</td></tr>
+<tr><td>14 Oct 2026</td><td>1,22,365</td><td>1,22,800</td></tr>
+<tr><td>13 Oct 2026</td><td>1,22,510</td><td>1,22,895</td></tr>
+</tbody></table>
+<table><tr><th>Week</th><th>Volume</th></tr><tr><td>41</td><td>9000</td></tr><tr><td>40</td><td>8000</td></tr>
+<tr><td>39</td><td>7000</td></tr></table></body></html>"""
+PAGE = "https://prices.example.com/mrf-ltd-historical-price/"
+
+
+def test_a_pages_own_table_comes_in_as_data_never_retyped(ws, index):
+    """Measured: a web helper copied a month of share prices out of a page into its answer - closes missing, a high
+    below its low - and the chart had nothing real to draw from."""
+    http = site({PAGE: PRICES})
+    ask = approval.import_request(PAGE, http=http, resolve=public).artifact
+    assert ask["approval"]["table"] == 1 and ask["approval"]["tables"] == 2  # the largest data table; layout left out
+    assert ask["question"] == ("Import the table on prices.example.com's page (4 rows: Date, Close, High) into this "
+                               "workspace as prices-mrf-ltd-historical-price-table-1.csv?")
+    result, card = approval.carry_out(ws, index, ask["approval"], ask["options"], "Import", http=http, resolve=public)
+    df = ws.table(result["data"])
+    assert result["allowed"] and result["rows"] == 4 and df["close"].tolist()[:2] == [122790, 122270]
+    assert "another comes in with files(mode='download', link=..., table=its number)" in result["note"]
+    second = approval.import_request(PAGE, table=2, http=http, resolve=public).artifact["approval"]
+    assert second["columns"] == ["Week", "Volume"] and second["rows"] == 3
+    with pytest.raises(ToolError, match="table is 1 to 2"):
+        approval.import_request(PAGE, table=5, http=http, resolve=public)
+    with pytest.raises(ToolError, match="shows no data table to a plain read"):
+        approval.import_request("https://prices.example.com/about", resolve=public,
+                                http=site({"https://prices.example.com/about": b"<html><p>About us</p></html>"}))
+
+
 def test_an_allowed_download_is_kept_by_what_it_is(ws, index):
     http = site({f"{RAW}/avg.py": PY, f"{RAW}/sales.csv": CSV, f"{RAW}/README.md": b"# Guide\n\nRefunds take 14 days."})
     kept = {}
@@ -207,3 +241,15 @@ def test_the_turn_waits_for_permission_and_the_action_runs_by_code(store):
     list(reply(store, chat, "Cancel", main, ScriptedProvider([])))
     assert keep in store.open(ws_id)[0].ids()  # refused: still there
     assert json.loads(main.requests[3]["messages"][-1]["content"])["allowed"] is False
+
+
+def test_reading_a_page_with_a_data_table_says_its_link_brings_it_in():
+    """The web helper learns at the read that the page's table comes in as data (DATA_TABLE_NOTE), instead of
+    copying its rows into the answer."""
+    r = web.read_webpage(PAGE, http=site({PAGE: PRICES}), resolve=public)
+    assert web.DATA_TABLE_NOTE in r.result["data_table"] and "(4 rows: Date, Close, High)" in r.result["data_table"]
+    assert "data_table" not in r.artifact  # what the helper reads, not the page's card
+    plain = web.read_webpage("https://prices.example.com/about", resolve=public,
+                             http=site({"https://prices.example.com/about": b"<html><p>About us and our long story "
+                                        + b"of tyres " * 30 + b"</p></html>"}))
+    assert "data_table" not in plain.result

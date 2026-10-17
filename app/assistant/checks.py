@@ -10,6 +10,9 @@ main itself, each from a measured failure in the user's own test chat (found in 
     repeated failure    the same call that already failed in this turn is stopped: the model is told what
                         failed and to try something else (it repeated a failed download) - or to confirm
                         it, for a failure that may pass
+    pictures again      a third generate_image in one turn is stopped: the model is told to show the best one and
+                        let the user ask for another try (it judged its own pictures and made 4 in a row, ~2 min,
+                        2026-10-16) - or to confirm it, when the user asked for several
     invented data       a helper task carrying several numbers that no tool returned and the user never
                         wrote is stopped before the helper runs (invented sales figures went to the coder,
                         were charted, then explained as real); confirmed - sample data the user asked for,
@@ -44,6 +47,7 @@ from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
+PICTURES_PER_TURN = 2  # generate_image calls in one turn before another is refused
 
 # A sentence promising an action (the reply's last three sentences are read): measured endings were
 # "One moment.", "Please wait while I execute the update", "I am writing a script now.", "Starting the
@@ -116,6 +120,17 @@ def repeated_failure(turn: list[dict], call: dict) -> str | None:
         return ("This exact call already failed in this turn (see its result above): try another way, or tell the "
                 "user what didn't work." + CONFIRMABLE)
     return None
+
+
+def pictures_again(turn: list[dict], call: dict) -> str | None:
+    """For generate_image: why it is stopped when this turn already made PICTURES_PER_TURN pictures, else None."""
+    if call["name"] != "generate_image":
+        return None
+    made = sum(1 for m in turn if m["role"] == "tool" and m.get("name") == "generate_image" and not m.get("is_error"))
+    if made < PICTURES_PER_TURN:
+        return None
+    return (f"Not made: {made} pictures were made in this turn already. Show the user the best one and say in a "
+            "sentence what is still off; they ask for another try if they want one." + CONFIRMABLE)
 
 
 def _key(call: dict) -> str | None:

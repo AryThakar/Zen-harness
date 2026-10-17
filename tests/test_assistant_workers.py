@@ -804,3 +804,23 @@ def test_the_chat_remembers_pages_read_and_sites_that_refused(ctx, monkeypatch):
     run_worker(model, PROFILES["web"], "the two sum example", ctx)
     opening = model.requests[0]["messages"][0]["content"]
     assert "Two Sum (https://algo.monster/liteproblems/1)" in opening and "leetcode.com (The site showed a bot check" in opening
+
+
+def test_a_web_answer_that_copies_a_pages_table_is_sent_back_for_the_page_link():
+    """Measured 2026-10-16: the web helper copied a month of MRF prices into its answer instead of handing over the
+    page; the page's table comes in exact through downloads (files download, the user's approval)."""
+    from app.assistant.workers.checks import _check_web
+    from app.assistant.workers.contracts import WebResult
+    from app.assistant.workers.evidence import Trace
+    from app.tools.web import DATA_TABLE_NOTE
+    page = "https://stockanalysis.com/quote/nse/MRF/history/"
+    trace = Trace(read_urls={page}, pages=[page],
+                  outputs=[f'{{"url": "{page}", "data_table": "{DATA_TABLE_NOTE} (50 rows: Date, Open, Close)"}}'])
+    rows = "\n".join(f"| Sep {d} | 13{d},100 | 13{d},900 | 13{d},050 |" for d in range(1, 10))
+    copied = WebResult(answer=f"MRF closed lower over the month.\n{rows}", sources=[1])
+    assert any("copies a table's rows" in p for p in _check_web(copied, trace, ""))
+    handed = WebResult(answer="MRF fell about 7% over the month; the daily prices are on page 1.", sources=[1],
+                       downloads=[page])
+    assert _check_web(handed, trace, "") == []
+    no_table = Trace(read_urls={page}, pages=[page], outputs=['{"url": "x", "text": "prose"}'])
+    assert not any("copies" in p for p in _check_web(copied, no_table, ""))  # a quoted table from prose stands

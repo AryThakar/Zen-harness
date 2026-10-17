@@ -22,7 +22,7 @@ URL = re.compile(r"https?://[^\s)\]>\"'`]+")
 
 
 def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
-    from app.tools.web import is_file_link
+    from app.tools.web import DATA_TABLE_NOTE, is_file_link
     problems = [f"{d} is not a link any page you read gave; give only links the tools returned"
                 for d in result.downloads if not given_link(d, trace)]
     written = [u.rstrip(".,;:") for u in dict.fromkeys(URL.findall(result.answer))]
@@ -37,6 +37,12 @@ def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
             problems.append(f"there is no page {s}: you read {len(trace.pages)} page(s), numbered 1 to {len(trace.pages)}")
         else:
             problems.append(f"{s} is not a page you read: cite pages by the numbers their reads gave")
+    if not result.downloads and copied_rows(result.answer) >= COPIED_ROWS and any(DATA_TABLE_NOTE in o
+                                                                                  for o in trace.outputs):
+        # Measured: a web helper copied a month of share prices out of a page into its answer - closes missing,
+        # a high below its low - and the chart was drawn from that; the page's table comes in exact instead.
+        problems.append("your answer copies a table's rows from a page: give that page's link in downloads instead "
+                        "(main brings its table in as data, exact) and keep only a short summary in the answer")
     if not result.sources and trace.read_urls and not result.question_for_user:
         problems.append("no sources given; list the numbers of the pages you used")
     if (not result.sources and not trace.read_urls and not result.question_for_user
@@ -47,6 +53,13 @@ def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
         problems.append("you answered without reading any page: read the best result with read_webpage (a data "
                         "file's link shows its columns and first rows) and answer from what it says")
     return problems
+
+
+COPIED_ROWS = 8  # lines of three or more numbers each: a table copied out of a page, not a few quoted figures
+
+
+def copied_rows(text: str) -> int:
+    return sum(1 for line in text.splitlines() if len(NUMBER.findall(line)) >= 3)
 
 
 def given_link(link: str, trace: Trace) -> bool:

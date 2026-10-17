@@ -172,16 +172,18 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
         if count(visible) > limit and not last:  # still too long: this step is the last - finish with what is done
             last = True
             visible = visible + [{"role": "user", "content": FULL.format(finish=profile.finish)}]
-        if count(visible) > limit:  # then the newest results too, as main's ladder does: the finish must fit (measured:
-            # without this step a web helper with two long price pages handed back nothing, three times running)
+        if (size := count(visible)) > limit:  # then the newest results too, as main's ladder does: the finish must
+            # fit (measured: without this step a web helper with two long price pages handed back nothing, 3 times)
             visible, _ = shorten_tool_results(visible, limit, count, 0, keep_last=0)
-        if count(visible) > limit:
+            size = count(visible)
+        if size > limit:
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task,
                          stopped=CONTEXT_FULL)
         try:  # the last step offers only the finish: the task always ends with a result
             turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True,
                                      on_event=lambda kind, text: kind == "writing" and progress(
-                                         {"type": "worker_writing", "worker": profile.name, **json.loads(text)}))
+                                         {"type": "worker_writing", "worker": profile.name, **json.loads(text)}),
+                                     prompt_tokens=size)
         except ProviderError as exc:
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task, stopped=_plain(exc))
         messages.append({"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,

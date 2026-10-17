@@ -18,9 +18,8 @@ export function stepLabel(name, done, input) {
 }
 
 export const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
-// A call being written, as it grows (the model writes a whole file into it - a long one takes minutes)
-const size = n => n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} characters`;
-const composing = d => `${d.file ? `Writing ${d.file}` : stepLabel(d.name, false)} · ${size(d.chars)}…`;
+// A call being written (the model writes a whole file into it - a long one takes minutes; the timer shows it goes on)
+const composing = d => `${d.file ? `Writing ${d.file}` : stepLabel(d.name, false)}…`;
 const clock = s => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
 const timer = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -135,14 +134,14 @@ export function activityEl(onStatus = () => {}) {
     say.classList.remove("swap"); void say.offsetWidth; say.classList.add("swap");
   };
   const steps = new Map();
-  let helperActions = 0;
+  let helperActions = 0, composed = null;  // composed: the call main was writing when the turn ended without steps
 
   const view = {
     el, steps,
     running(text) { unpause(); el.hidden = false; el.classList.remove("done", "waiting"); el.classList.add("running"); say.classList.add("shimmer"); tell(text); },
     checking() { view.running("Checking the answer…"); },  // a hidden check sent the model back: say so, not a stuck reply
     writing() { if (!steps.size) el.hidden = true; else { view.fold(); view.running("Writing…"); } },
-    composing(d) { view.running(composing(d)); },  // main writing a call: its file and size so far
+    composing(d) { composed = d; view.running(composing(d)); },  // main writing a call: its file
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
       const step = { id: d.id, name: d.name, delegate: isDelegate(d.name), done: false, sub: null, tables: [], code: null, input: d.input };
@@ -244,7 +243,19 @@ export function activityEl(onStatus = () => {}) {
             failed ? `${failed} didn't work` : null].filter(Boolean).join(" · "));
       view.fold();
     },
-    stop(seconds) { steps.size ? view.finish(seconds) : (clearInterval(tick), el.remove()); },
+    // a turn that failed or was stopped: its steps stay; with none, a call it was writing still says how long it
+    // worked and on what (a cut-off file write left no step, and the whole line went)
+    stop(seconds) {
+      if (steps.size) return view.finish(seconds);
+      clearInterval(tick);
+      if (!composed) return el.remove();
+      const worked = seconds ?? ((waitStart ?? performance.now()) - t0 - waited) / 1000;
+      el.hidden = false;
+      el.classList.remove("waiting", "running");
+      el.classList.add("done");
+      say.classList.remove("shimmer");
+      tell(`Worked for ${clock(worked)} · ${composing(composed).replace(/…$/, "")} didn't finish`);
+    },
   };
   return view;
 }

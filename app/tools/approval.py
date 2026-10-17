@@ -20,8 +20,12 @@ YES = {"yes", "y", "ok", "okay", "sure", "allow", "approve", "go ahead", "do it"
 MAX_DELETE = 10
 
 
-def import_request(url: str, *, http=None, resolve=None) -> ToolResult:
-    looked = web.look(url, tables=True, http=http, resolve=resolve)
+def import_request(url: str, *, table: int | None = None, http=None, resolve=None) -> ToolResult:
+    looked = web.look(url, tables=True, table=table, http=http, resolve=resolve)
+    if looked.get("table"):  # a table on a page: which one, by what it holds
+        return _ask("import_table", looked, f"Import the table on {looked['host']}'s page ({looked['rows']:,} rows: "
+                                            f"{', '.join(looked['columns'][:6])}) into this workspace as "
+                                            f"{looked['name']}?", "Import")
     return _ask("import_table", looked, f"Import {looked['name']} ({_size(looked['bytes'])}) from {looked['host']} "
                                         "into this workspace as a table?", "Import")
 

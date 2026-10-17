@@ -66,7 +66,7 @@ from app.tools.memory import remember_turn
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace, present
 
-from .checks import SAMPLE_DATA, invented_numbers, nudge_for, repeated_failure, this_turn
+from .checks import SAMPLE_DATA, invented_numbers, nudge_for, pictures_again, repeated_failure, this_turn
 from . import snapshot
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
                       standing_instructions,
@@ -245,9 +245,10 @@ def _agent(state: TurnState, config) -> dict:
         visible, t.shortened = shorten_tool_results(visible, limit, count, t.shortened)
     if t.cut or count(visible) > limit:  # then its older calls' long texts (a file's whole text: the file keeps it)
         visible, t.cut = shorten_call_args(visible, limit, count, t.cut)
-    if count(visible) > limit:  # then the newest results too
+    if (size := count(visible)) > limit:  # then the newest results too
         visible, _ = shorten_tool_results(visible, limit, count, 0, keep_last=0)
-    if count(visible) > limit:  # nothing left to shorten: never sent over the limit (the server would refuse it)
+        size = count(visible)
+    if size > limit:  # nothing left to shorten: never sent over the limit (the server would refuse it)
         raise ProviderError("This turn grew too long for the model's context, even with its older results "
                             "shortened. Ask for less at once, or start a new chat.")
     visible = t.with_snapshot(visible)  # the pinned and pointed-at files, for this turn only
@@ -256,7 +257,7 @@ def _agent(state: TurnState, config) -> dict:
     stream = _Unstamped(t.write)
     quick = bool(history) and bool(history[-1].get("quick"))  # the user asked for a quick answer
     turn = t.main.complete(system, visible, specs, allow_tools=not last, on_event=stream,
-                           budget=QUICK_BUDGET if quick else None)
+                           budget=QUICK_BUDGET if quick else None, prompt_tokens=size)
     stream.flush()
     if t.live is not None:
         t.live.note("steps", {"seconds": round(time.perf_counter() - started, 2), "stop": turn.stop,
@@ -336,7 +337,8 @@ def _tools(state: TurnState, config) -> dict:
         t.write({"type": "tool_start", "id": call["id"], "name": call["name"], "input": call["input"]})
         t.ctx.call_id = call["id"]  # a helper's question in place shows on this call's step
         given, confirmed = split_confirm(call["input"])
-        refused = None if confirmed else (repeated_failure(this_turn(state["messages"] + results), call)
+        so_far = this_turn(state["messages"] + results)
+        refused = None if confirmed else (repeated_failure(so_far, call) or pictures_again(so_far, call)
                                           or invented_numbers(call, state["messages"]))
         if confirmed and isinstance(given, dict) and invented_numbers(call, state["messages"]):
             given = {**given, "task": str(given.get("task", "")) + SAMPLE_DATA}  # it runs, labelled

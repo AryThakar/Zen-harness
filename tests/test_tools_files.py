@@ -173,7 +173,7 @@ def test_delete_and_download_ask_first(ws, index, monkeypatch):
     assert ws.ids() == ["file_1"]  # nothing deleted yet
     asked = []
     monkeypatch.setattr(approval, "download_request", lambda link: asked.append(("github", link)) or "github")
-    monkeypatch.setattr(approval, "import_request", lambda link: asked.append(("table", link)) or "table")
+    monkeypatch.setattr(approval, "import_request", lambda link, table=None: asked.append(("table", link)) or "table")
     run(ws, index, "download", link="https://github.com/o/r/blob/main/app.py")
     run(ws, index, "download", link="https://data.example.org/sales.csv")
     assert asked == [("github", "https://github.com/o/r/blob/main/app.py"), ("table", "https://data.example.org/sales.csv")]

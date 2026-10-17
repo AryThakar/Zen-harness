@@ -55,7 +55,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.providers.base import Provider
-from app.tools.core import ToolResult
+from app.tools.core import ToolError, ToolResult
 
 from ..registry import TOOLS, Tool, ToolContext
 from .checks import numbers_in, ungrounded_numbers  # noqa: F401 - used by main's checks
@@ -72,7 +72,11 @@ def delegate_tools(worker: Provider, progress: Callable[[dict], None] | None = N
         def handler(ctx: ToolContext, args) -> ToolResult:
             named = [str(f) for f in getattr(args, "files", None) or []]
             for f in named:  # a file that isn't there is said at main's call, with the closest names
-                ctx.ws.resolve(f, ("table", "image", "file"), field="files")
+                try:
+                    ctx.ws.resolve(f, ("table", "image", "file"), field="files")
+                except ToolError as exc:  # measured: main listed the chart files it wanted made (2 chats of 2)
+                    raise ToolError(f"{exc.message} files names the workspace files the task starts from; a file the "
+                                    "helper is to make goes in the task, not in files.", field="files") from exc
             task = getattr(args, "task", None) or args.question
             out = run_worker(worker, PROFILES[profile_name], task, ctx, progress=progress, files=named)
             ctx.trace = None  # done: a Stop from here on has no helper's work to keep (main._stopped)

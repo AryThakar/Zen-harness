@@ -149,7 +149,8 @@ def _files(c: ToolContext, a) -> ToolResult:
         return ok({"pinned": shown, "note": said},
                   {"type": "pins", "pins": [{"id": k, "name": c.ws.label(k)} for k in pins if k in c.ws.ids()]})
     return file_ops.files(c.ws, c.index, a.mode, name=a.name, page=a.page, start=a.start, content=a.content,
-                          old_text=a.old_text, new_text=a.new_text, new_name=a.new_name, link=a.link, query=a.query)
+                          old_text=a.old_text, new_text=a.new_text, new_name=a.new_name, link=a.link, query=a.query,
+                          table=a.table)
 
 
 def _run(c: ToolContext, a) -> ToolResult:
@@ -169,8 +170,10 @@ class TaskIn(_In):
 
 
 class WorkTaskIn(TaskIn):
-    files: list[str] | None = Field(None, description="the workspace files the task is about, by name - tables, "
-                                                      "pictures, documents, programs - e.g. ['sales.csv', 'stats.py']")
+    files: list[str] | None = Field(None, description="the workspace files the task starts from, by name - they must "
+                                                      "exist: tables, pictures, documents, programs - e.g. ['sales.csv', "
+                                                      "'stats.py']. A file the helper is to make is named in the task, "
+                                                      "not here")
 
 
 class QuestionIn(_In):
@@ -205,7 +208,10 @@ class FilesIn(_In):
     old_text: str | None = Field(None, description=OLD_TEXT)
     new_text: str | None = Field(None, description=NEW_TEXT)
     new_name: str | None = Field(None, description="rename: the new name")
-    link: str | None = Field(None, description="download: a GitHub file's link, or a data file's link (CSV, Excel)")
+    link: str | None = Field(None, description="download: a GitHub file's link, a data file's link (CSV, Excel), or "
+                                               "a page whose table holds the data")
+    table: int | None = Field(None, ge=1, description="download, a page with several tables: which one, e.g. 2 (the "
+                                                      "result says how many there are); omit for the largest")
 
 
 class HelperFilesIn(_In):
@@ -425,8 +431,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
        "are made from Markdown (for slides each # heading starts a slide; a line that is only "
        "![caption](charts/sales.chart.json) puts in that picture or chart); edit: change one passage - old_text "
        "exactly as in the file, new_text to put instead; rename; delete: one file; download: one file from GitHub, or "
-       "a data table (CSV, Excel) from any public link - a repository's or folder's page lists its files, to pick "
-       "one; pin: keep a file in view in this chat - the parts of it that match each message come with every turn "
+       "a data table from any public link - a CSV or Excel file, or a page's own table (a price history, a results "
+       "table) - a repository's or folder's page lists its files, to pick one; pin: keep a file in view in this chat - the parts of it that match each message come with every turn "
        "(the user pins files too); unpin: stop. agent.md is your memory for this project, always in view: to "
        "remember something (\"remember ...\", \"from now on ...\") write it: content = what it holds plus the new "
        "line. Returns what was asked: the list, the matches, the text, or what was written. Use it when the user asks "

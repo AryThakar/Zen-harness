@@ -36,6 +36,7 @@ class CloudProvider(LlamaCppProvider):
     max_tokens_default = 8_192
     vision = False
     STREAM_EXTRA = {"stream_options": {"include_usage": True}}  # else a cloud may send no usage at all
+    FILLS_SLOT = False  # its API caps a reply at max_tokens, whatever the context has left
 
     def __init__(self, model: str, api_key: str, base_url: str, thinking: bool = False,
                  max_tokens: int | None = None, cancel=None, slot_tokens: int | None = None):
@@ -81,8 +82,10 @@ class CloudProvider(LlamaCppProvider):
         """llama-server's own fields out; the cloud's thinking switch in."""
         return {k: v for k, v in body.items() if k not in LLAMA_ONLY}
 
-    def _body(self, system, messages, tools, allow_tools, think=True, budget=None, require_tool=False) -> dict:
-        body = self._clean(super()._body(system, messages, tools, allow_tools, think, budget, require_tool))
+    def _body(self, system, messages, tools, allow_tools, think=True, budget=None, require_tool=False,
+              prompt_tokens=None) -> dict:
+        body = self._clean(super()._body(system, messages, tools, allow_tools, think, budget, require_tool,
+                                         prompt_tokens))
         return {**body, **self.thinking_fields(self.thinking and think)}
 
     def thinking_fields(self, thinking: bool) -> dict:

@@ -58,6 +58,7 @@ MAX_TOKENS_THINKING = 8192  # thinking counts against it
 THINKING_BUDGET = None      # no thinking budget (a number caps thinking tokens per reply, for experiments)
 READ_TIMEOUT = 600          # longest silence allowed while a turn streams (a first turn reads the whole prompt)
 DEFAULT_SLOT_TOKENS = 16_384  # a slot's context until the server says (it is still starting)
+REPLY_MARGIN = 256          # tokens kept back from the reply's room: a text-only step adds a line the count didn't see
 NO_MORE_TOOLS = ("(The tool limit for this question is reached. Answer now in plain text from the results above, "
                  "without calling any tools; say what is still missing if something is.)")
 # A tool call the model writes as text anyway (tools switched off, or a call the template parser missed).
@@ -149,6 +150,16 @@ class LlamaCppProvider:
             self._vision = bool((props.get("modalities") or {}).get("vision"))
         return self._vision
 
+    FILLS_SLOT = True  # a reply may take the slot's whole room left; a cloud API caps replies (CloudProvider)
+
+    def reply_tokens(self, prompt_tokens: int | None = None) -> int:
+        """The reply's room: what the slot has left after the prompt, so a long file fits in one call (measured: a
+        game page cut off twice at 4,096 tokens with 10,000 left in the slot, 2026-10-16) - never less than
+        max_tokens, the room context.py always keeps free."""
+        if not self.FILLS_SLOT or not prompt_tokens:
+            return self.max_tokens
+        return max(self.max_tokens, self.slot_tokens - prompt_tokens - REPLY_MARGIN)
+
     @property
     def slot_tokens(self) -> int:
         """One slot's context, as the server runs it; DEFAULT_SLOT_TOKENS until it answers."""
@@ -176,14 +187,15 @@ class LlamaCppProvider:
         return re.split(r"[\\/]", path)[-1].removesuffix(".gguf") or self.model
 
     def _body(self, system: str, messages: list[dict], tools: list[dict], allow_tools: bool,
-              think: bool = True, budget: int | None = None, require_tool: bool = False) -> dict:
+              think: bool = True, budget: int | None = None, require_tool: bool = False,
+              prompt_tokens: int | None = None) -> dict:
         """The request, the same for generating and for counting."""
         thinking = self.thinking and think
         budget = budget or self.thinking_budget
         body = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *to_openai_messages(messages)],
-            "max_tokens": self.max_tokens,
+            "max_tokens": self.reply_tokens(prompt_tokens),
             "chat_template_kwargs": template_switches(thinking),
             **({"reasoning_budget_tokens": budget} if thinking and budget else {}),
             "cache_prompt": True,
@@ -283,8 +295,9 @@ class LlamaCppProvider:
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
                  allow_tools: bool = True, require_tool: bool = False, on_event: EventCallback | None = None,
-                 think: bool = True, budget: int | None = None) -> ModelTurn:
-        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool), "stream": True,
+                 think: bool = True, budget: int | None = None, prompt_tokens: int | None = None) -> ModelTurn:
+        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool, prompt_tokens),
+                "stream": True,
                 **self.STREAM_EXTRA}
         try:
             with self._open(self.CHAT, body, READ_TIMEOUT, stream=True) as response:

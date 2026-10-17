@@ -72,8 +72,10 @@ class WebResult(_Out):
     sources: list[int | str] = Field(default_factory=list, description="the numbers of the pages you used, e.g. [1, 3]: "
                                      "each page you read gives its number")
     downloads: list[str] = Field(default_factory=list, description="links to files the task asks for (a data table, "
-                                 "a GitHub file), exactly as a page gave them - main downloads them with the user's "
-                                 "approval; never paste a file's content into the answer")
+                                 "a GitHub file) - or to a page whose table holds the data the task needs (a price "
+                                 "history, results): main brings that table in as data - exactly as a page gave "
+                                 "them, with the user's approval; never copy a file's or a table's rows into the "
+                                 "answer")
 
 
 class WorkResult(_Out):
@@ -149,7 +151,7 @@ DELEGATES = {
     "research_web": Delegate("web", TaskIn, "Research a question on the web: a helper searches and reads pages. "
                      "Returns a cited answer - dated for 'latest' questions - with its caveats, how each cited page was "
                      "read, the pages it could not read and why, and the links of files the task asks for (a dataset, a "
-                     "script) for you to download. Use it for what is current or what you don't know - news, releases, "
+                     "script) or of a page whose table holds the data, for you to bring in with files(mode='download'). Use it for what is current or what you don't know - news, releases, "
                      "prices, people, events - to find a public file or dataset, and to read a page the user links to. "
                      "Not for the user's own files (files, ask_knowledge), or for bringing in a file whose link you have "
                      "(files, mode='download').",

@@ -229,3 +229,43 @@ def test_remember_without_saving_is_nudged_and_agent_md_edited(store, chat):
     assert main.requests[1]["messages"][-1]["content"] == REMEMBER_NUDGE
     ws, _ = store.open(chat["workspace_id"])
     assert "The user is Ary" in agent_md.body(ws)
+
+
+def test_a_third_picture_in_one_turn_is_stopped_unless_confirmed(store, chat, monkeypatch):
+    """Measured 2026-10-16: main judged its own pictures and made 4 in a row for one request (~2 min)."""
+    from app.assistant import registry
+    from app.assistant.registry import Tool
+    from app.tools.core import ok
+    made = []
+    monkeypatch.setitem(registry.TOOLS, "generate_image", Tool("generate_image", "test", registry.ImageIn,
+                                                               lambda c, a: made.append(a.prompt) or ok({"saved": "x.png"})))
+
+    def draw(n: int, **more) -> dict:
+        return {"id": f"draw_{n}", "name": "generate_image", "input": {"prompt": f"a cat, take {n}", **more}}
+
+    main = ScriptedProvider([turn(draw(1)), turn(draw(2)), turn(draw(3)), turn(draw(4, confirm=True)),
+                             answer("Here are the cats.")])
+    list(send(store, chat["id"], "draw a cat", main, ScriptedProvider([])))
+    results = [m["content"] for m in store.messages(chat["id"]) if m["role"] == "tool"]
+    assert made == ["a cat, take 1", "a cat, take 2", "a cat, take 4"]  # the third stopped, the confirmed one ran
+    assert "2 pictures were made in this turn already" in results[2] and "confirm: true" in results[2]
+
+
+def test_main_sends_its_counted_prompt_size_so_a_long_reply_gets_the_room_left(store, chat):
+    main = ScriptedProvider([answer("Hi.")])
+    list(send(store, chat["id"], "hello", main, ScriptedProvider([])))
+    assert isinstance(main.requests[0]["prompt_tokens"], int) and main.requests[0]["prompt_tokens"] > 0
+
+
+def test_a_helper_task_naming_the_file_it_should_make_says_what_files_is_for(store, chat):
+    """Measured 2026-10-16, two chats of two: main put the chart it wanted made in files and was refused with
+    'Did you mean' other files; the refusal now says files are the task's inputs."""
+    task = "Draw the closing prices as a line chart."
+    main = ScriptedProvider([turn(call("analyze_or_code", task=task, files=["work/mrf_line_chart.png"])),
+                             answer("Drawing it.")])
+    helper = ScriptedProvider([])  # never called: refused at main's call
+    list(send(store, chat["id"], "chart the prices", main, helper))
+    result = [m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]
+    assert result["is_error"] and "work/mrf_line_chart.png" in result["content"]
+    assert "a file the helper is to make goes in the task, not in files" in result["content"]
+    assert helper.requests == []

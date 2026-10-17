@@ -320,6 +320,7 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         text = text[:MAX_TEXT].rsplit(" ", 1)[0] + " ..."
     files = meta.pop("files", None)
     note = meta.pop("note", None)
+    data_table = meta.pop("data_table", None)
     status = "partial" if meta.pop("partial", False) else "cut" if truncated else "ok"
     result = {"url": final, "read": status, "title": title, "site": meta["site"],
               **{k: meta[k] for k in ("published", "updated", "author", "via") if meta.get(k)},
@@ -330,6 +331,10 @@ def read_webpage(url: str, find: str | None = None, *, http: httpx.Client | None
         result["files_note"] = "Files this page links to: if the task wants one, give its link in downloads."
     if note:
         result["note"] = note
+    if data_table:
+        result["data_table"] = (f"{DATA_TABLE_NOTE} ({data_table['rows']} rows: {', '.join(data_table['columns'])}). If "
+                                "the task needs its numbers, give this page's link in downloads: main brings the table in "
+                                "as data, exact. Don't copy its rows into your answer.")
     if shown:
         result["shown"] = shown
     elif truncated:
@@ -500,6 +505,11 @@ def _read(http: httpx.Client, url: str, resolve) -> tuple[str | None, str, dict,
         files = offered_files(body, final)
         if files:
             meta["files"] = files
+        if b"<table" in body[:2_000_000].lower() and not _on_github(final):
+            found = page_tables(body)
+            if found:  # said with the read, so a table's numbers come in as data instead of copied (fetch_table)
+                big = max(found, key=lambda t: t.size)
+                meta["data_table"] = {"rows": len(big), "columns": [str(c) for c in big.columns][:8]}
         if len(text.split()) < 20 and meta.get("description"):  # content drawn by JavaScript
             text = (f"{meta['description']}\n\n(This page shows its content with JavaScript; only its description "
                     "could be read.)")
@@ -597,13 +607,16 @@ GITHUB_HOSTS = {"github.com", "www.github.com", "raw.githubusercontent.com", "me
 PEEK = 1024  # bytes read from a link to tell what it is, before the user approves the download
 
 
-def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Client | None = None,
-         resolve=None) -> dict:
+def look(url: str, *, github: bool = False, tables: bool = False, table: int | None = None,
+         http: httpx.Client | None = None, resolve=None) -> dict:
     """What a link holds, for the user to approve before anything is downloaded: the file's name,
     type, size and the address to fetch it from (a GitHub file page gives its raw file; a file kept
     in Git LFS, its real one). Only the first bytes of the response are read. A web page instead of
     a file is a ToolError naming the files it links to. github: GitHub only (download_file);
-    tables: a CSV, TSV or Excel file (import_table)."""
+    tables: a CSV, TSV or Excel file (import_table) - or, from a page off GitHub, the page's own data table (the
+    largest, or number ``table``): a table on a page comes in as data, never retyped by a model (measured: a web
+    helper copied a month of share prices out of a page into its answer, with closes missing and a high below its
+    low, and the chart had nothing to draw from)."""
     url = str(url).strip()
     if not re.match(r"^https?://", url, re.I):
         raise ToolError("Give the file's full http(s) link.", field="url")
@@ -621,6 +634,10 @@ def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Cl
             size = int(stated[1]) if stated else None
         if ctype in ("text/html", "application/xhtml+xml") or head.lstrip().lower().startswith((b"<!doctype", b"<html")):
             page = _fetch(client, url, resolve)[0]  # a page, read like read_webpage would: which files does it offer?
+            if tables and not _on_github(final):
+                found_tables = page_tables(page)
+                if found_tables:
+                    return _page_table(found_tables, table, final)
             found, total = _file_links(http, url, page, final, resolve, TABLE_SUFFIXES if tables else None)
             what = "data file" if tables else "file"
             if found:  # one call more instead of another search
@@ -628,8 +645,10 @@ def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Cl
                          if total > len(found) else "Files it has: ")  # measured: 10 shown were taken for all
                 raise ToolError(f"That link is a web page, not a {what}. {shown}" + ", ".join(found)
                                 + " - ask for one of these.", invalid=False)
-            raise ToolError(f"That link is a web page, not a {what}. A file's own link ends in its name (e.g. "
-                            ".csv); ask research_web for it, or ask the user to upload the file.", invalid=False)
+            raise ToolError(f"That link is a web page, not a {what}" + (", and it shows no data table to a plain "
+                            "read (it may draw one with JavaScript)" if tables else "") + ". A file's own link ends in "
+                            "its name (e.g. .csv); ask research_web for it, or ask the user to upload the file.",
+                            invalid=False)
     if github and not _on_github(final):
         raise ToolError("That link leads away from GitHub: only a file on GitHub is downloaded as it is.",
                         invalid=False)
@@ -653,10 +672,17 @@ def look(url: str, *, github: bool = False, tables: bool = False, http: httpx.Cl
 
 
 def fetch_table(ws, looked: dict, *, http: httpx.Client | None = None, resolve=None) -> ToolResult:
-    """The approved data file (from look), downloaded and stored as a table."""
+    """The approved data file (from look), downloaded and stored as a table - or a page's table, read again and
+    stored as CSV."""
     body, ctype, final = _download(looked, MAX_TABLE_BYTES, http, resolve)
+    if looked.get("table"):
+        found = page_tables(body)
+        if len(found) < looked["table"]:
+            raise ToolError("The page changed since it was looked at: that table is no longer on it, so nothing was "
+                            "saved.", invalid=False)
+        body, ctype = found[looked["table"] - 1].to_csv(index=False).encode("utf-8"), "text/csv"
     suffix = PurePosixPath(urlsplit(final).path).suffix.lower()
-    if suffix not in TABLE_SUFFIXES:
+    if looked.get("table") or suffix not in TABLE_SUFFIXES:
         suffix = TABLE_TYPES.get(ctype) or ".csv"
     name = looked["name"]
     name = name if name.lower().endswith(suffix) else name + suffix
@@ -665,8 +691,10 @@ def fetch_table(ws, looked: dict, *, http: httpx.Client | None = None, resolve=N
     df = ws.table(data)
     preview = df.head(8).astype(object).where(df.head(8).notna(), None)
     saved = f"Already in the workspace as {data} (the same file)" if put.existed else f"Saved as {data}"
+    others = (f" The page has {looked['tables']} data tables; this is number {looked['table']} - another comes in "
+              "with files(mode='download', link=..., table=its number)." if looked.get("tables", 1) > 1 else "")
     return ok({"data": data, "rows": len(df), "columns": list(map(str, df.columns)),
-               "source": final, "note": f"{saved}: give analyze_or_code a task on {data}."},
+               "source": final, "note": f"{saved}: give analyze_or_code a task on {data}.{others}"},
               {"type": "table", "title": put.path, "columns": list(map(str, df.columns)),
                "rows": preview.values.tolist(), "note": f"{len(df):,} rows from {urlsplit(final).hostname}"})
 
@@ -685,6 +713,47 @@ def fetch_file(ws, index, looked: dict, *, http: httpx.Client | None = None, res
            "image": "view_image can look at it", "file": f"analyze_or_code's scripts can open it as '{item}'"}[kept["kind"]]
     saved = f"Already in the workspace as {item} (the same file)" if kept.get("same") else f"Saved as {item}"
     return ok({**kept, "bytes": len(body), "source": final, "note": f"{saved}: {use}."})
+
+
+MIN_TABLE_ROWS = 3  # a page's table with fewer rows is layout or a key figure, not data
+DATA_TABLE_NOTE = "This page holds a data table"  # read_webpage says it; the web check knows a page had one by it
+
+
+def page_tables(body: bytes) -> list:
+    """A page's data tables (pandas over lxml), in page order: at least MIN_TABLE_ROWS rows and two columns, the
+    headers plain text (a header of two rows joined), empty rows out."""
+    import io
+
+    import pandas as pd
+    try:
+        found = pd.read_html(io.StringIO(body.decode("utf-8", "replace")))
+    except (ValueError, ImportError):  # no <table> on the page
+        return []
+    out = []
+    for t in found:
+        if isinstance(t.columns, pd.MultiIndex):
+            t.columns = [" ".join(dict.fromkeys(str(p) for p in c if not str(p).startswith("Unnamed")))
+                         or f"column {i + 1}" for i, c in enumerate(t.columns)]
+        else:
+            t.columns = [f"column {i + 1}" if str(c).startswith("Unnamed") else str(c) for i, c in enumerate(t.columns)]
+        t = t.dropna(how="all")
+        if len(t) >= MIN_TABLE_ROWS and t.shape[1] >= 2:
+            out.append(t)
+    return out
+
+
+def _page_table(found: list, table: int | None, final: str) -> dict:
+    """The page's table to bring in - the one asked for, else the largest - described for the user's approval."""
+    if table is not None and not 1 <= table <= len(found):
+        raise ToolError(f"That page has {len(found)} data table(s): table is 1 to {len(found)}.", field="table")
+    i = table - 1 if table else max(range(len(found)), key=lambda k: found[k].size)
+    host = urlsplit(final).hostname or "page"
+    stem = re.sub(r"[^\w-]+", "-", PurePosixPath(urlsplit(final).path).name.rsplit(".", 1)[0] or host).strip("-")
+    site = host.removeprefix("www.").split(".")[0]  # 'history.csv' says nothing: 'stockanalysis-history.csv'
+    name = f"{site}-{stem or 'table'}{f'-table-{i + 1}' if len(found) > 1 else ''}.csv"
+    t = found[i]
+    return {"url": final, "name": name, "type": "text/html", "bytes": len(t.to_csv(index=False).encode("utf-8")),
+            "host": host, "table": i + 1, "tables": len(found), "rows": len(t), "columns": [str(c) for c in t.columns][:12]}
 
 
 def _download(looked: dict, limit: int, http, resolve) -> tuple[bytes, str, str]:

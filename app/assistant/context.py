@@ -17,7 +17,8 @@ the prompt processed again.
 Fitting a slot is measured, not guessed: ``count`` gives the exact size of the whole prompt -
 system, tool declarations and messages as the model's chat template renders them - from the
 model server (LlamaCppProvider.count_tokens). The prompt must leave room for the reply:
-limit = slot size - the provider's max_tokens.
+limit = slot size - the provider's max_tokens. That is the least a reply gets: the counted size goes with the
+call, and llama-server's reply may take all the room the slot has left (LlamaCppProvider.reply_tokens).
 
 Rolling window (main slot): the oldest complete turns are dropped (a turn = a user message and
 everything up to the next one; the current turn is never cut). When trimming is needed it trims

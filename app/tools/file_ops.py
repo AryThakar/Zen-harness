@@ -50,7 +50,7 @@ HELPER_MODES = ("find", "read", "write", "edit")  # a helper's files: what it re
 def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | None = None, page: int = 1,
           start: int | None = None, content: str | None = None, old_text: str | None = None,
           new_text: str | None = None, new_name: str | None = None, link: str | None = None,
-          query: str | None = None, helper: bool = False) -> ToolResult:
+          query: str | None = None, helper: bool = False, table: int | None = None) -> ToolResult:
     mode = str(mode).strip().lower()
     modes = HELPER_MODES if helper else MODES
     if mode not in modes:
@@ -58,7 +58,8 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
     if mode == "list":
         return _list(ws, page)
     if mode == "download":
-        return _download(_need(link, "link", "download needs link: a GitHub file's link, or a data file's link"))
+        return _download(_need(link, "link", "download needs link: a GitHub file's link, a data file's link, or a "
+                                             "page whose table holds the data"), table)
     if mode == "find":
         return find_files(ws, index, _need(query, "query", "find needs query: what to look for - words in a file's "
                                                             "name or text, what a picture shows, a table's columns"))
@@ -317,12 +318,13 @@ def _pictures_there(ws: Workspace, name: str, content: str) -> None:
 
 # ---------------------------------------------------------------- download
 
-def _download(link: str) -> ToolResult:
-    """One GitHub file of any kind, or a data table from any public site - both ask the user first."""
+def _download(link: str, table: int | None = None) -> ToolResult:
+    """One GitHub file of any kind, or a data table from any public site (a data file, or a page's own table) - both
+    ask the user first."""
     from .web import _on_github, _raw_link
     if _on_github(_raw_link(link.strip())):
         return approval.download_request(link)
-    return approval.import_request(link)
+    return approval.import_request(link, table=table)
 
 
 # ---------------------------------------------------------------- names

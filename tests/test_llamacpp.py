@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from app.providers import LlamaCppProvider, ProviderError
-from app.providers.llamacpp import _read_stream, parse_turn, to_openai_messages
+from app.providers.llamacpp import REPLY_MARGIN, _read_stream, parse_turn, to_openai_messages
 from app.assistant.registry import TOOLS
 
 TOOL_SPECS = [TOOLS[n].spec() for n in ("calculate", "get_weather")]
@@ -377,3 +377,14 @@ def test_a_helper_step_requires_a_tool_call(fake):
                                                [{"name": "finish", "description": "d", "input_schema": {"type": "object"}}],
                                                require_tool=True)
     assert server.requests[0]["tool_choice"] == "required"
+
+
+def test_a_reply_gets_the_room_the_slot_has_left_and_never_less_than_max_tokens(fake):
+    """Measured 2026-10-16: a game page was cut off twice at 4,096 tokens with ~10,000 left in a 24,576 slot."""
+    done = {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    server = fake(chunks=[delta(content="ok"), done], props={"default_generation_settings": {"n_ctx": 24576}})
+    model = LlamaCppProvider("m", server.url)
+    for size in (14_000, 23_000, None):
+        model.complete("s", [{"role": "user", "content": "q"}], [], prompt_tokens=size)
+    sent = [r["max_tokens"] for r in server.requests]
+    assert sent == [24576 - 14_000 - REPLY_MARGIN, 4096, 4096]  # the room left; the floor; not counted: the floor

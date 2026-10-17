@@ -5,7 +5,7 @@ import { api, detail, KEYS, send, serverEvents, state, API } from "./api.js";
 import { closeAsk, decision, openAsk } from "./ask.js";
 import { CARD_TYPES, addRun, artifactCard, codeCard, finishAnswer, onDrawn, passagesEl, redrawDiagrams, resultsCard, webSourcesEl } from "./cards.js";
 import { forgetCharts, redrawCharts } from "./charts.js";
-import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, isWorking, offerFollowUps, openDrawer, openItem, point, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
+import { attachedCount, closeAsked, closeDrawer, closeFile, drawerOpen, fileOpen, fillDrawer, forgetSent, hooks, isWorking, madeKind, offerFollowUps, openDrawer, openItem, point, sendFiles, sentFiles, takeSent, wireFiles } from "./files.js";
 import { hooks as mentionHooks, wireMention } from "./mention.js";
 import { hooks as pinHooks, pinsFromZen, renderPins } from "./pins.js";
 import { LOADER, activityEl, loadTools, traceEl } from "./steps.js";
@@ -453,8 +453,11 @@ function assistantView() {
   const promote = step => {  // what a helper found, as cards once it is done
     if (!step) return;
     if (step.tables.length) show(resultsCard(step.tables.slice(-4)));
-    // a helper's working script (work/) stays in its step, where its code and output already are
+    // a helper's working script (work/) stays in its step, where its code and output already are - but the pictures
+    // its runs made are what the user asked for (an edited photo, a chart drawn as an image): those are cards
     if (step.code && !(isWorking(step.code.name) && !step.fileCard)) step.fileCard ? addRun(step.fileCard, step.code) : show(codeCard(step.code));
+    for (const f of step.pictures?.values() || []) show(artifactCard({ type: "image", id: f.id, prompt: f.path }));
+    step.pictures = null;
     step.tables = [];
     step.code = null;
   };
@@ -526,7 +529,12 @@ function assistantView() {
         show(el);
       } else {  // a helper's working: shown in its step; its result tables and last code also as cards
         activity.evidence(current, a);
-        if (a.type === "code") current.code = a;
+        if (a.type === "code") {
+          current.code = a;
+          if (isWorking(a.name)) for (const f of a.files || []) {  // the last version of each picture
+            if (f.id && madeKind(f) === "image") (current.pictures ??= new Map()).set(f.path, f);
+          }
+        }
         else if (a.type === "table" && !/^Columns of /.test(a.title || "")) current.tables.push(a);
       }
     },
