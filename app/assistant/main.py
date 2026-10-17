@@ -481,9 +481,18 @@ def send(store: Store, chat_id: str, text: str, main: Provider, worker: Provider
         content = "\n\n".join(x for x in (said, sent, note) if x)  # which files the user meant: part of what they said
         store.append(chat_id, {"role": "user", "content": content, "said": said,
                                "text": text, "seen": seen, **({"files": attached} if attached else {})})
+        _name(store, chat_id, text)  # named now, not when the turn ends (a stopped first turn stayed "New chat")
         return text
 
     yield from _run(store, chat_id, record, main, worker)
+
+
+def _name(store: Store, chat_id: str, text: str) -> None:
+    """A new chat is named after its first message (its first eight words)."""
+    chat = store.chat(chat_id)
+    if chat and chat["title"] == NEW_CHAT and text.strip():
+        words = text.split()
+        store.update_chat(chat_id, title=" ".join(words[:8])[:60] + (" ..." if len(words) > 8 else ""))
 
 
 def reply(store: Store, chat_id: str, answer: str | None, main: Provider, worker: Provider) -> Iterator[dict]:
@@ -780,9 +789,7 @@ def _finish(store: Store, chat: dict, index: SearchIndex, user_text: str) -> str
              for c in m.get("tool_calls", [])]
     remember_turn(index, chat["id"], user_text, answer, calls, when=current[0].get("at") if current else None)
     store.sync_items(chat["workspace_id"])  # pictures and tables the turn made, changed or deleted: searchable now
-    if chat["title"] == NEW_CHAT and user_text.strip():
-        words = user_text.split()
-        store.update_chat(chat["id"], title=" ".join(words[:8])[:60] + (" ..." if len(words) > 8 else ""))
+    _name(store, chat["id"], user_text)
     store.touch_workspace(chat["workspace_id"])
     return answer
 

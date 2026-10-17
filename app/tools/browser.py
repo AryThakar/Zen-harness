@@ -210,7 +210,8 @@ CATCH = ("<script>window.__errs=[];addEventListener('error',e=>__errs.push(Strin
          "+')':'')));addEventListener('unhandledrejection',e=>__errs.push(String(e.reason&&e.reason.message||e.reason)));"
          "window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>'';window.__said=[];"
          "for(const C of [window.CanvasRenderingContext2D,window.OffscreenCanvasRenderingContext2D])if(C)for(const m of "
-         "['fillText','strokeText']){const f=C.prototype[m];C.prototype[m]=function(t,...a){if(__said.length<2000)__said.push(String(t));"
+         "['fillText','strokeText']){const f=C.prototype[m];C.prototype[m]=function(t,...a){"
+         "if(__said.length<2000&&this.canvas&&this.canvas.isConnected)__said.push(String(t));"
          "return f.call(this,t,...a)}}</script>")
 PAGE_HEAD = ("<style>:root{--zen-bg:#2a2a2a;--zen-ink:#ececec;--zen-muted:#b4b4b4;--zen-line:rgba(255,255,255,.09);"
              "--zen-accent:#ececec;--zen-on-accent:#0d0d0d;--zen-green:#30d158;--zen-blue:#409cff;--zen-red:#ff6961;"
@@ -227,11 +228,21 @@ CLICK_THROUGH = """async () => {
   const wait = ms => new Promise(r => setTimeout(r, ms)), end = Date.now() + %d;
   const clicked = [], seen = {};
   await wait(500);
-  // over before it began: 'Game Over' on show (in the page, or drawn on its canvas) before any key or click (measured
-  // 2026-10-17: a snake that didn't move yet ran into itself on its first step - Game Over, score 0, at once)
+  // over before it began: 'Game Over' on show (in the page, or drawn on its canvas in the page) before any key or click
+  // (measured 2026-10-17: a snake that didn't move yet ran into itself on its first step - Game Over, score 0, at once).
+  // On show is what a person would see: no ancestor hidden or see-through, on screen, on top (measured the same night:
+  // 2048's overlay, opacity 0 on its parent, was taken for shown - and Zen chased a bug that wasn't there for 8 minutes)
   const OVER = /\\b(game over|you (lose|lost|died)|crashed)\\b/i;
-  const shown = [...document.querySelectorAll('body *')].filter(e => e.offsetParent !== null && e.children.length === 0
-    && OVER.test(e.textContent || '') && getComputedStyle(e).visibility !== 'hidden' && Number(getComputedStyle(e).opacity) > 0.1);
+  const visible = e => {
+    if (e.checkVisibility && !e.checkVisibility({opacityProperty: true, visibilityProperty: true})) return false;
+    let opacity = 1;
+    for (let n = e; n && n !== document.documentElement; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
+    const r = e.getBoundingClientRect();
+    if (opacity < 0.5 || r.width < 2 || r.height < 2 || r.bottom <= 0 || r.right <= 0 || r.top >= innerHeight || r.left >= innerWidth) return false;
+    const top = document.elementFromPoint(Math.min(innerWidth - 1, Math.max(0, r.left + r.width / 2)), Math.min(innerHeight - 1, Math.max(0, r.top + r.height / 2)));
+    return !!top && (e.contains(top) || top.contains(e));
+  };
+  const shown = [...document.querySelectorAll('body *')].filter(e => e.children.length === 0 && OVER.test(e.textContent || '') && visible(e));
   const overAtStart = (shown[0] && shown[0].textContent.trim().slice(0, 40)) || window.__said.find(t => OVER.test(t)) || null;
   const keys = ['Enter', ' ', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'w', 'a', 'd'];
   for (let round = 0; round < 2 && !window.__errs.length && Date.now() < end; round++) {

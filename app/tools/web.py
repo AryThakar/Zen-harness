@@ -632,7 +632,11 @@ def look(url: str, *, github: bool = False, tables: bool = False, table: int | N
             stated = re.search(rb"\nsize (\d+)", head)
             final, ctype = "https://media.githubusercontent.com/media" + urlsplit(final).path, ""
             size = int(stated[1]) if stated else None
-        if ctype in ("text/html", "application/xhtml+xml") or head.lstrip().lower().startswith((b"<!doctype", b"<html")):
+        # A raw host serves files only: an HTML file there is a file (measured 2026-10-17: 2048's index.html from
+        # raw.githubusercontent.com was refused as "a web page, not a file")
+        raw_file = urlsplit(final).hostname in ("raw.githubusercontent.com", "gist.githubusercontent.com")
+        if not raw_file and (ctype in ("text/html", "application/xhtml+xml")
+                             or head.lstrip().lower().startswith((b"<!doctype", b"<html"))):
             page = _fetch(client, url, resolve)[0]  # a page, read like read_webpage would: which files does it offer?
             if tables and not _on_github(final):
                 found_tables = page_tables(page)

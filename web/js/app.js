@@ -225,6 +225,7 @@ function leaveProject() {
 let query = "";
 async function loadChats() {
   try { state.chats = await api(`/workspaces/${state.ws.id}/chats`); } catch (e) { toast(e.message, true); }
+  if (!state.chats.some(c => c.id === state.stopping && c.running)) state.stopping = null;  // its stop has gone through
   renderChats();
   clearTimeout(state.chatPoll);  // a turn running in a chat this page is not following: notice when it ends
   if (state.chats.some(c => c.running && !(state.busy && c.id === state.chat?.id))) state.chatPoll = setTimeout(loadChats, 3000);
@@ -241,7 +242,7 @@ function renderChats() {
     return h("div", { class: `row chat-row${state.chat?.id === c.id ? " on" : ""}`, role: "button", tabindex: "0", title: c.title,
       onclick: () => openChat(c.id), onkeydown: e => { if (e.key === "Enter" && e.target === e.currentTarget) openChat(c.id); } },
       h("span", { class: "t" }, c.title),
-      c.running ? h("span", { class: "live", title: "Answering…" }) : c.pending ? h("span", { class: "needs", title: "Waiting for your answer" }, "?") : null, del);
+      c.running && c.id !== state.stopping ? h("span", { class: "live", title: "Answering…", "aria-label": "Answering", html: LOADER }) : c.pending ? h("span", { class: "needs", title: "Waiting for your answer" }, "?") : null, del);
   })]));
 }
 
@@ -383,15 +384,17 @@ function addUser(text, files = null) {  // files: those a saved message was sent
   return el;
 }
 
-// worked: how the turn went ("Worked for 2m 26s · 6 steps", steps.js finish)
+// The line under a reply: copy, read aloud, how it ran, and in a few words how long and how many steps - one line at
+// any width (measured: "Stopped · Worked for 7m 55s · 6 steps · 12 helper actions · 1 didn't work · first word 94.2 s
+// · 47 tok/s" over two lines on a phone). The rest - helper actions, first word, speed - is on hover and in "how this
+// answer ran". worked: {said, more} (steps.js finish); answer: the words to copy; textEl: what is read aloud.
 function metaEl({ seconds, first, stats, answer, stopped, worked }, textEl) {
-  const parts = [];
-  if (worked) parts.push(worked);
-  else if (seconds) parts.push(`${seconds.toFixed(1)} s`);
-  if (first != null) parts.push(`first word ${first.toFixed(1)} s`);
   const tokens = stats.reduce((n, s) => n + (s.output_tokens || 0), 0);
   const gen = stats.reduce((t, s) => t + (s.tokens_per_second ? (s.output_tokens || 0) / s.tokens_per_second : 0), 0);
-  if (tokens && gen) parts.push(`${(tokens / gen).toFixed(0)} tok/s`);
+  const said = worked?.said || (seconds ? `${seconds.toFixed(1)} s` : "");
+  const more = [worked?.more, first != null ? `first word after ${first.toFixed(1)} s` : null,
+    tokens && gen ? `${(tokens / gen).toFixed(0)} tokens a second (${tokens} written)` : null].filter(Boolean).join(" · ");
+  const parts = said ? [said] : [];
   const el = h("div", { class: "meta enter" });
   if (answer) {
     const copy = h("button", { class: "icon-btn", type: "button", title: "Copy", "aria-label": "Copy the answer", html: svg("copy") });
@@ -410,7 +413,7 @@ function metaEl({ seconds, first, stats, answer, stopped, worked }, textEl) {
     }
   }
   if (stopped) el.append(h("span", { class: "stopped" }, "Stopped"));
-  if (parts.length) el.append(h("span", { class: "stats", title: tokens ? `${tokens} tokens written` : null }, parts.join(" · ")));
+  if (parts.length) el.append(h("span", { class: "stats", title: more || null }, parts.join(" · ")));
   return el;
 }
 
@@ -473,6 +476,7 @@ function assistantView() {
     const b = latest();
     if (!b || !b.text.trim()) return;
     cancelAnimationFrame(frame);
+    flowing = false;  // drawn once more without the caret (measured: the folded draft kept a blinking caret)
     paint(b);
     const fold = h("details", { class: "draft enter" }, h("summary", {}, "First answer · the app's check sent it back"));
     flow.replaceChild(fold, b.el);
@@ -629,18 +633,19 @@ function assistantView() {
       const worked = activity.finish(timing?.seconds ?? traceSeconds());
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));
-      if (timing || worked || answer) foot.append(metaEl({ ...(timing || {}), worked, stats, answer: answer?.text.trim() }, answer?.el));
+      if (timing || worked.said || answer) foot.append(metaEl({ ...(timing || {}), worked, stats, answer: answer?.text.trim() }, answer?.el));
       finished = true;
       traceButton();
       stick();
     },
+    // failed or stopped: its words stay, its running steps say so, and the line under it still copies what was written
     error(message) {
       end();
       refreshStatus();  // a failed reply may mean the model went down: the dot says so at once
       blocks.forEach(b => paint(b));
-      const worked = activity.stop();
+      const worked = activity.stop(undefined, "didn't finish");
       foot.append(h("div", { class: "callout" }, h("b", {}, "This reply didn't finish."), message));
-      if (worked) foot.append(metaEl({ worked, stats }));
+      foot.append(metaEl({ worked, stats, answer: words() }, blocks.at(-1)?.el));
       finished = true;
       traceButton();
       stick();
@@ -648,13 +653,14 @@ function assistantView() {
     stop(timing) {
       end();
       blocks.forEach(b => paint(b));
-      const answer = latest(), worked = activity.stop(timing?.seconds);
-      foot.append(metaEl({ ...timing, worked, stats, stopped: true, answer: answer?.text.trim() }, answer?.el));
+      const worked = activity.stop(timing?.seconds);
+      foot.append(metaEl({ ...timing, worked, stats, stopped: true, answer: words() }, blocks.at(-1)?.el));
       finished = true;
       traceButton();
     },
   };
   const end = () => { streaming = false; flowing = false; cancelAnimationFrame(frame); frame = 0; };
+  const words = () => blocks.map(b => b.text.trim()).filter(Boolean).join("\n\n");
   const text = chunk => view.text(chunk);
   const traceSeconds = () => traces.reduce((s, t) => s + (t.seconds || 0), 0) || null;  // a saved turn's length
   return view;
@@ -662,8 +668,13 @@ function assistantView() {
 
 // A saved chat, through the same view calls the live stream uses
 function replay(messages, chat, keepOpen = false) {  // returns the last reply's view
-  let view = null, last = "";
-  const close = () => { if (view) view.finish(last); };
+  let view = null, last = "", ended = null;  // ended: how the reply's turn ended, from its trace ("done", "stopped")
+  const close = () => {
+    if (!view) return;
+    if (ended?.ended === "stopped") view.stop({ seconds: ended.seconds });  // marked as stopped, as it was live
+    else view.finish(last);
+    ended = null;
+  };
   for (const m of messages) {
     if (m.role === "user") {
       close();
@@ -679,12 +690,15 @@ function replay(messages, chat, keepOpen = false) {  // returns the last reply's
       for (const t of m.tools || []) view.toolStart(t);
       if (m.sent_back) view.checking();  // the app's check sent this reply back: it was a first draft
     } else if (m.role === "tool") {
-      view.toolEnd({ id: m.id, name: m.name, status: m.is_error ? "failed" : "ok", summary: m.summary,
+      // a call the user stopped: its result says so (it is not an error, and it didn't finish)
+      const stopped = !m.is_error && /^\{"status": "stopped"/.test(m.summary || "");
+      view.toolEnd({ id: m.id, name: m.name, status: m.is_error ? "failed" : stopped ? "stopped" : "ok", summary: m.summary,
         ...("answer" in m ? { answer: m.answer } : {}), ...(m.skipped ? { skipped: true } : {}) });
     } else if (m.role === "artifact") {
       view.artifact(m.artifact);
     } else if (m.role === "trace") {
       view.trace(m.trace);
+      ended = m.trace;
     }
   }
   if (keepOpen) return view;  // the running turn goes on in it
@@ -752,6 +766,10 @@ async function giveAnswer(said) {  // the waiting question's answer (null: skipp
 async function run(path, body, view) {
   const chatId = state.chat.id;
   setBusy(true);
+  // the chat answering shows its live dot in the list now (before, the list learned it only when the turn had ended)
+  const listed = state.chats?.find(c => c.id === chatId);
+  if (state.stopping === chatId) state.stopping = null;
+  if (listed && !listed.running) { listed.running = true; renderChats(); }
   const controller = new AbortController();
   state.controller = controller;
   const started = performance.now();
@@ -762,6 +780,7 @@ async function run(path, body, view) {
       : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
     if (!r.ok) throw new Error(await detail(r));
     for await (const [event, data] of serverEvents(r)) {
+      if (!seen) named(chatId);  // the server named a new chat after its first message: the list and title say so now
       seen = true;
       if (event === "text") { first ??= performance.now(); view.text(data.text); }
       else if (event === "tool_start") view.toolStart(data);
@@ -804,9 +823,20 @@ async function run(path, body, view) {
   }
 }
 
+// A chat's name and live sign as the server has them now, while its turn runs
+async function named(chatId) {
+  await loadChats();
+  const c = state.chats?.find(x => x.id === chatId);
+  if (c && state.chat?.id === chatId && state.chat.title !== c.title) { state.chat.title = c.title; setTitle(); }
+}
+
 function stopTurn() {  // Stop: the server stops the turn (at its next token), then the stream is let go
   if (!state.controller) return;
-  if (state.chat) fetch(`${API}/chats/${state.chat.id}/stop`, { method: "POST" }).catch(() => {});
+  if (state.chat) {
+    state.stopping = state.chat.id;  // its live sign goes now, not when the server has wound down
+    renderChats();
+    fetch(`${API}/chats/${state.chat.id}/stop`, { method: "POST" }).catch(() => {});
+  }
   state.controller.abort();
   closeAsk();
 }

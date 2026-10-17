@@ -70,6 +70,13 @@ def test_a_github_file_page_is_described_from_its_raw_file_without_downloading_i
     assert seen[0].headers["accept-encoding"] == "identity"  # the stated size is the file's own
 
 
+def test_an_html_file_on_a_raw_host_is_a_file_not_a_page():
+    """Measured 2026-10-17: 2048's index.html from raw.githubusercontent.com was refused as "a web page"."""
+    page = b"<!DOCTYPE html><html><body>2048</body></html>"
+    r = approval.download_request(f"{RAW}/index.html", http=site({f"{RAW}/index.html": page}), resolve=public)
+    assert r.artifact["approval"]["name"] == "index.html" and r.artifact["approval"]["bytes"] == len(page)
+
+
 def test_a_half_converted_raw_blob_link_is_repaired():
     """Measured twice: the model turned a valid github.com/.../blob/... link into
     raw.githubusercontent.com/.../blob/..., which answers 404."""

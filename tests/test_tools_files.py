@@ -278,3 +278,6 @@ def test_the_real_browser_catches_what_only_using_the_page_shows():
             "x.fillText('Game Over', 100, 100)</script>")
     assert browser.try_page(over)["over_at_start"] == "Game Over"
     assert browser.try_page("<h2 hidden>Game Over</h2><button>Play</button>")["over_at_start"] is None
+    # measured: 2048's overlay waits with opacity 0 on its parent - taken for shown, Zen chased it for 8 minutes
+    waiting = "<div style='opacity:0; pointer-events:none'><h2>Game Over!</h2></div><button>New game</button>"
+    assert browser.try_page(waiting)["over_at_start"] is None

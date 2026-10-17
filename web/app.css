@@ -105,8 +105,9 @@ body.collapsed .side { margin-left: -260px; }
 .label { padding: 14px 10px 6px; font-size: 12px; font-weight: 500; color: var(--soft); }
 .chat-row { padding: 7px 10px; font-size: 14px; color: var(--muted); }
 .chat-row:hover, .chat-row.on { color: var(--ink); }
-.chat-row .live { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: auto; flex: none;
-  animation: pulse 1.4s ease-in-out infinite; }
+/* a chat answering now: the moon loader, the same sign as the reply's status line */
+.chat-row .live { margin-left: auto; flex: none; display: grid; place-items: center; width: 16px; height: 16px; }
+.chat-row .live .loader { width: 15px; height: 15px; }
 @keyframes pulse { 50% { opacity: .3; } }
 /* the bottom: the project you are in, where an account would be, and the way out of it */
 .here { display: flex; align-items: center; gap: 10px; padding: 8px 4px 4px 10px; margin-top: 6px;
@@ -241,7 +242,10 @@ code, pre, kbd { font-family: "Google Sans Code", "Cascadia Code", Consolas, mon
 pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-height: 1.65; }
 
 /* under a reply: copy, read aloud, and how long it took */
-.meta { display: flex; align-items: center; gap: 2px; margin: -6px 0 0 -8px; color: var(--soft); font-size: 12.5px; }
+.meta { display: flex; align-items: center; gap: 2px; margin: -6px 0 0 -8px; color: var(--soft); font-size: 12.5px;
+  min-width: 0; white-space: nowrap; }  /* one line at any width: the words give way, the buttons stay */
+.meta .stats { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.meta .stopped { flex: none; }
 .meta .icon-btn { width: 32px; height: 32px; border-radius: 8px; }
 .meta svg.i { width: 17px; height: 17px; }
 .meta .stats { margin-left: 8px; font-variant-numeric: tabular-nums; }
@@ -286,7 +290,8 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 @media (prefers-reduced-motion: reduce) { .phase-shade { animation: none; transform: translate(-4px, -4px); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 .timer { color: var(--soft); font-variant-numeric: tabular-nums; }
-.shimmer { background: linear-gradient(90deg, var(--soft) 0%, var(--ink) 50%, var(--soft) 100%); background-size: 200% 100%;
+.shimmer, .step.run > .step-title > .step-label, .sub.run > .step-title {
+  background: linear-gradient(90deg, var(--soft) 0%, var(--ink) 50%, var(--soft) 100%); background-size: 200% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 2s linear infinite; }
 @keyframes shine { to { background-position: -200% 0; } }
 @keyframes swap { from { opacity: 0; transform: translateY(5px); } }
@@ -299,6 +304,10 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
   background: var(--bg); box-shadow: 0 0 0 1.5px var(--soft); }
 .step.ok::before { background: var(--step-ok, var(--ok)); box-shadow: 0 0 0 3px var(--bg); }
 .step.err::before { background: var(--red); box-shadow: 0 0 0 3px var(--bg); }
+/* settled at the turn's end while still running: stopped, or didn't finish - still, not live */
+.step.off::before { background: var(--soft); opacity: .55; box-shadow: 0 0 0 3px var(--bg); }
+.step.off > .step-title { color: var(--soft); }
+.sub.off .step-title::before { background: var(--soft); }
 .step.run::before { background: var(--accent); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent-wash); animation: pulse 1.4s ease-in-out infinite; }
 .step-title { color: var(--ink); font-weight: 450; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .helper { font-size: 11.5px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); }
