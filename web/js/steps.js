@@ -1,11 +1,11 @@
 // The work behind a reply, in the reply's own order: each run of tool steps is a short list where it happened,
 // between the model's words (nothing moves later), with a helper's own steps inside its step and what they found
-// (search results, pages read, tables, code). One status line at the reply's end says what is going on now - the
-// moon loader, the words and a timer. When the turn is done each step folds to its line; a click opens it again.
+// (search results, pages read, tables, code). The reply's head, on top, says how the turn is and for how long, and
+// shows or hides the work; when the turn is done each step folds to its line, and a click opens it again.
 
 import { api } from "./api.js";
 import { favicon, tableEl } from "./cards.js";
-import { cap, errorText, h, host, plural } from "./util.js";
+import { cap, errorText, h, host, plural, svg } from "./util.js";
 
 // How each tool and helper is named while it works ("Reading a page" / "Read a page"): defined with the
 // tools on the server and loaded once at start (GET /assistant/tools), so the page keeps no list of its own.
@@ -24,8 +24,10 @@ export function stepLabel(name, done, input) {
 export const LOADER = '<svg class="loader" viewBox="0 0 24 24" aria-hidden="true"><use href="#phase"/></svg>';
 // A call being written (the model writes a whole file into it - a long one takes minutes; the timer shows it goes on)
 const size = n => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-const composing = d => `${d.file ? `Writing ${d.file}` : "Writing"}${d.chars > 400 ? ` · ${size(d.chars)} characters` : ""}…`;
-const clock = s => s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
+// (a call without a file - a search, a task for a helper - is the model still thinking, as far as the user can tell)
+const composing = d => d.file ? `Writing ${d.file}${d.chars > 400 ? ` · ${size(d.chars)} characters` : ""}…` : "Thinking…";
+// rounded first: 239.6 s is "4m 00s", not "3m 60s"
+const clock = t => { const s = Math.round(t); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`; };
 const timer = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 function code(text, lang) {
@@ -119,20 +121,26 @@ export function traceEl(traces) {
 
 // flow: the reply's blocks in order (app.js) - a step goes into the list of steps just above, or starts a new list
 // after the model's words or a card.
-// Live, each running step's row says what it does (its dot pulses, its words shimmer); the status line at the end says
-// only how the turn is - thinking, writing, working, waiting for you - and for how long, never the step above it again
-// (measured: "Writing 2048.html…" twice, one under the other). When the turn ends - done, stopped or failed - every
-// step still running is settled (stopped, or didn't finish), so nothing stays live after Stop.
+// The reply's head, on top, is the turn's one status: while it works, the moon, how the turn is (thinking, writing,
+// working, waiting for you) and a timer; when it is done, "Worked for 2m 26s · 6 steps". A click on it shows or hides
+// the work - the steps and the words written between them - in place; what the turn made (files, pictures, pages) and
+// its answer always stay. The work is open while it runs and folds when the answer is done; a stopped or failed turn
+// stays open. Each running step's own row says what it does (its dot pulses, its words shimmer) - the head never repeats
+// it (measured: "Writing 2048.html…" twice, one under the other) - and only while the model thinks, with nothing else
+// moving, a small moon at the end says it is still at work. When the turn ends, every step still running is settled
+// (stopped, or didn't finish): nothing stays live after Stop.
 export function activityEl(flow) {
   const say = h("span", { class: "say shimmer" }, "Thinking…");
   const time = h("span", { class: "timer" }, "0:00");
-  const status = h("div", { class: "status enter", role: "status" }, h("span", { class: "spin", html: LOADER }), say, time);
+  const head = h("button", { class: "act-head live", type: "button", "aria-expanded": "true" },
+    h("span", { class: "spin", html: LOADER }), say, time, h("span", { class: "chev-wrap", html: svg("chev", "i chev") }));
+  const tail = h("div", { class: "tail", hidden: true, html: LOADER, "aria-hidden": "true" });
   // the timer stands still while the turn waits for the user's answer: only Zen's working time counts
   const t0 = performance.now();
-  let waited = 0, waitStart = null;
+  let waited = 0, waitStart = null, words = false, live = true, touched = false;
   const unpause = () => { if (waitStart != null) { waited += performance.now() - waitStart; waitStart = null; } };
   const tick = setInterval(() => { time.textContent = timer(((waitStart ?? performance.now()) - t0 - waited) / 1000); }, 1000);
-  const tell = text => {  // the status text slides to its next state
+  const tell = text => {  // the head's words slide to their next state
     if (say.textContent === text) return;
     say.textContent = text;
     say.classList.remove("swap"); void say.offsetWidth; say.classList.add("swap");
@@ -143,16 +151,42 @@ export function activityEl(flow) {
     if (!list || flow.lastElementChild !== list) { list = h("div", { class: "steps enter" }); lists.push(list); flow.append(list); }
     list.append(el);
   };
-  const row = (step, cls, words) => { step.el.className = `step ${cls}`; step.label.textContent = words; };
+  const row = (step, cls, label) => { step.el.className = `step ${cls}`; step.label.textContent = label; };
   const busy = () => [...steps.values()].some(s => !s.done);
+  // the head is there from the turn's start to its end - never hidden and shown again, which pushed the words below it
+  // (measured: gone at the first word, back at the first step); the moon at the end only while nothing else moves
+  const sync = () => {
+    head.classList.toggle("has-steps", steps.size > 0);
+    tail.hidden = !live || words || busy() || waitStart != null;
+  };
+  const fold = open => {
+    const reply = flow.parentElement;
+    reply?.classList.toggle("folded", !open);
+    head.setAttribute("aria-expanded", String(open));
+  };
+  head.addEventListener("click", () => {
+    if (!steps.size) return;
+    touched = true;
+    fold(flow.parentElement?.classList.contains("folded"));
+  });
   // a done step opens and folds on its line (its task, tags, a helper's steps); a failed step's reason stays in view
   flow.addEventListener("click", e => {
     const title = e.target.closest(".steps.done .step > .step-title");
     if (title && !e.target.closest("a")) title.parentElement.classList.toggle("open");
   });
-  const settle = how => {  // how: "stopped" or "didn't finish", for the steps the end found still running
+  const summary = (seconds, stopped) => {
+    const all = [...steps.values()], failed = all.filter(s => s.el.classList.contains("err")).length;
+    // a plain answer "thought"; a turn that took steps "worked"
+    const did = all.length ? "Worked" : "Thought";
+    const took = seconds ? (stopped ? `Stopped after ${clock(seconds)}` : `${did} for ${clock(seconds)}`) : stopped ? "Stopped" : did;
+    return { said: [took, all.length ? plural(all.length, "step") : null].filter(Boolean).join(" · "),
+      more: [took, all.length ? plural(all.length, "step") : null, helperActions ? plural(helperActions, "helper action") : null,
+        failed ? `${failed} didn't work` : null].filter(Boolean).join(" · ") };
+  };
+  // the turn's end: what still runs is settled (how: "stopped" or "didn't finish"), and the head says how it went
+  const settle = (how, out) => {
     clearInterval(tick);
-    status.remove();
+    live = false;
     for (const step of steps.values()) {
       if (step.sub && !step.sub.done) {
         step.sub.done = true;
@@ -167,21 +201,22 @@ export function activityEl(flow) {
         if ([...s.children].some(c => !c.matches(".step-title, .step-note.err") && !(c.matches(".subs") && !c.children.length))) s.classList.add("more");
       }
     }
-  };
-  const summary = seconds => {
-    const all = [...steps.values()], failed = all.filter(s => s.el.classList.contains("err")).length;
-    return { said: [seconds ? clock(seconds) : null, all.length ? plural(all.length, "step") : null].filter(Boolean).join(" · "),
-      more: [seconds ? `Worked for ${clock(seconds)}` : null, all.length ? plural(all.length, "step") : null,
-        helperActions ? plural(helperActions, "helper action") : null, failed ? `${failed} didn't work` : null].filter(Boolean).join(" · ") };
+    head.classList.remove("live", "waiting");
+    say.classList.remove("shimmer");
+    say.textContent = out.said;
+    head.title = out.more;
+    sync();
   };
 
   const view = {
-    status, steps,
-    running(text) { unpause(); status.classList.remove("waiting"); say.classList.add("shimmer"); tell(text); },
+    head, tail, steps,
+    running(text) { unpause(); head.classList.remove("waiting"); say.classList.add("shimmer"); tell(text); sync(); },
     checking() { view.running("Checking the answer…"); },  // a hidden check sent the model back: say so, not a stuck reply
-    writing() { view.running("Writing…"); },
+    // the model's words: flowing (the caret shows the work) or stopped (thinking again)
+    words(on) { words = on; if (on) view.running("Writing…"); else if (live && waitStart == null && !busy()) view.running("Thinking…"); else sync(); },
+    writing() { view.words(true); },
     // main writing a call: the file it writes, and how far it got (a long one takes minutes - no row shows it yet)
-    composing(d) { composed = d; view.running(composing(d)); },
+    composing(d) { composed = d; words = false; view.running(composing(d)); },
     start(d) {
       if (d.name === "ask_user") return null;  // its question is asked in the message box
       const step = { id: d.id, name: d.name, delegate: isDelegate(d.name), done: false, sub: null, tables: [], code: null, input: d.input };
@@ -191,6 +226,7 @@ export function activityEl(flow) {
       step.el = h("div", { class: "step run enter" }, step.title, inputDetail(d.name, d.input), step.subs);
       steps.set(d.id, step);
       place(step.el);
+      words = false;
       view.running("Working…");
       return step;
     },
@@ -201,6 +237,7 @@ export function activityEl(flow) {
         step.done = true;
         row(step, "off", `${stepLabel(d.name, false, step.input)} · stopped`);
         if (step.sub && !step.sub.done) { step.sub.done = true; step.sub.el.className = "sub off"; }
+        sync();
         return;
       }
       const failed = !["ok", "partial"].includes(d.status);
@@ -215,18 +252,21 @@ export function activityEl(flow) {
       }
       if (step.sub && !step.sub.done) view.subEnd(step, { status: "ok" });
       if (!busy()) view.running("Thinking…");  // the model reads the results next
+      sync();
     },
     wait(id) {
       const step = steps.get(id);
       if (step) row(step, "run", `${stepLabel(step.name, false)} · waiting for your answer`);
-      status.classList.add("waiting");
+      head.classList.add("waiting");
       say.classList.remove("shimmer");
       waitStart ??= performance.now();
       tell("Waiting for your answer, in the message box");
+      sync();
     },
     answered(id) {
       const step = steps.get(id);
       if (step) { step.done = true; row(step, "ok pop", `${stepLabel(step.name, false)} · you answered`); }
+      sync();
     },
     resumed(id) {  // a helper got its answer and goes on
       const step = steps.get(id);
@@ -241,7 +281,7 @@ export function activityEl(flow) {
         step.subs.append(step.sub.el);
         helperActions++;
         view.running("Working…");
-      } else if (e.event === "writing") {  // a helper writing a call (a script, a long answer): no row shows it yet
+      } else if (e.event === "writing") {  // a helper writing a call (a script, a long answer): its row shows it
         view.running(composing(e));
       } else if (e.event === "result" && step.sub) {
         view.subEnd(step, e);
@@ -250,7 +290,7 @@ export function activityEl(flow) {
         step.subs.append(h("div", { class: `sub enter ${ok ? "ok" : "err"}` },
           h("div", { class: "step-title" }, ok ? "Checked the answer" : e.retry ? "Checked the answer · fixing it" : "Checked the answer · flagged"),
           ok ? null : h("div", { class: "step-note err" }, e.problems.join("; "))));
-        view.running(ok ? "Writing…" : "Fixing the answer…");
+        view.running(ok ? "Working…" : "Fixing the answer…");
       }
     },
     subEnd(step, e) {
@@ -270,18 +310,25 @@ export function activityEl(flow) {
       if (into) { into.evidence = true; into.el.append(node); }
       else { step.subs.append(h("div", { class: "sub ok enter" }, node)); helperActions += 1; }
     },
-    // The turn is done: the status line goes, the steps fold. Returns how it went for the line under the reply -
-    // said: "2m 26s · 6 steps"; more: the whole of it, on hover ("Worked for 2m 26s · 6 steps · 1 didn't work");
-    // seconds: a live turn's length, or its trace's for a saved chat.
-    finish(seconds) { settle("didn't finish"); return summary(seconds); },
-    // stopped, or failed: what was still running says so; with no step, a call it was writing says how far it got
+    // The turn is done: the head says how it went and the work folds away (unless the user opened or closed it, or
+    // nothing came after the steps to read). seconds: a live turn's length, or its trace's for a saved chat.
+    // Returns {said, more, shown}: shown - the head says it, so the line under the reply doesn't again.
+    finish(seconds, answered = true) {
+      const out = summary(seconds, false);
+      settle("didn't finish", out);
+      head.hidden = !seconds && !steps.size;  // an old saved answer with no trace: nothing to say
+      if (steps.size && answered && !touched) fold(false);
+      return { ...out, shown: true };
+    },
+    // stopped, or failed: it stays open; with no step, a call it was writing says how far it got
     stop(seconds, how = "stopped") {
       const worked = seconds ?? ((waitStart ?? performance.now()) - t0 - waited) / 1000;
-      settle(how);
-      const out = summary(worked);
-      if (!steps.size && composed) out.more = `${out.more} · ${composing(composed).replace(/…$/, "")} didn't finish`;
-      return out;
+      const out = summary(worked, how === "stopped");
+      if (!steps.size && composed?.file) out.more = `${out.more} · ${composing(composed).replace(/…$/, "")} didn't finish`;
+      settle(how, out);
+      return { ...out, shown: true };
     },
   };
+  sync();
   return view;
 }

@@ -354,16 +354,18 @@ function renderHello() {
   notice.hidden = !s || s.ready;
   if (s && !s.ready) notice.replaceChildren(h("b", {}, { loading: "The model is still loading", down: "The model can't be reached",
     offline: "This app's server isn't running" }[s.state] || "The model isn't ready"), s.message || "");
-  const tables = state.items.filter(i => i.kind === "table" && !i.parent);
+  const mine = i => !/^work\//.test(i.name || "");  // not a helper's working file (work/)
+  const tables = state.items.filter(i => i.kind === "table" && !i.parent && mine(i));
   // a chart is no read, and agent.md is Zen's memory, not a document to summarise
-  const files = state.items.filter(i => i.kind === "file" && !i.memory && !/\.chart\.json$/i.test(i.name || ""));
+  const files = state.items.filter(i => i.kind === "file" && !i.memory && mine(i) && !/\.chart\.json$/i.test(i.name || ""));
   const ideas = [];
   if (tables[0]) ideas.push(["chart", `What stands out in ${tables[0].name}? Show a chart`]);
   if (files[0]) ideas.push(["doc", `Summarise ${files[0].name}`]);
   ideas.push(["chart", "Analyse a table"], ["globe", "What's new in the latest llama.cpp release?"], ["sun", "What's the weather like this week?"],
              ["image", "Create an image of a cosy reading corner"], ["flow", "Draw a flowchart of how a web request is served"]);
   $("#starters").replaceChildren(...ideas.filter(([, t]) => t !== "Analyse a table" || !tables.length).slice(0, 4).map(([icon, text]) =>
-    h("button", { class: "starter", type: "button", html: svg(icon), onclick: () => text === "Analyse a table" ? $("#fileInput").click() : submit(text) }, text)));
+    h("button", { class: "starter", type: "button", onclick: () => text === "Analyse a table" ? $("#fileInput").click() : submit(text) },
+      h("span", { class: "starter-ic", html: svg(icon) }), h("span", {}, text))));
 }
 
 /* ═══ The thread ════════════════════════════════════════════════════════ */
@@ -384,36 +386,25 @@ function addUser(text, files = null) {  // files: those a saved message was sent
   return el;
 }
 
-// The line under a reply: copy, read aloud, how it ran, and in a few words how long and how many steps - one line at
-// any width (measured: "Stopped · Worked for 7m 55s · 6 steps · 12 helper actions · 1 didn't work · first word 94.2 s
-// · 47 tok/s" over two lines on a phone). The rest - helper actions, first word, speed - is on hover and in "how this
-// answer ran". worked: {said, more} (steps.js finish); answer: the words to copy; textEl: what is read aloud.
-function metaEl({ seconds, first, stats, answer, stopped, worked }, textEl) {
+// The line under a reply: copy and how it ran - one line at any width (measured: "Stopped · Worked for 7m 55s · 6 steps
+// · 12 helper actions · 1 didn't work · first word 94.2 s · 47 tok/s" over two lines on a phone). How long it took is
+// in the reply's head when it took steps (else here); the rest - helper actions, first word, speed - is on hover and in
+// "how this answer ran". worked: {said, more, shown} (steps.js finish); answer: the words to copy.
+function metaEl({ seconds, first, stats, answer, stopped, worked }) {
   const tokens = stats.reduce((n, s) => n + (s.output_tokens || 0), 0);
   const gen = stats.reduce((t, s) => t + (s.tokens_per_second ? (s.output_tokens || 0) / s.tokens_per_second : 0), 0);
-  const said = worked?.said || (seconds ? `${seconds.toFixed(1)} s` : "");
+  // how long and how many steps: here only when the reply has no head to say it (a plain answer)
+  const said = worked?.shown ? "" : worked?.said?.replace(/^Worked for /, "") || (seconds ? `${seconds.toFixed(1)} s` : "");
   const more = [worked?.more, first != null ? `first word after ${first.toFixed(1)} s` : null,
     tokens && gen ? `${(tokens / gen).toFixed(0)} tokens a second (${tokens} written)` : null].filter(Boolean).join(" · ");
-  const parts = said ? [said] : [];
-  const el = h("div", { class: "meta enter" });
+  const el = h("div", { class: "meta enter", title: more || null });
   if (answer) {
     const copy = h("button", { class: "icon-btn", type: "button", title: "Copy", "aria-label": "Copy the answer", html: svg("copy") });
     copy.addEventListener("click", () => copyText(answer, copy));
     el.append(copy);
-    if ("speechSynthesis" in window) {
-      const speak = h("button", { class: "icon-btn", type: "button", title: "Read aloud", "aria-label": "Read the answer aloud", html: svg("speak") });
-      speak.addEventListener("click", () => {
-        if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
-        const say = new SpeechSynthesisUtterance(textEl.textContent);
-        say.onend = say.onerror = () => (speak.innerHTML = svg("speak"));
-        speak.innerHTML = svg("hush");
-        speechSynthesis.speak(say);
-      });
-      el.append(speak);
-    }
   }
   if (stopped) el.append(h("span", { class: "stopped" }, "Stopped"));
-  if (parts.length) el.append(h("span", { class: "stats", title: more || null }, parts.join(" · ")));
+  if (said) el.append(h("span", { class: "stats" }, said));
   return el;
 }
 
@@ -439,12 +430,12 @@ document.addEventListener("click", e => {
 function assistantView() {
   const root = h("div", { class: "reply" }), flow = h("div", { class: "flow" }), foot = h("div", { class: "foot" });
   const activity = activityEl(flow);
-  root.append(flow, activity.status, foot);
+  root.append(activity.head, flow, activity.tail, foot);
   thread.append(root);
   const blocks = [];  // the model's words: {el, text}, one block for each stretch between steps or cards
   let block = null, frame = 0, streaming = true, flowing = false, current = null, question = null, fresh = false;
   const latest = () => block && flow.lastElementChild === block.el ? block : null;  // words nothing came after yet
-  const pause = () => { flowing = false; repaint(); };  // the words stopped: the caret goes
+  const pause = () => { flowing = false; activity.words(false); repaint(); };  // the words stopped: the caret goes
   const stats = [], web = new Map(), passages = [], traces = [];
   const fileCards = new Map();  // a file's card in this reply: a later change replaces it (one card per file)
   let finished = false, traceBtn = null;
@@ -537,6 +528,7 @@ function assistantView() {
     composing(d) { activity.composing(d); },  // a call being written: its size grows on the status line
     toolStart(d) {
       pause();
+      latest()?.el.classList.add("said");  // words before a step: part of the work, quieter, folded with it
       const step = activity.start(d);
       if (step?.delegate) current = step;
     },
@@ -630,10 +622,10 @@ function assistantView() {
       if (current) { promote(current); current = null; }
       const answer = latest();
       blocks.forEach(b => { paint(b); finishAnswer(b.el); });  // only once finished: a half-written diagram would fail to draw
-      const worked = activity.finish(timing?.seconds ?? traceSeconds());
+      const worked = activity.finish(timing?.seconds ?? traceSeconds(), !!answer);
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));
-      if (timing || worked.said || answer) foot.append(metaEl({ ...(timing || {}), worked, stats, answer: answer?.text.trim() }, answer?.el));
+      if (timing || worked.said || answer) foot.append(metaEl({ ...(timing || {}), worked, stats, answer: answer?.text.trim() }));
       finished = true;
       traceButton();
       stick();
@@ -645,7 +637,7 @@ function assistantView() {
       blocks.forEach(b => paint(b));
       const worked = activity.stop(undefined, "didn't finish");
       foot.append(h("div", { class: "callout" }, h("b", {}, "This reply didn't finish."), message));
-      foot.append(metaEl({ worked, stats, answer: words() }, blocks.at(-1)?.el));
+      foot.append(metaEl({ worked, stats, answer: words() }));
       finished = true;
       traceButton();
       stick();
@@ -654,7 +646,7 @@ function assistantView() {
       end();
       blocks.forEach(b => paint(b));
       const worked = activity.stop(timing?.seconds);
-      foot.append(metaEl({ ...timing, worked, stats, stopped: true, answer: words() }, blocks.at(-1)?.el));
+      foot.append(metaEl({ ...timing, worked, stats, stopped: true, answer: words() }));
       finished = true;
       traceButton();
     },

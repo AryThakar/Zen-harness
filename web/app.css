@@ -105,7 +105,7 @@ body.collapsed .side { margin-left: -260px; }
 .label { padding: 14px 10px 6px; font-size: 12px; font-weight: 500; color: var(--soft); }
 .chat-row { padding: 7px 10px; font-size: 14px; color: var(--muted); }
 .chat-row:hover, .chat-row.on { color: var(--ink); }
-/* a chat answering now: the moon loader, the same sign as the reply's status line */
+/* a chat answering now: the moon loader, the same sign as the reply's head */
 .chat-row .live { margin-left: auto; flex: none; display: grid; place-items: center; width: 16px; height: 16px; }
 .chat-row .live .loader { width: 15px; height: 15px; }
 @keyframes pulse { 50% { opacity: .3; } }
@@ -251,12 +251,34 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 .meta .stats { margin-left: 8px; font-variant-numeric: tabular-nums; }
 .meta .stopped { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--muted); }
 
-/* ---------------------------------------------------------------- the work: steps between the words, one status line
+/* ---------------------------------------------------------------- the work: a head on top, steps between the words
    A reply is one flow in the order things happened: the model's words, the steps it took (a list with a line down
    its dots), the cards they made. Words written before a step stay where they were, quieter once the step follows;
-   the last words are the answer. The status line at the end says what is going on now. */
-.flow > .answer:not(:last-child) { color: var(--muted); transition: color .4s; }
-.flow > .answer:not(:last-child) :is(strong, h1, h2, h3, h4, a) { color: inherit; }
+   the last words are the answer. The head on top says how the turn is and for how long, and shows or hides the work
+   (steps, the words between them, a sent-back draft) - what the turn made and its answer always stay (steps.js). */
+.act-head { display: flex; align-items: center; gap: 8px; max-width: 100%; margin: 0 0 10px; padding: 3px 0; color: var(--soft);
+  font-size: 14px; text-align: left; cursor: default; }
+.act-head[hidden] { display: none; }
+.act-head.has-steps { cursor: pointer; }
+.act-head.has-steps:hover { color: var(--ink); }
+.act-head .spin { display: inline-flex; flex: none; }
+.act-head:not(.live) .spin, .act-head:not(.live) .timer { display: none; }
+.act-head.waiting .spin { opacity: .5; }
+.act-head .say { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-head .say.swap { animation: swap .28s ease-out; }
+.act-head .timer { flex: none; }
+.act-head .chev-wrap { display: none; flex: none; }
+.act-head.has-steps .chev-wrap { display: inline-flex; }
+.act-head .chev { width: 15px; height: 15px; transition: transform .2s; }
+.act-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.reply.folded .flow > :is(.steps, .answer.said, .draft) { display: none; }
+.reply.folded .act-head { margin-bottom: 6px; }
+/* while the model thinks with nothing else moving: a small moon where the next thing will come */
+.tail { display: flex; margin: 2px 0 10px; }
+.tail[hidden] { display: none; }
+.tail .loader { width: 18px; height: 18px; }
+.flow > .answer.said { color: var(--muted); transition: color .4s; }
+.flow > .answer.said :is(strong, h1, h2, h3, h4, a) { color: inherit; }
 .flow > .answer:has(+ .steps) > :last-child { margin-bottom: 8px; }
 .steps { position: relative; padding-left: 30px; margin: 2px 0 14px; }
 .steps::before { content: ""; position: absolute; left: 10px; top: 14px; bottom: 14px; width: 1.5px; background: var(--line); }
@@ -270,11 +292,6 @@ pre.code { margin: 0; padding: 12px 14px; overflow: auto; font-size: 13px; line-
 .steps.done .step.more.open > .step-title::after { transform: rotate(45deg); }
 .steps.done .step.more > .step-title:hover { color: var(--accent); }
 .steps.done .step { padding-bottom: 5px; }
-.status { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; font-size: 14px; color: var(--soft); }
-.status .spin { display: inline-flex; }
-.status.waiting .spin { opacity: .5; }
-.status .say { display: inline-block; }
-.status .say.swap { animation: swap .28s ease-out; }
 /* a whole reply the app's check sent back: kept, folded, marked */
 .draft { margin: 0 0 12px; font-size: 13.5px; color: var(--soft); }
 .draft > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
@@ -535,9 +552,13 @@ body.drawer-open .drawer { transform: none; }
 .reply .card.slim + :not(.slim) { margin-top: 18px; }
 /* a picture in the chat: at most 480 wide and 400 tall, its shape kept - a square one 400 x 400, a tall one no taller than
    that (before, a portrait picture stood 840 px high) */
-.media { max-width: 480px; width: fit-content; }
-.media img { border-radius: 18px; width: auto; height: auto; max-width: 100%; max-height: 400px; }
-.media-foot { padding: 8px 2px 0; }
+/* a picture in the chat: as wide as it is, at most 440 px (all of a phone's width) and 380 px tall - its shape kept, a
+   square 380 x 380, a tall one no taller (measured: a 480 px card past the edge of a 406 px phone; a portrait picture
+   840 px high). Its caption takes the picture's width, never widens the card. */
+.media { width: fit-content; max-width: min(100%, 440px); }
+.media img { width: auto; height: auto; max-width: 100%; max-height: 380px; border-radius: 16px; }
+.media-foot { padding: 8px 2px 0; width: 0; min-width: 100%; }
+@media (max-width: 640px) { .media img, .answer-pic { max-height: 340px; } }
 .wx-now { margin-top: 14px; }
 .sub { background: none; border-radius: 0; padding: 0; }
 .subs { gap: 12px; margin-top: 10px; }
@@ -895,6 +916,14 @@ body.empty .dock { flex: 1; }
 body.empty .fine { display: none; }
 .starters { max-width: 768px; margin: 14px auto 0; display: none; flex-wrap: wrap; gap: 8px; justify-content: center; }
 body.empty .starters { display: flex; }
+body.empty .jump { opacity: 0; pointer-events: none; }  /* nothing to jump to on the start screen */
+@media (max-width: 640px) {  /* a phone: the suggestions as an even grid of two, their words from the left */
+  body.empty .starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 2px; }
+  .starters .starter { align-items: flex-start; flex-direction: column; justify-content: flex-start; gap: 8px; padding: 12px 13px;
+    border-radius: 16px; text-align: left; font-size: 13px; line-height: 1.35; min-height: 88px; }
+  .starters .starter > :last-child { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    overflow-wrap: anywhere; }
+}
 .starter { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px;
   border: 1px solid var(--line); font-size: 14px; font-weight: 450; color: var(--muted); }
 .starter:hover { background: var(--hover); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 35%, transparent); }
@@ -1085,9 +1114,18 @@ body.picking .side, body.picking .main, body.picking .fileview { visibility: hid
   .projects-brand { margin-bottom: 40px; }
   .projects-head h1 { font-size: 27px; }
   .new-project-btn { padding: 9px 14px 9px 11px; }
-  .project-grid { grid-template-columns: 1fr; gap: 10px; }
-  .project { min-height: 0; }
-  .project .p-top { margin-bottom: 14px; }
+  /* two small cards a row, a grid like the desktop's (before: one wide card a row, cut at the right edge) */
+  .project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .project { min-height: 148px; padding: 14px 14px 12px; border-radius: 18px; }
+  .project .tile, .project.new .p-plus { width: 38px; height: 38px; border-radius: 11px; font-size: 16px; }
+  .project .p-top { margin-bottom: 12px; }
+  .project .p-more { width: 30px; height: 30px; margin: -6px -8px 0 0; }
+  .project .p-name { font-size: 15px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .project .p-stats { font-size: 12px; }
+  .project .p-last { display: none; }
+  .project .p-used { margin-top: auto; padding-top: 8px; font-size: 11.5px; }
+  .project.new .p-plus { margin-bottom: 12px; }
+  .project.new .p-plus svg.i { width: 19px; height: 19px; }
 }
 
 /* a small menu (a project's rename / delete) */
@@ -1107,7 +1145,11 @@ body.picking .side, body.picking .main, body.picking .fileview { visibility: hid
 @keyframes fade { from { opacity: 0; } }
 .dialog { width: min(420px, 100%); padding: 22px 22px 18px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow);
   animation: rise .22s ease-out; }
-.dialog.wide { width: min(760px, 100%); max-height: 86vh; display: flex; flex-direction: column; }
+.dialog.wide { width: min(760px, 100%); max-height: min(86vh, 86dvh); display: flex; flex-direction: column; }
+.dialog { min-width: 0; max-width: 100%; }  /* a grid item: its tables don't widen it past the screen (measured: 593 px on a 406 px phone) */
+.dialog-extra { min-width: 0; min-height: 0; }
+.trace th, .trace td { white-space: nowrap; }  /* "98.2 s" on one line; a wide table scrolls sideways in its own frame */
+@media (max-width: 520px) { .dialog-scrim { padding: 10px; } .dialog { padding: 18px 14px 14px; border-radius: 18px; } }
 .dialog h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
 .dialog p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.55; }
 .dialog input { width: 100%; padding: 10px 12px; margin: 0 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg);
@@ -1198,7 +1240,8 @@ body.busy .send { opacity: 1 !important; cursor: pointer; }
 .mini-wrap th, .mini-wrap td { padding: 4px 8px; }
 .mini-wrap th { color: var(--soft); font-weight: 500; }
 .err-out { color: var(--red); }
-.answer-pic { display: block; width: auto; height: auto; max-width: min(100%, 480px); max-height: 400px; border-radius: 14px; margin: .4em 0 1em; }
+.answer-pic { display: block; width: auto; height: auto; max-width: min(100%, 440px); max-height: 380px; border-radius: 14px; margin: .4em 0 1em; }
+.starter-ic { display: inline-flex; flex: none; }
 .outputs img { height: auto; }
 /* a site's icon: on a light backing in dark, where a dark icon would vanish */
 :root:not([data-theme="light"]) img.fav { background: #f2f2f2; padding: 2px; border-radius: 5px; }
@@ -1318,7 +1361,7 @@ img.fav { object-fit: contain; }
 
 /* ---------------------------------------------------------------- pictures and corners */
 /* generous, continuous corners (a squircle where the browser can draw one) and a hairline edge on pictures */
-.media img, .answer-pic { border-radius: 20px; }
+.media img, .answer-pic { border-radius: 16px; }
 .outputs img { border-radius: 16px; }
 .vthumb { border-radius: 16px; }
 .item img { border-radius: 10px; }
@@ -1326,7 +1369,7 @@ img.fav { object-fit: contain; }
 .media img, .answer-pic, .outputs img, .item img { outline: 1px solid rgba(255, 255, 255, .07); outline-offset: -1px; }
 :root[data-theme="light"] :is(.media img, .answer-pic, .outputs img, .item img) { outline-color: rgba(0, 0, 0, .07); }
 @supports (corner-shape: squircle) {
-  .media img, .answer-pic { border-radius: 34px; corner-shape: squircle; }
+  .media img, .answer-pic { border-radius: 22px; corner-shape: squircle; }
   .outputs img, .vthumb { border-radius: 26px; corner-shape: squircle; }
   .item img { border-radius: 15px; corner-shape: squircle; }
   .viewer-item > img { border-radius: calc(34px / var(--s, 1)); corner-shape: squircle; }
