@@ -35,7 +35,7 @@ load_env_file()  # before Settings: its defaults read the environment when the c
 @dataclass(frozen=True)
 class Settings:
     """The assistant's settings. The variable names are the ones the .env file already uses (some keep the
-    BIZ_ prefix of the first product); the legacy product reads its own (legacy/config.py)."""
+    BIZ_ prefix of the project's first product)."""
     max_upload_mb: int = int(os.environ.get("BIZ_MAX_UPLOAD_MB", "100"))
     # The model behind both slots: "llamacpp" (llama-server - local, or the Kaggle bridge), or a cloud for testing the
     # app with a stronger model: "gemini" (Google's Gemini API) or "groq".

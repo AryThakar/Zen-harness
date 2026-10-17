@@ -38,8 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The first product (legacy/: business analytics with a Streamlit UI), kept apart from the assistant.
-legacy = ["anthropic>=1.8", "langgraph-checkpoint-sqlite>=3.1", "plotly>=5.19", "requests>=2.31", "streamlit>=1.50"]
 # Libraries for the scripts the assistant runs (run_python): charts, maths, data, ML, files.
 sandbox = ["beautifulsoup4>=4.12", "imbalanced-learn>=0.12", "lightgbm>=4.0", "networkx>=3.0",
            "nltk>=3.8", "opencv-python-headless>=4.8", "polars>=1.0", "scikit-image>=0.22",
@@ -48,10 +46,7 @@ sandbox = ["beautifulsoup4>=4.12", "imbalanced-learn>=0.12", "lightgbm>=4.0", "n
 dev = ["zen-assistant[sandbox]", "httpx2>=2.0", "pytest>=8"]
 
 [tool.setuptools.packages.find]
-include = ["app*", "legacy*"]
-
-[tool.setuptools.package-data]
-"legacy.db" = ["migrations/*.sql"]
+include = ["app*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]  # the legacy product: pytest legacy/tests (needs the legacy extra)
+testpaths = ["tests"]

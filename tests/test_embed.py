@@ -218,7 +218,7 @@ def test_a_start_that_fails_means_keywords_only():
 
 
 def test_settings_without_an_embedding_server_get_the_cpu_model():
-    """The legacy product passes its own settings, which know nothing of the embedding server."""
+    """Settings that know nothing of the embedding server get the CPU model."""
     from types import SimpleNamespace
 
     from app.rag.embed import FastEmbedder, make_embedder

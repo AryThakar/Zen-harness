@@ -95,8 +95,3 @@ the API through its client, and every tool's contract and description against it
 server is set up, one test also runs the real one. Measurements on the real model are scripts in `bench/` - each
 phase's acceptance and 20 jobs (10 held out) - each saying what it measured; the results are recorded in
 docs/REBUILD_PLAN.md.
-
-## The first product
-
-This repository started as an AI business analyst (FastAPI, DuckDB, Streamlit). It is kept, separate, in
-[`legacy/`](legacy/README.md).
