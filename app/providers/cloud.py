@@ -79,13 +79,17 @@ class CloudProvider(LlamaCppProvider):
         return estimate_tokens(system, messages, tools)
 
     def _clean(self, body: dict) -> dict:
-        """llama-server's own fields out; the cloud's thinking switch in."""
-        return {k: v for k, v in body.items() if k not in LLAMA_ONLY}
+        """llama-server's own fields out - a step's reasoning_content among them (a cloud keeps its own thinking:
+        Gemini's thought signature); the cloud's thinking switch in."""
+        out = {k: v for k, v in body.items() if k not in LLAMA_ONLY}
+        if "messages" in out:
+            out["messages"] = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in out["messages"]]
+        return out
 
     def _body(self, system, messages, tools, allow_tools, think=True, budget=None, require_tool=False,
-              prompt_tokens=None) -> dict:
+              prompt_tokens=None, sampling=None) -> dict:
         body = self._clean(super()._body(system, messages, tools, allow_tools, think, budget, require_tool,
-                                         prompt_tokens))
+                                         prompt_tokens, sampling))
         return {**body, **self.thinking_fields(self.thinking and think)}
 
     def thinking_fields(self, thinking: bool) -> dict:

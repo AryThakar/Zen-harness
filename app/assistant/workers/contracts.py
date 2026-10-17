@@ -94,6 +94,8 @@ class Profile:
     finish: str = SUBMIT  # the tool that hands in the result
     asks: bool = False  # may ask the user directly (ask_user, in place)
     sees_images: bool = False  # is shown pictures in its conversation (when the server has vision)
+    task_lead: str = "Your task"  # the words before main's task in the opening
+    sampling: dict | None = None  # its own sampling over the server's, on every call
 
     def own_tools(self) -> dict[str, Tool]:
         tools = {t.name: t for t in (HELPER_TOOLS.get(n) or TOOLS[n] for n in self.tools)}  # by the name it is called
@@ -126,11 +128,19 @@ def _ask_tool(delegate: str) -> Tool:
 DATA_TOOLS = ("inspect_data", "clean_data", "query_data", "make_chart", "compare", "forecast", "predict",
               "find_patterns", "analyze_text")
 
+# Qwen 3.6's model card, thinking mode: precise coding wants temperature 0.6 and no presence penalty; the server runs
+# its general set (1.0, presence 1.5 - the Kaggle notebook). The analyst writes code and SQL, so it asks for these.
+PRECISE = {"temperature": 0.6, "presence_penalty": 0.0}
+
 PROFILES = {p.name: p for p in [
     Profile("web", prompts.WEB, ("web_search", "read_webpage"), 12, WebResult, _check_web, asks=True),
     Profile("knowledge", prompts.KNOWLEDGE, ("files:read", "recall"), 6, SourcedResult, _check_knowledge),
+    # main's task says what is wanted; the way is the helper's - measured: it followed main's code steps in scripts
+    # and its tested tools went unused (checks.dictated_how stops the worst at main's call)
     Profile("engineer", prompts.ENGINEER, (*DATA_TOOLS, "files", "run"), 12, WorkResult, _check_work, finish=FINISH,
-            asks=True, sees_images=True),
+            asks=True, sees_images=True,
+            task_lead="Your task - what is wanted; the way is yours, your tested tools first, even where it names steps",
+            sampling=PRECISE),
 ]}
 
 

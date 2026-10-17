@@ -10,6 +10,9 @@ main itself, each from a measured failure in the user's own test chat (found in 
     repeated failure    the same call that already failed in this turn is stopped: the model is told what
                         failed and to try something else (it repeated a failed download) - or to confirm
                         it, for a failure that may pass
+    how, not what       a task for analyze_or_code that spells out the files to save, the libraries or the code steps
+                        (none of them the user's words) is stopped: say what is wanted, the helper picks its tools
+                        (its tested chart, forecast and model tools went unused behind main's recipes) - or confirm
     pictures again      a third generate_image in one turn is stopped: the model is told to show the best one and
                         let the user ask for another try (it judged its own pictures and made 4 in a row, ~2 min,
                         2026-10-16) - or to confirm it, when the user asked for several
@@ -131,6 +134,39 @@ def pictures_again(turn: list[dict], call: dict) -> str | None:
         return None
     return (f"Not made: {made} pictures were made in this turn already. Show the user the best one and say in a "
             "sentence what is still off; they ask for another try if they want one." + CONFIRMABLE)
+
+
+# How, not what, in a task for the analyst: files to save, libraries, code steps. Measured in the user's chats
+# (2026-10-16): main's tasks read "save as work/reliance_line_chart.png ... feature engineering ... train a Random
+# Forest regressor", the helper followed them in its own scripts, and across all traced turns it made 39 script calls
+# to make_chart 12, predict 1, forecast 0 - its tested tools went unused.
+SAVE_AS = re.compile(r"\b[\w./-]+\.(?:png|jpe?g|svg|gif|webp)\b", re.I)
+LIBRARY = re.compile(r"\b(?:matplotlib|seaborn|plotly|mplfinance|sklearn|scikit-learn|statsmodels|xgboost|lightgbm)\b"
+                     r"|\b(?:plt|sns)\.\w+", re.I)
+CODE_STEP = re.compile(r"\bdatetime index\b|\bfeature engineering\b|\b(?:train[/ -]test|split the data|split data)\b"
+                       r"|\btrain an? [\w -]{0,30}(?:regressor|classifier)\b|\bload the (?:csv|file|data)\b"
+                       r"|\bdropna\b|\bgroupby\b|\brolling\b|\bhigh dpi\b|\bdpi\b", re.I)
+
+
+def dictated_how(call: dict, messages: list[dict], exists: Callable[[str], bool] = lambda name: False) -> str | None:
+    """For a task to analyze_or_code: why it is stopped when it spells out how to do the work - the files to save, the
+    libraries or the code steps - that the user never asked for; the helper picks its own tested tools. A picture
+    already in the workspace (``exists``) is what the task works on, not a file to make."""
+    given, _ = split_confirm(call["input"])
+    if call["name"] != "analyze_or_code" or not isinstance(given, dict):
+        return None
+    task = str(given.get("task") or "")
+    said = " ".join(str(m.get("text") or m.get("content") or "") for m in messages
+                    if m["role"] == "user" and not m.get("hidden")).lower()
+    found = [f for f in dict.fromkeys(m.group(0) for p in (SAVE_AS, LIBRARY) for m in p.finditer(task))
+             if f.lower() not in said and not (SAVE_AS.fullmatch(f) and exists(f))]
+    steps = [f for f in dict.fromkeys(m.group(0) for m in CODE_STEP.finditer(task)) if f.lower() not in said]
+    if not found and len(steps) < 2:
+        return None
+    return (f"Not run: the task says how to do the work ({', '.join((found + steps)[:5])}). Give the helper what the "
+            "user wants and why, in plain words: it picks its tested tools itself - make_chart for a chart, forecast for "
+            "coming periods, predict for a model - and names its own files. If the user asked for exactly this, make the "
+            "same call again with confirm: true.")
 
 
 def _key(call: dict) -> str | None:

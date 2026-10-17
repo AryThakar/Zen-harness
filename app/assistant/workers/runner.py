@@ -147,7 +147,8 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
     named = list(dict.fromkeys([k for k in given if ctx.ws.kind(k) == "image"] + (_task_images(ctx, task) if sees else [])))
     # A report or a task written in the first design's words may name files by key: by path, as everywhere.
     opening = present(ctx.ws, f"{now_line()}\n\n{context_block(ctx.ws)}\n\n" + _given(ctx, given)
-                      + (_table_report(ctx, table) if table else "") + _pages_seen(ctx, profile) + f"Your task: {task}")
+                      + (_table_report(ctx, table) if table else "") + _pages_seen(ctx, profile)
+                      + f"{profile.task_lead}: {task}")
     messages: list[dict] = [{"role": "user", "content": opening}]
     if sees and named:  # on the opening itself: one user turn, not two in a row
         shown = _pictures(ctx, named[:IMAGES_SHOWN], "task")
@@ -183,11 +184,12 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
             turn = provider.complete(system, visible, [finish_spec] if last else tool_specs, require_tool=True,
                                      on_event=lambda kind, text: kind == "writing" and progress(
                                          {"type": "worker_writing", "worker": profile.name, **json.loads(text)}),
-                                     prompt_tokens=size)
+                                     prompt_tokens=size, sampling=profile.sampling)
         except ProviderError as exc:
             return _done(ctx, profile, {"answer": ""}, trace, [], task=task, stopped=_plain(exc))
         messages.append({"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,
-                         "provider": provider.name, "model": turn.model, "stop": turn.stop})
+                         "provider": provider.name, "model": turn.model, "stop": turn.stop,
+                         **({"thinking": turn.thinking} if turn.thinking else {})})  # back with the step (llamacpp.py)
         progress({"type": "worker_turn", "worker": profile.name, "step": step, "stop": turn.stop,
                   "calls": [c["name"] for c in turn.tool_calls], "text": turn.text[:300], "usage": turn.usage,
                   "shortened": shortened, **({"cut_call": turn.cut_call} if turn.cut_call else {})})

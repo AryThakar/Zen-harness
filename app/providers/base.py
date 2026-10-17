@@ -45,7 +45,7 @@ class ModelTurn:
     # How the turn went, for the speed shown under each answer: output_tokens, and when
     # the provider knows them prompt_tokens and tokens_per_second (generation only).
     usage: dict | None = None
-    # The model's thinking, when it thought: measured (how long thinking runs), never sent back to it.
+    # The model's thinking, when it thought: kept on the step and sent back with it (llamacpp.py), measured too.
     thinking: str = ""
     # A call the length limit cut off part way (stop "max_tokens"): {"name", "chars"} - it never runs, and the
     # model is told it was too long rather than to think less (measured: a web helper's reply was cut off three
@@ -101,6 +101,7 @@ class Provider(Protocol):
         think: bool = True,
         budget: int | None = None,
         prompt_tokens: int | None = None,
+        sampling: dict | None = None,
     ) -> ModelTurn:
         """One model turn. ``tools`` are {"name", "description", "input_schema"}.
         With ``allow_tools=False`` the model must answer in text (tools stay
@@ -108,4 +109,5 @@ class Provider(Protocol):
         of them (a helper: it acts or finishes, never answers in prose). ``think=False``
         switches thinking off for this call; ``budget`` caps its thinking tokens (main's
         "answer quickly" retry after a reply that thought until the length limit). ``prompt_tokens``, the prompt's
-        exact size when the caller counted it, lets a server with a fixed slot give the reply all the room left."""
+        exact size when the caller counted it, lets a server with a fixed slot give the reply all the room left;
+        ``sampling`` sets this call's own sampling over the server's."""

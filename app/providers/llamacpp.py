@@ -7,8 +7,11 @@
   as deltas that are put together here. llama-server reads the calls out of the
   model's own chat template (jinja, on by default).
 - Thinking is off unless asked for (the assistant turns it on): on a laptop GPU every thought
-  token costs as much time as an answer token. Thoughts are never replayed; they are kept on the
-  turn (``thinking``) and their length in its usage. No thinking budget by default (the user's
+  token costs as much time as an answer token. A step's thinking goes back with it (reasoning_content), and
+  the model's chat template decides what it shows: Qwen 3.6's shows the steps of the current turn with their
+  thinking and drops it from older turns; given none, it showed each earlier step of the turn as an empty
+  <think></think> - the plan lost between tool calls, and the prompt cache missing where the generated text
+  was replayed without it. Qwen's guide: dropping it between tool calls degrades accuracy. No thinking budget by default (the user's
   call: a cut in the middle of thinking can break the model's work, and in 323 messages thinking
   ran out of room only twice); ``thinking_budget`` sets llama-server's reasoning_budget_tokens for
   experiments; a call's own ``budget`` caps just that call - main's "answer quickly" retry after
@@ -188,8 +191,9 @@ class LlamaCppProvider:
 
     def _body(self, system: str, messages: list[dict], tools: list[dict], allow_tools: bool,
               think: bool = True, budget: int | None = None, require_tool: bool = False,
-              prompt_tokens: int | None = None) -> dict:
-        """The request, the same for generating and for counting."""
+              prompt_tokens: int | None = None, sampling: dict | None = None) -> dict:
+        """The request, the same for generating and for counting. ``sampling``: a call's own settings over the
+        server's (a helper whose work is code asks for the model's precise-coding ones)."""
         thinking = self.thinking and think
         budget = budget or self.thinking_budget
         body = {
@@ -200,7 +204,7 @@ class LlamaCppProvider:
             **({"reasoning_budget_tokens": budget} if thinking and budget else {}),
             "cache_prompt": True,
             **({"id_slot": self.slot} if self.slot is not None else {}),
-            **self.sampling,
+            **self.sampling, **(sampling or {}),
         }
         if tools:
             body["tools"] = [{"type": "function", "function": {
@@ -295,8 +299,10 @@ class LlamaCppProvider:
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
                  allow_tools: bool = True, require_tool: bool = False, on_event: EventCallback | None = None,
-                 think: bool = True, budget: int | None = None, prompt_tokens: int | None = None) -> ModelTurn:
-        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool, prompt_tokens),
+                 think: bool = True, budget: int | None = None, prompt_tokens: int | None = None,
+                 sampling: dict | None = None) -> ModelTurn:
+        body = {**self._body(system, messages, tools, allow_tools, think, budget, require_tool, prompt_tokens,
+                             sampling),
                 "stream": True,
                 **self.STREAM_EXTRA}
         try:
@@ -386,6 +392,8 @@ def _assistant_message(msg: dict, answered: set[str]) -> dict | None:
     turn = {"role": "assistant", "content": text}
     if calls:
         turn["tool_calls"] = calls
+    if msg.get("thinking"):  # the step's own reasoning, back with it (module docstring: thinking)
+        turn["reasoning_content"] = msg["thinking"]
     return turn
 
 

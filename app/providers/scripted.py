@@ -32,10 +32,11 @@ class ScriptedProvider:
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
                  allow_tools: bool = True, require_tool: bool = False, on_event: EventCallback | None = None,
-                 think: bool = True, budget: int | None = None, prompt_tokens: int | None = None) -> ModelTurn:
+                 think: bool = True, budget: int | None = None, prompt_tokens: int | None = None,
+                 sampling: dict | None = None) -> ModelTurn:
         self.requests.append({"system": system, "messages": list(messages), "tools": tools,
                               "allow_tools": allow_tools, "require_tool": require_tool, "think": think,
-                              "budget": budget, "prompt_tokens": prompt_tokens})
+                              "budget": budget, "prompt_tokens": prompt_tokens, "sampling": sampling})
         if not self.turns:
             raise ProviderError("The scripted model has no more turns.")
         turn = self.turns.pop(0)

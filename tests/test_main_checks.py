@@ -269,3 +269,35 @@ def test_a_helper_task_naming_the_file_it_should_make_says_what_files_is_for(sto
     assert result["is_error"] and "work/mrf_line_chart.png" in result["content"]
     assert "a file the helper is to make goes in the task, not in files" in result["content"]
     assert helper.requests == []
+
+
+RECIPE = ("Analyze RELIANCE.NS.csv. 1. Load the CSV, ensure Date is datetime index, sort ascending. 2. Line chart of "
+          "closing prices -> save as work/reliance_line_chart.png. 3. Feature engineering: 5-day MA, RSI. 4. Train a "
+          "Random Forest regressor to predict the next close.")
+
+
+def test_a_task_that_spells_out_how_is_sent_back_for_what_the_user_wants(store, chat):
+    """Measured 2026-10-16: main's tasks dictated files, libraries and code steps; the helper followed them in scripts
+    (39 script calls to make_chart 12, predict 1, forecast 0 across the user's chats)."""
+    main = ScriptedProvider([turn(call("analyze_or_code", task=RECIPE)), answer("Let me put it plainly.")])
+    helper = ScriptedProvider([])  # never called
+    list(send(store, chat["id"], "download public data then do analysis and ML on it", main, helper))
+    result = [m for m in store.messages(chat["id"]) if m["role"] == "tool"][0]["content"]
+    assert "Not run: the task says how to do the work" in result and "work/reliance_line_chart.png" in result
+    assert "forecast for coming periods" in result and "confirm: true" in result
+    assert helper.requests == []
+
+
+def test_what_tasks_the_users_own_words_and_a_picture_to_edit_are_not_recipes():
+    from app.assistant.checks import dictated_how
+
+    def task(text, confirm=False):
+        return {"id": "c1", "name": "analyze_or_code", "input": {"task": text, **({"confirm": True} if confirm else {})}}
+
+    said = [{"role": "user", "text": "chart the prices"}]
+    assert dictated_how(task("Chart Reliance's daily closes for the last month and say the trend."), said) is None
+    asked = [{"role": "user", "text": "plot it with matplotlib and save it as prices.png"}]
+    assert dictated_how(task("Plot the prices with matplotlib and save it as prices.png."), asked) is None
+    edit = task("Blur the two labels in 'a-dramatic-side-by-side-video-game.jpg' and add ARY at the top.")
+    assert dictated_how(edit, said, exists=lambda name: name == "a-dramatic-side-by-side-video-game.jpg") is None
+    assert dictated_how(task("Use seaborn for the chart."), said) is not None

@@ -270,17 +270,27 @@ for _n, _f in (("chart", chart), ("table", table)):
     _sys.modules.setdefault(_n, _m)
 
 def _images():
-    return {{n: _os.stat(n).st_mtime for n in _os.listdir(".") if n.lower().endswith({images!r})}}
+    # every folder but hidden ones: a script that saved its pictures under work/ saved them itself (measured: its
+    # open figures were saved again as figure_1.png beside them)
+    found = {{}}
+    for _root, _dirs, _files in _os.walk("."):
+        _dirs[:] = [d for d in _dirs if not d.startswith(".")]
+        for n in _files:
+            if n.lower().endswith({images!r}):
+                found[_os.path.join(_root, n)] = _os.stat(_os.path.join(_root, n)).st_mtime
+    return found
 _images_before = _images()
 
 def _save_figures():
     # Figures still open at the end (plt.show() draws nothing here) are saved as images - unless the
-    # script saved images itself. Run right after the script: matplotlib's own exit handler closes them.
+    # script saved images itself - in the script's own folder. Run right after the script: matplotlib's
+    # own exit handler closes them.
     plt = _sys.modules.get("matplotlib.pyplot")
     if plt is None or any(_images_before.get(n) != t for n, t in _images().items()):
         return
+    folder = "" if _os.path.isabs({name!r}) else _os.path.dirname({name!r})
     for n in plt.get_fignums():
-        plt.figure(n).savefig(f"figure_{{n}}.png", dpi=110, bbox_inches="tight")
+        plt.figure(n).savefig(_os.path.join(folder, f"figure_{{n}}.png"), dpi=110, bbox_inches="tight")
 
 import warnings as _warnings
 _warnings.filterwarnings("ignore", message=".*non-interactive, and thus cannot be shown")

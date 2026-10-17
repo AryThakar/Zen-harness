@@ -44,6 +44,21 @@ def report(**fields) -> ModelTurn:
     return ModelTurn(text="", tool_calls=[call("finish", **{**REPORT, **fields})], stop="tool_use")
 
 
+def test_the_analyst_asks_for_precise_sampling_and_frames_the_task_as_the_goal(ctx):
+    """Qwen 3.6's card: precise coding at temperature 0.6, no presence penalty (the server runs its general set); and
+    main's task is what is wanted - its tools first (it followed main's code steps in scripts before)."""
+    from app.assistant.workers.contracts import PRECISE
+    model = ScriptedProvider([report()])
+    run_worker(model, ENGINEER, "Which region sells most?", ctx)
+    assert model.requests[0]["sampling"] == PRECISE == {"temperature": 0.6, "presence_penalty": 0.0}
+    assert model.requests[0]["messages"][0]["content"].endswith(
+        "Your task - what is wanted; the way is yours, your tested tools first, even where it names steps: "
+        "Which region sells most?")
+    web = ScriptedProvider([submit(answer="I could not find it.")])
+    run_worker(web, PROFILES["web"], "When is the next rate decision?", ctx)
+    assert web.requests[0]["sampling"] is None  # the server's general set
+
+
 # ---------------------------------------------------------------- registry
 
 def test_registry_validates_before_running(ctx):

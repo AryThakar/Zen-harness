@@ -97,6 +97,12 @@ function mark() {
   const at = state.ws ? `#project=${state.ws.id}${state.chat ? `&chat=${state.chat.id}` : ""}` : " ";
   if (location.hash !== at.trim()) history.replaceState(null, "", at.trim() || location.pathname);
 }
+// A link pasted or an address edited in this tab goes there (the page's own moves replace the address: no event)
+addEventListener("hashchange", async () => {
+  const p = place(), project = p.get("project"), chat = p.get("chat");
+  if (project && project !== state.ws?.id && state.workspaces?.some(w => w.id === project)) await selectWorkspace(project);
+  else if (chat && chat !== state.chat?.id && state.chats?.some(c => c.id === chat)) await openChat(chat);
+});
 async function loadWorkspaces(prefer) {
   state.workspaces = await api("/workspaces");
   const id = [prefer, place().get("project"), load(KEYS.ws)].find(w => w && state.workspaces.some(x => x.id === w));

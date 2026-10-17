@@ -66,7 +66,8 @@ from app.tools.memory import remember_turn
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace, present
 
-from .checks import SAMPLE_DATA, invented_numbers, nudge_for, pictures_again, repeated_failure, this_turn
+from .checks import (SAMPLE_DATA, dictated_how, invented_numbers, nudge_for, pictures_again, repeated_failure,
+                     this_turn)
 from . import snapshot
 from .context import (counter, cut_turns, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
                       standing_instructions,
@@ -268,9 +269,10 @@ def _agent(state: TurnState, config) -> dict:
         t.write({"type": "stats", **turn.usage, "seconds": round(time.perf_counter() - started, 3)})
     message = {"role": "assistant", "text": turn.text, "tool_calls": turn.tool_calls, "raw": turn.raw,
                "provider": t.main.name, "model": turn.model, "stop": turn.stop,
-               # kept (thinking length included) so real chats show how long the model thinks; the
-               # thinking itself is not kept
-               **({"usage": turn.usage} if turn.usage else {})}
+               # usage kept (thinking length included) so real chats show how long the model thinks; the
+               # thinking itself goes back to the model with this step - its template shows it in the turn's
+               # later steps only (llamacpp.py)
+               **({"usage": turn.usage} if turn.usage else {}), **({"thinking": turn.thinking} if turn.thinking else {})}
     t.store.append(t.chat_id, message)
     new = [message]
     if turn.cut_call and not last:  # the limit came while it wrote a call: too long, not too much thinking
@@ -339,7 +341,9 @@ def _tools(state: TurnState, config) -> dict:
         given, confirmed = split_confirm(call["input"])
         so_far = this_turn(state["messages"] + results)
         refused = None if confirmed else (repeated_failure(so_far, call) or pictures_again(so_far, call)
-                                          or invented_numbers(call, state["messages"]))
+                                          or invented_numbers(call, state["messages"])
+                                          or dictated_how(call, state["messages"],
+                                                          exists=lambda name: t.ws.find(name) is not None))
         if confirmed and isinstance(given, dict) and invented_numbers(call, state["messages"]):
             given = {**given, "task": str(given.get("task", "")) + SAMPLE_DATA}  # it runs, labelled
         began = time.perf_counter()

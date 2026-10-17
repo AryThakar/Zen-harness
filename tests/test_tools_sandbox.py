@@ -43,6 +43,13 @@ def test_open_figures_are_saved_once(ws):
     assert [f["path"] for f in shown["files"]] == ["figure_1.png"] and "errors" not in shown
     saved = run_python(ws, plot + "plt.savefig('curve.png')").result  # saved by the script: no second copy
     assert [f["path"] for f in saved["files"]] == ["curve.png"]
+    # a working script saving under work/ saved it too (measured: figure_1.png came beside the MRF charts), and one
+    # that leaves its figure open gets it in its own folder
+    (ws.files / "work").mkdir(exist_ok=True)  # there once a script is written under it
+    in_work = run_python(ws, plot + "plt.savefig('work/line.png')", name="work/charts.py").result
+    assert [f["path"] for f in in_work["files"]] == ["work/line.png"]
+    left_open = run_python(ws, plot + "plt.show()", name="work/look.py").result
+    assert [f["path"] for f in left_open["files"]] == ["work/figure_1.png"]
 
 
 def test_a_missing_module_is_said_once_with_what_is_installed(ws):

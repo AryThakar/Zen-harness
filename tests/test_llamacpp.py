@@ -30,6 +30,21 @@ def test_history_replays_calls_exactly_and_marks_errors():
     assert out[3]["content"] == "Error: bad"
 
 
+def test_a_steps_thinking_goes_back_with_it_and_a_cloud_drops_it():
+    """Qwen 3.6's template shows the turn's earlier steps with their thinking; given none, each showed an empty
+    <think></think> - its plan lost between tool calls (and Qwen's guide: dropping it degrades accuracy)."""
+    from app.providers.gemini import GeminiProvider
+    calls = [{"id": "a", "type": "function", "function": {"name": "calculate", "arguments": '{"expression": "2"}'}}]
+    history = [{"role": "user", "content": "q"},
+               {"role": "assistant", "text": "", "tool_calls": [], "raw": {"tool_calls": calls}, "provider": "llamacpp",
+                "thinking": "The user wants 2; calculate it, then answer."},
+               tool_result("a")]
+    sent = to_openai_messages(history)[1]
+    assert sent["reasoning_content"] == "The user wants 2; calculate it, then answer." and sent["tool_calls"] == calls
+    cloud = GeminiProvider("m", "k", "http://127.0.0.1:9")._body("s", history, [], True)
+    assert all("reasoning_content" not in m for m in cloud["messages"])
+
+
 def test_history_drops_unrun_calls_and_rebuilds_other_providers():
     history = [
         {"role": "user", "content": "q1"},
