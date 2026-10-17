@@ -10,6 +10,7 @@ import { consoleEl } from "./console.js";
 import { isPinned, togglePin } from "./pins.js";
 import { openViewer, viewerOpen } from "./viewer.js";
 import { $, confirmDialog, count, ext, escapeHtml, fileSize, fileTile, h, isPicture, load, markdown, noteTile, plural, polish, save, svg, codeBlocks, copyText, toast } from "./util.js";
+import { pdfView } from "./pdf.js";
 
 export const hooks = { thread: null, stick: () => {}, loadItems: async () => {}, submit: () => {}, hideHello: () => {}, updateComposer: () => {} };
 
@@ -52,10 +53,15 @@ const SEALED = `<!doctype html><meta http-equiv="Content-Security-Policy" conten
 // tool's HTML_PAGE in registry.py.)
 const TOKENS = { bg: "--surface", ink: "--ink", muted: "--muted", line: "--line", accent: "--accent", "on-accent": "--on-accent",
   green: "--k-green", blue: "--k-blue", red: "--k-red", orange: "--k-orange", yellow: "--k-yellow", purple: "--k-purple" };
-function zenHead() {
+// store: the page's own storage, from before (the sealed frame has none - localStorage threw, and a 2048 game was
+// edited twice to catch it, measured 2026-10-17): its localStorage stands in, kept by this app for that file
+const pageStore = store => `zen.page.${store}`;
+function zenHead(store) {
   const css = getComputedStyle(document.documentElement);
   const vars = Object.entries(TOKENS).map(([k, v]) => `--zen-${k}:${css.getPropertyValue(v).trim()}`).join(";");
   const scheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  let saved = "{}";
+  try { const raw = store && localStorage.getItem(pageStore(store)); if (raw && JSON.parse(raw)) saved = raw; } catch {}
   return `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<style>:root{${vars};color-scheme:${scheme};scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.4) transparent}` +
     `*,*::before,*::after{box-sizing:border-box}::-webkit-scrollbar{width:10px;height:10px}` +
@@ -64,12 +70,14 @@ function zenHead() {
     `html,body{margin:0}body{background:var(--zen-bg);color:var(--zen-ink);` +
     `font:16px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}img,video{max-width:100%;height:auto}` +
     `button,input,select,textarea{font:inherit}</style>` +
-    // the page says how tall it is, so its card in the chat fits it - no scrollbar inside (htmlFrame)
-    `<script>(()=>{const say=()=>parent.postMessage({zenHeight:document.documentElement.scrollHeight},"*");` +
-    `addEventListener("load",()=>{say();new ResizeObserver(say).observe(document.body)});})()</script>`;
+    `<script>(()=>{try{localStorage.length;return}catch(e){}const d=Object.assign(Object.create(null),` +
+    `${saved.replace(/</g, "\\u003c")}),keep=()=>parent.postMessage({zenStore:{...d}},"*"),` +
+    `s={getItem:k=>k in d?d[k]:null,setItem:(k,v)=>{d[k]=String(v);keep()},removeItem:k=>{delete d[k];keep()},` +
+    `clear:()=>{for(const k in d)delete d[k];keep()},key:i=>Object.keys(d)[i]??null,get length(){return Object.keys(d).length}};` +
+    `try{Object.defineProperty(window,"localStorage",{value:s,configurable:true})}catch(e){}})()</script>`;
 }
-export function pageOf(text) {
-  const head = zenHead();
+export function pageOf(text, store = null) {
+  const head = zenHead(store);
   if (/<head[\s>]/i.test(text)) return text.replace(/<head(\s[^>]*)?>/i, m => m + head);
   if (/<html[\s>]/i.test(text)) return text.replace(/<html(\s[^>]*)?>/i, m => `${m}<head>${head}</head>`);
   return `<html><head>${head}</head><body>${text}</body></html>`;
@@ -78,10 +86,11 @@ export function pageOf(text) {
 // game's side cups cut off in a 419 px chat)
 const DESIGN_W = 720;
 
-// An HTML file running in the sealed frame, with a full-screen button (the file panel and its card in the chat)
-export function htmlFrame(text, title) {
+// An HTML file running in the sealed frame, with a full-screen button (the file panel); store: whose page storage
+// it keeps (zenHead)
+export function htmlFrame(text, title, store = null) {
   const frame = h("iframe", { class: "html-view", sandbox: "allow-scripts allow-modals allow-pointer-lock",
-    srcdoc: SEALED + pageOf(text), title: title || "HTML preview" });
+    srcdoc: SEALED + pageOf(text, store), title: title || "HTML preview" });
   const full = h("button", { class: "frame-full", type: "button", title: "Full screen", "aria-label": `Show ${title || "the page"} full screen`,
     html: svg("expand") });
   const wrap = h("div", { class: "html-frame" }, frame, full);
@@ -92,17 +101,12 @@ export function htmlFrame(text, title) {
       : { width: "", height: "", transform: "" });
   };
   new ResizeObserver(fit).observe(wrap);
-  // In the chat, the card is as tall as the page (as drawn, at its scale) - up to most of the window; the file
-  // panel and the filled view keep their own size
-  addEventListener("message", function sized(e) {
-    if (!wrap.isConnected && wrap.dataset.shown) return removeEventListener("message", sized);  // its card is gone
+  // what the page keeps in its storage, kept here for it (until its frame is gone)
+  if (store) addEventListener("message", function kept(e) {
+    if (!wrap.isConnected && wrap.dataset.shown) return removeEventListener("message", kept);
     if (wrap.isConnected) wrap.dataset.shown = "1";
-    const tall = e.source === frame.contentWindow && Number(e.data?.zenHeight);
-    const card = wrap.parentElement;
-    if (!tall || !card?.classList.contains("html-live") || wrap.classList.contains("max")) return;
-    const s = Math.min(1, wrap.clientWidth / DESIGN_W);
-    const want = Math.min(Math.ceil(tall * s), Math.round(innerHeight * 0.8));
-    if (Math.abs(card.clientHeight - want) > 2) Object.assign(card.style, { aspectRatio: "auto", height: `${want}px`, maxHeight: "none" });
+    if (e.source !== frame.contentWindow || !e.data?.zenStore) return;
+    try { localStorage.setItem(pageStore(store), JSON.stringify(e.data.zenStore).slice(0, 200_000)); } catch {}
   });
   // Where the browser refuses full screen (an embedded browser: "Permissions check failed"), the page fills the
   // window instead; the button or Esc puts it back
@@ -225,8 +229,11 @@ function show() {
   } else if (kind === "chart") {
     body.append(h("div", { class: "chart-view" }, chartCard({ type: "chart", ...fv.chart, id: item.id })));
     status = ["Chart", fv.chart.chart, "drawn live"];
-  } else if (kind === "pdf") {
-    body.append(h("iframe", { class: "pdf-view", src: fv.blob + (fv.page ? `#page=${fv.page}` : ""), title: item.name }));
+  } else if (kind === "pdf") {  // drawn in the app's colours (pdf.js); the page in view on the status line
+    body.append(pdfView(fv.blob, { page: fv.page, name: item.name, onPage: (n, of) => {
+      const first = $("#fvStatus").firstElementChild;
+      if (first && fv.item === item) first.textContent = `PDF · page ${n} of ${of}`;
+    } }));
     status = ["PDF"];
   } else if (fv.editing) {
     body.append(editPane());
@@ -241,7 +248,7 @@ function show() {
     body.append(page);
     status = ["Markdown", "preview"];
   } else {
-    body.append(htmlFrame(fv.text, item.name));
+    body.append(htmlFrame(fv.text, item.name, `${state.ws.id}:${item.id}`));
     status = ["HTML", "runs here", "no network"];
   }
   if (fv.output && !fv.editing && runnable(item)) body.append(fv.output);  // the last run stays in view

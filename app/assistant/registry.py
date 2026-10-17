@@ -197,7 +197,8 @@ HTML_PAGE = ("an .html page - a game, a tool, a page to use - runs in the chat: 
              "HTML, <style> and <script>, all inline); the app adds the head, a base style and Zen's colours as CSS "
              "variables (--zen-bg, --zen-ink, --zen-muted, --zen-line, --zen-accent, --zen-on-accent, --zen-green, "
              "--zen-blue, --zen-red, --zen-orange, --zen-yellow, --zen-purple), lays it out at least 720 px wide and "
-             "scales it to fit; nothing loads from the internet (no CDN, web fonts or linked images)")
+             "scales it to fit; it runs as in a browser (canvas, WebGL, WebGPU, keys, localStorage kept for the page), "
+             "but nothing loads from the internet (no CDN, web fonts or linked images)")
 QUERY = ("find: what to look for - words in a file's name or text, what a picture shows, a table's columns or values, "
          "e.g. 'lion', 'refund policy', 'revenue by region'")
 START_READ = "read: the line to read from (the result's next says where to go on)"

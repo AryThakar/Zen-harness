@@ -197,50 +197,124 @@ def page(url: str, check) -> tuple[str, str | None, str]:
 
 # A page Zen wrote, tried before it is called ready (measured 2026-10-17: a cup game parsed but its Start button died on
 # 'sleep is not defined', and Zen said "Click Start Game"). It runs under the chat frame's own policy (web/js/files.js,
-# SEALED: nothing loads from anywhere), with dialogs answered so none can stop the try, every control clicked a few
-# rounds over, and its errors - thrown or a promise that failed - kept.
+# SEALED: nothing loads from anywhere) and the head the chat gives it (zenHead there: the theme's colours and a page
+# storage, PAGE_HEAD here, the dark theme), with dialogs answered so none can stop the try. Its picture is taken as it
+# opens (the card in the chat shows it); then its controls are clicked and the keys a game is played with pressed, for
+# TRY_SECONDS at most (measured: 2048's 16 tiles, a second each, three rounds - every edit waited the full minute), and
+# its errors kept - thrown, or a promise that failed - and a canvas that still shows one flat colour: it draws nothing
+# (measured: a racing game whose Start button stayed hidden, a white board each time).
 PAGE_POLICY = ("default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; "
                "img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; "
                "frame-src 'none'")
 CATCH = ("<script>window.__errs=[];addEventListener('error',e=>__errs.push(String(e.message)+(e.lineno?' (line '+e.lineno"
          "+')':'')));addEventListener('unhandledrejection',e=>__errs.push(String(e.reason&&e.reason.message||e.reason)));"
-         "window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>'';</script>")
+         "window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>'';window.__said=[];"
+         "for(const C of [window.CanvasRenderingContext2D,window.OffscreenCanvasRenderingContext2D])if(C)for(const m of "
+         "['fillText','strokeText']){const f=C.prototype[m];C.prototype[m]=function(t,...a){if(__said.length<2000)__said.push(String(t));"
+         "return f.call(this,t,...a)}}</script>")
+PAGE_HEAD = ("<style>:root{--zen-bg:#2a2a2a;--zen-ink:#ececec;--zen-muted:#b4b4b4;--zen-line:rgba(255,255,255,.09);"
+             "--zen-accent:#ececec;--zen-on-accent:#0d0d0d;--zen-green:#30d158;--zen-blue:#409cff;--zen-red:#ff6961;"
+             "--zen-orange:#ffb340;--zen-yellow:#ffd60a;--zen-purple:#da8fff;color-scheme:dark}"
+             "*,*::before,*::after{box-sizing:border-box}html,body{margin:0}body{background:var(--zen-bg);"
+             "color:var(--zen-ink);font:16px/1.5 'Segoe UI',system-ui,sans-serif}</style>"
+             "<script>(()=>{const d={},s={getItem:k=>k in d?d[k]:null,setItem:(k,v)=>{d[k]=String(v)},"
+             "removeItem:k=>{delete d[k]},clear:()=>{for(const k in d)delete d[k]},key:i=>Object.keys(d)[i]??null,"
+             "get length(){return Object.keys(d).length}};try{localStorage.length}catch(e){"
+             "Object.defineProperty(window,'localStorage',{value:s,configurable:true})}})()</script>")
+TRY_SECONDS = 10
+VIEW = {"width": 720, "height": 450}  # the chat lays a page out at least this wide (files.js DESIGN_W)
 CLICK_THROUGH = """async () => {
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  await wait(800);
-  const clicked = [];
-  for (let round = 0; round < 3 && !window.__errs.length; round++) {
+  const wait = ms => new Promise(r => setTimeout(r, ms)), end = Date.now() + %d;
+  const clicked = [], seen = {};
+  await wait(500);
+  // over before it began: 'Game Over' on show (in the page, or drawn on its canvas) before any key or click (measured
+  // 2026-10-17: a snake that didn't move yet ran into itself on its first step - Game Over, score 0, at once)
+  const OVER = /\\b(game over|you (lose|lost|died)|crashed)\\b/i;
+  const shown = [...document.querySelectorAll('body *')].filter(e => e.offsetParent !== null && e.children.length === 0
+    && OVER.test(e.textContent || '') && getComputedStyle(e).visibility !== 'hidden' && Number(getComputedStyle(e).opacity) > 0.1);
+  const overAtStart = (shown[0] && shown[0].textContent.trim().slice(0, 40)) || window.__said.find(t => OVER.test(t)) || null;
+  const keys = ['Enter', ' ', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'w', 'a', 'd'];
+  for (let round = 0; round < 2 && !window.__errs.length && Date.now() < end; round++) {
     const targets = [...document.querySelectorAll('button, input[type=button], input[type=submit], [onclick], [role=button], '
       + '[tabindex], [class*=cup], [class*=card], [class*=cell], [class*=tile], [class*=key], canvas')]
-      .filter(e => e.offsetParent !== null && !e.disabled).slice(0, 25);
+      .filter(e => e.offsetParent !== null && !e.disabled);
+    // a grid's sixteen tiles are one control many times over: three of each kind are clicked
     for (const el of targets) {
+      const kind = el.tagName + '.' + el.className;
+      if (Date.now() > end) break;
+      if ((seen[kind] = (seen[kind] || 0) + 1) > 3 && el.tagName !== 'BUTTON') continue;
       el.click();
       clicked.push((el.textContent || el.getAttribute('aria-label') || el.className || el.tagName).trim().slice(0, 30));
-      await wait(1000);
+      await wait(300);
       if (window.__errs.length) break;
     }
+    for (const key of keys) {
+      if (window.__errs.length || Date.now() > end) break;
+      for (const type of ['keydown', 'keyup']) {
+        const e = new KeyboardEvent(type, {key, code: key === ' ' ? 'Space' : key.length > 1 ? key : 'Key' + key.toUpperCase(), bubbles: true});
+        (document.activeElement || document.body).dispatchEvent(e);
+      }
+      await wait(150);
+    }
   }
-  await wait(1500);
-  return JSON.stringify({errors: window.__errs.slice(0, 5), clicked});
-}"""
+  await wait(600);
+  // a canvas still one colour all over: nothing is drawn on it (a WebGL or WebGPU canvas can't be read here: left out)
+  const flat = [];
+  for (const c of document.querySelectorAll('canvas')) {
+    if (c.offsetParent === null || c.width * c.height < 10000) continue;
+    let ctx = null;
+    try { ctx = c.getContext('2d'); } catch {}
+    if (!ctx) continue;
+    const px = ctx.getImageData(0, 0, c.width, c.height).data;
+    let same = true;
+    for (let i = 4; i < px.length; i += 4 * 7) {
+      if (Math.abs(px[i] - px[0]) + Math.abs(px[i + 1] - px[1]) + Math.abs(px[i + 2] - px[2]) + Math.abs(px[i + 3] - px[3]) > 12) { same = false; break; }
+    }
+    if (same) flat.push(c.width + 'x' + c.height + (px[3] ? ' rgb(' + px[0] + ',' + px[1] + ',' + px[2] + ')' : ' empty'));
+  }
+  return JSON.stringify({errors: window.__errs.slice(0, 5), clicked, flat, over_at_start: overAtStart});
+}""" % (TRY_SECONDS * 1000)
 
 
-def try_page(html: str) -> dict | None:
-    """{errors, clicked}: the page opened headless, its controls clicked; None without a browser, or when the try
-    itself failed (then nothing is claimed either way)."""
+def try_page(html: str, shot: Path | None = None) -> dict | None:
+    """{errors, clicked, flat, over_at_start}: the page opened headless, its controls clicked and keys pressed; flat:
+    its canvases that still draw nothing; over_at_start: 'Game Over' (its words) on show before anything was pressed.
+    shot: where its picture as it opens is saved. None without a browser, or when the try itself
+    failed (then nothing is claimed either way)."""
     if not available():
         return None
     import base64
-    page = f'<meta http-equiv="Content-Security-Policy" content="{PAGE_POLICY}">{CATCH}{html}'
+    page = f'<meta http-equiv="Content-Security-Policy" content="{PAGE_POLICY}">{CATCH}{PAGE_HEAD}{html}'
     url = "data:text/html;base64," + base64.b64encode(page.encode("utf-8")).decode("ascii")
     browser = _server()
     try:
+        browser.call("browser_resize", VIEW)
         browser.call("browser_navigate", {"url": url})
-        return json.loads(_result(browser.call("browser_evaluate", {"function": CLICK_THROUGH})))
+        if shot is not None:
+            _picture(browser, shot)
+        return json.loads(_result(browser.call("browser_evaluate", {"function": CLICK_THROUGH},
+                                               timeout=TRY_SECONDS + 15)))
     except (McpError, ValueError, TypeError):
         return None
     finally:
+        try:  # web pages are read at the browser's usual size
+            browser.call("browser_resize", {"width": 1280, "height": 720})
+        except McpError:
+            pass
         _empty(_output)
+
+
+def _picture(browser: McpServer, shot: Path) -> None:
+    """The page as it opens, a moment after (its first frames drawn), saved to shot; nothing when it can't be taken."""
+    taken = _output / "page.png"
+    try:
+        browser.call("browser_wait_for", {"time": 0.8})
+        browser.call("browser_take_screenshot", {"type": "png", "filename": str(taken)})
+        if taken.is_file():
+            shot.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(taken, shot)
+    except (McpError, OSError):
+        pass
 
 
 def _field(text: str, name: str) -> str | None:

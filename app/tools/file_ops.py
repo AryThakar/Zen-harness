@@ -63,7 +63,11 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
     if mode == "find":
         return find_files(ws, index, _need(query, "query", "find needs query: what to look for - words in a file's "
                                                             "name or text, what a picture shows, a table's columns"))
-    name = _need(name, "name", f"{mode} needs name: a file's name, e.g. 'report.md'")
+    if not name:  # measured 2026-10-17: an edit of the game just written, sent without its name - the file is said
+        recent = _recently_changed(ws)
+        raise ToolError(f"{mode} needs name: which file?" + (f" The files changed most recently: {', '.join(recent)}."
+                                                             if recent else " A file's name, e.g. 'report.md'."),
+                        field="name")
     if mode == "read":
         return _read(ws, _resolve(ws, name), start, helper)
     if mode == "write":
@@ -88,6 +92,17 @@ def files(ws: Workspace, index: SearchIndex | None, mode: str, *, name: str | No
     item = _resolve(ws, name)
     agent_md.refuse_move(ws.label(item))
     return approval.delete_request(ws, [item])
+
+
+def _recently_changed(ws: Workspace, n: int = 3) -> list[str]:
+    """The text files written or changed last (helpers' work/ files aside), newest first."""
+    def changed(key: str) -> float:
+        try:
+            return ws.path(key).stat().st_mtime
+        except OSError:
+            return 0.0
+    keys = [k for k in ws.ids() if ws.entry(k).get("kind") == "file" and not ws.label(k).startswith("work/")]
+    return [ws.label(k) for k in sorted(keys, key=changed, reverse=True)[:n]]
 
 
 # ---------------------------------------------------------------- list, find, read
@@ -231,7 +246,7 @@ def _store_new(ws: Workspace, index: SearchIndex | None, name: str, content: str
     return ok({"file": item, "name": kept["name"], "kind": kept["kind"], "bytes": len(data),
                "note": "Saved; the user sees it in the chat." + (f" But {skipped[0].lower()}{skipped[1:]} Write it again "
                                                                  "fixed." if skipped else ""),
-               **written_code(name, content)}, _card(ws, item, "written"))
+               **written_code(name, content, preview_path(ws, item))}, _card(ws, item, "written"))
 
 
 def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: str) -> ToolResult:
@@ -244,10 +259,15 @@ def replace_file(ws: Workspace, index: SearchIndex | None, item: str, content: s
     if index is not None and "passages" in ws.entry(item).get("meta", {}):
         reindex(ws, index, item)
     return ok({"file": item, "name": name, "bytes": len(data), "note": "Changed (its version before is kept); the user "
-               "sees it in the chat.", **written_code(name, content)}, _card(ws, item, "updated"))
+               "sees it in the chat.", **written_code(name, content, preview_path(ws, item))}, _card(ws, item, "updated"))
 
 
-def written_code(name: str, content: str) -> dict:
+def preview_path(ws: Workspace, key: str) -> Path:
+    """Where a page's picture as it opens is kept (browser.try_page takes it): its card in the chat shows it."""
+    return ws.zen / "cache" / f"{key}.page.png"
+
+
+def written_code(name: str, content: str, shot: Path | None = None) -> dict:
     """For a program written or changed as text: it was not run - and, for Python, whether it still parses, with the
     line where it breaks. Measured on the 26B: asked to fix a crashing stats.py and say what it prints, main
     changed one line with files(update), left a second 'def mean(values):' in it, and answered 'It now prints:
@@ -257,23 +277,32 @@ def written_code(name: str, content: str) -> dict:
     # What the page does with it, said here (measured: main told the user to run a game "in your terminal" and to
     # open its HTML "in your web browser", then played the game itself in the chat - the page runs both).
     if suffix(name) in (".html", ".htm"):
-        out = {"not_run": f"{name} works in the chat, under its card - a page or a game the user uses right there, no "
+        out = {"not_run": f"{name} opens from its card in the chat - a page or a game the user uses right there, no "
                           "browser or server needed. You haven't seen it run: don't say how it behaves beyond what "
                           "you wrote."}
         broken = page_script_problem(name, content)
         if broken:
             return {**out, "broken": broken}
         from . import browser
-        tried = browser.try_page(content)
+        tried = browser.try_page(content, shot)
         if tried is None:  # no browser here: nothing claimed either way
             return out
         if tried.get("errors"):
             last = (tried.get("clicked") or ["opening it"])[-1]
             return {**out, "broken": f"{name} fails when used: {tried['errors'][0]} (tried in a browser: after "
                                      f"'{last}'). Fix it with files(mode='edit') before saying it works."}
-        return {**out, "not_run": f"{name} works in the chat, under its card. It was tried in a browser - opened and "
-                                  f"{len(tried.get('clicked') or [])} controls clicked - with no errors; how it plays "
-                                  "beyond that is not known."}
+        if tried.get("over_at_start"):  # measured: a snake that ran into itself on its first step, at once
+            return {**out, "broken": f"{name} shows '{tried['over_at_start']}' as it opens, before any key or click: the "
+                                     "game ends by itself at the start (a snake that doesn't move yet runs into itself, a "
+                                     "timer already at zero). Fix it with files(mode='edit') before saying it works."}
+        if tried.get("flat"):  # measured: a racing game whose Start button stayed hidden - a white board, three fixes
+            return {**out, "broken": f"{name} opens without errors, but its canvas ({tried['flat'][0]}) still shows one "
+                                     "flat colour after its controls were clicked and the arrow keys, space and Enter "
+                                     "pressed: nothing is drawn on it. Fix it with files(mode='edit') before saying it "
+                                     "works."}
+        return {**out, "not_run": f"{name} opens from its card in the chat. It was tried in a browser - opened, "
+                                  f"{len(tried.get('clicked') or [])} controls clicked and keys pressed - with no "
+                                  "errors; how it plays beyond that is not known."}
     out = {"not_run": f"{name} was written, not run: don't say what it prints before a run (run runs it in a helper; "
                       "main gives it to analyze_or_code)."
                       + (" The user can run it too, from its card in the chat (Run), and type into it while it runs."

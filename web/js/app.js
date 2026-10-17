@@ -98,10 +98,17 @@ function mark() {
   if (location.hash !== at.trim()) history.replaceState(null, "", at.trim() || location.pathname);
 }
 // A link pasted or an address edited in this tab goes there (the page's own moves replace the address: no event)
+// (a project or chat made since the page loaded - in another tab, by a script - is looked up first: before, its link
+// did nothing, and the old project stayed open)
 addEventListener("hashchange", async () => {
   const p = place(), project = p.get("project"), chat = p.get("chat");
-  if (project && project !== state.ws?.id && state.workspaces?.some(w => w.id === project)) await selectWorkspace(project);
-  else if (chat && chat !== state.chat?.id && state.chats?.some(c => c.id === chat)) await openChat(chat);
+  if (project && project !== state.ws?.id) {
+    if (!state.workspaces?.some(w => w.id === project)) state.workspaces = await api("/workspaces").catch(() => state.workspaces);
+    if (state.workspaces?.some(w => w.id === project)) await selectWorkspace(project);
+  } else if (chat && chat !== state.chat?.id) {
+    if (!state.chats?.some(c => c.id === chat)) await loadChats();
+    if (state.chats?.some(c => c.id === chat)) await openChat(chat);
+  }
 });
 async function loadWorkspaces(prefer) {
   state.workspaces = await api("/workspaces");
@@ -376,9 +383,11 @@ function addUser(text, files = null) {  // files: those a saved message was sent
   return el;
 }
 
-function metaEl({ seconds, first, stats, answer, stopped }, textEl) {
+// worked: how the turn went ("Worked for 2m 26s · 6 steps", steps.js finish)
+function metaEl({ seconds, first, stats, answer, stopped, worked }, textEl) {
   const parts = [];
-  if (seconds) parts.push(`${seconds.toFixed(1)} s`);
+  if (worked) parts.push(worked);
+  else if (seconds) parts.push(`${seconds.toFixed(1)} s`);
   if (first != null) parts.push(`first word ${first.toFixed(1)} s`);
   const tokens = stats.reduce((n, s) => n + (s.output_tokens || 0), 0);
   const gen = stats.reduce((t, s) => t + (s.tokens_per_second ? (s.output_tokens || 0) / s.tokens_per_second : 0), 0);
@@ -419,22 +428,20 @@ document.addEventListener("click", e => {
   openItem(item, null, { page });
 });
 
-// One reply, built from the stream (or from a saved chat, through the same calls)
+// One reply, built from the stream (or from a saved chat, through the same calls). Its blocks keep the order things
+// happened in - the model's words, the steps it took, the cards they made - and nothing is moved or replaced later:
+// words a step wrote before its call stay where they were, quieter once the call follows, and the last words are
+// the answer (measured 2026-10-17: words that jumped from the answer into the steps read as a reply replaced). One
+// status line at the end says what is going on now.
 function assistantView() {
-  // The live line: what the turn is doing, at the end of the reply once it has text - where the eye is
-  const live = h("div", { class: "live", hidden: true }, h("span", { class: "spin", html: LOADER }), h("span", { class: "say shimmer" }));
-  let status = "Thinking…", flowing = false;  // flowing: the model's words are arriving (the caret shows instead)
-  const syncLive = () => {
-    const on = streaming && !flowing && !!text.trim();
-    live.hidden = !on;
-    if (on) live.lastChild.textContent = status === "Writing…" ? "Thinking…" : status;
-  };
-  const root = h("div", { class: "reply" }), activity = activityEl(said => { status = said; syncLive(); });
-  const cards = h("div", { class: "cards" }), answer = h("div", { class: "answer" }), foot = h("div", { class: "foot" });
-  root.append(activity.el, cards, answer, live, foot);
+  const root = h("div", { class: "reply" }), flow = h("div", { class: "flow" }), foot = h("div", { class: "foot" });
+  const activity = activityEl(flow);
+  root.append(flow, activity.status, foot);
   thread.append(root);
-  let text = "", roundStart = 0, frame = 0, streaming = true, current = null, question = null, fresh = false;
-  const pause = () => { flowing = false; syncLive(); repaint(); };  // the words stopped: the live line takes over
+  const blocks = [];  // the model's words: {el, text}, one block for each stretch between steps or cards
+  let block = null, frame = 0, streaming = true, flowing = false, current = null, question = null, fresh = false;
+  const latest = () => block && flow.lastElementChild === block.el ? block : null;  // words nothing came after yet
+  const pause = () => { flowing = false; repaint(); };  // the words stopped: the caret goes
   const stats = [], web = new Map(), passages = [], traces = [];
   const fileCards = new Map();  // a file's card in this reply: a later change replaces it (one card per file)
   let finished = false, traceBtn = null;
@@ -449,36 +456,38 @@ function assistantView() {
     if (meta) meta.insertBefore(traceBtn, meta.querySelector(".stats, .stopped"));
     else foot.append(h("div", { class: "meta" }, traceBtn));
   };
-  const paint = () => {
+  const paint = (b = block) => {
     frame = 0;
-    answer.innerHTML = markdown(text.replace(SOURCE_TAG, (_, s) => `<span class="cite">${s.replace(/[<>&"]/g, "")}</span>`)
+    if (!b) return;
+    b.el.innerHTML = markdown(b.text.replace(SOURCE_TAG, (_, s) => `<span class="cite">${s.replace(/[<>&"]/g, "")}</span>`)
       .replace(/\{(image_\d+)\}/g, "![]($1)"))  // "{image_2}" written as a placeholder: shown as the picture (or dropped when it's on show already)
       .replace(/(<img\b[^>]*?)\bsrc="(image_\d+)"/g, '$1data-item="$2"');  // a workspace picture: resolved once the answer is done, not fetched as a page path
-    polish(answer);
-    if (streaming && flowing && text) addCaret(answer);
+    polish(b.el);
+    if (streaming && flowing && b === block && b.text) addCaret(b.el);
     stick();
   };
-  const repaint = () => { if (!frame) frame = requestAnimationFrame(paint); };
-  // The words of this step, moved from the answer into the steps: said before a tool call (narration), or a whole
-  // reply the app's check sent back (a draft). Before, they stayed in the answer and the next reply replaced them -
-  // text that appeared, then vanished (measured 2026-10-17, the user's chat)
-  const moveRound = draft => {
-    const said = text.slice(roundStart).trim();
-    if (!said) return;
-    activity.note(said, draft);
-    text = text.slice(0, roundStart).trimEnd();
-    roundStart = text.length;
-    syncLive();
-    repaint();
+  const repaint = () => { if (!frame) frame = requestAnimationFrame(() => paint()); };
+  // A whole reply the app's check sent back (it claimed what no tool did, or broke a rule): it stays, folded and
+  // marked, and the reply written again follows it
+  const sentBack = () => {
+    const b = latest();
+    if (!b || !b.text.trim()) return;
+    cancelAnimationFrame(frame);
+    paint(b);
+    const fold = h("details", { class: "draft enter" }, h("summary", {}, "First answer · the app's check sent it back"));
+    flow.replaceChild(fold, b.el);
+    fold.append(b.el);
+    blocks.splice(blocks.indexOf(b), 1);
+    block = null;
   };
   const show = el => {
     if (!el) return;
     // a picture a helper made shows once: with the first card that carries it (the save, or its run)
-    const seen = new Set([...cards.querySelectorAll("img")].map(i => i.getAttribute("src")));
+    const seen = new Set([...flow.querySelectorAll(":scope > :not(.answer) img")].map(i => i.getAttribute("src")));
     el.querySelectorAll(".outputs img").forEach(img => { if (seen.has(img.getAttribute("src"))) img.remove(); });
     el.querySelectorAll(".outputs:empty").forEach(o => o.remove());
     el.querySelectorAll(".below:empty").forEach(o => o.remove());
-    cards.append(el);
+    flow.append(el);
     stick();
   };
   const promote = step => {  // what a helper found, as cards once it is done
@@ -507,27 +516,25 @@ function assistantView() {
   const view = {
     get question() { return question; },
     text(chunk) {
-      if (fresh) {  // another reply in the same turn (after a check): its own paragraph, not glued on
-        fresh = false;
-        if (text.trim()) text = text.trimEnd() + "\n\n";
-        roundStart = text.length;
-      }
-      if (!text.slice(roundStart)) activity.writing();
-      text += chunk;
+      if (!latest()) {  // the first words, or words after steps or a card: a block of their own, below them
+        block = { el: h("div", { class: "answer" }), text: "" };
+        blocks.push(block);
+        flow.append(block.el);
+      } else if (fresh && block.text.trim()) block.text = block.text.trimEnd() + "\n\n";  // a next step's words (a reply cut off at the length limit) go on as a paragraph
+      fresh = false;
+      if (!flowing) activity.writing();
+      block.text += chunk;
       flowing = true;
-      syncLive();
       repaint();
     },
-    // A saved chat's next step: a reply left from the step before it was a draft the app's check sent back
-    round() { moveRound(true); fresh = true; status = "Thinking…"; pause(); },
-    checking() { moveRound(true); fresh = true; activity.checking(); pause(); },
-    composing(d) { activity.composing(d); },  // a call being written: its size grows on the activity line
+    // A saved chat's next model step (it replays a stored turn, step by step)
+    round() { fresh = true; pause(); },
+    checking() { sentBack(); fresh = true; activity.checking(); pause(); },
+    composing(d) { activity.composing(d); },  // a call being written: its size grows on the status line
     toolStart(d) {
-      moveRound(false);  // the words before a call are part of the work: into the steps, out of the answer
-      roundStart = text.length;
+      pause();
       const step = activity.start(d);
       if (step?.delegate) current = step;
-      pause();
     },
     toolEnd(d) {
       const step = activity.steps.get(d.id);
@@ -585,7 +592,8 @@ function assistantView() {
     stats(s) { stats.push(s); fresh = true; },
     ask(pending) {  // the turn pauses here until the user answers, in the message box
       streaming = false;
-      syncLive();
+      pause();
+      cancelAnimationFrame(frame);
       paint();
       if (!question || question.decided) question = ask(pending);
       Object.assign(question.card, pending);
@@ -599,7 +607,6 @@ function assistantView() {
       if (inplace) {  // a helper asked in place: its step goes on working
         activity.resumed(callId);
         streaming = true;
-        syncLive();
         return;
       }
       activity.answered(callId);
@@ -607,45 +614,49 @@ function assistantView() {
       if (step === current) current = null;
       streaming = true;
       activity.running("Thinking…");
-      syncLive();
     },
     finish(final, timing) {
-      streaming = false;
-      live.remove();
-      if (final != null && final !== "") text = final;
-      cancelAnimationFrame(frame);
-      paint();
-      finishAnswer(answer);  // only once finished: a half-written diagram would fail to draw
+      end();
+      // the server's own copy of the last words (cleaned of what the model shouldn't have written): it stands in
+      // for them when nothing came after them; a turn that ended on steps keeps its words as they were
+      if (final) {
+        if (latest()) latest().text = final;
+        else if (!blocks.length) { text(final); end(); }
+      }
       if (current) { promote(current); current = null; }
-      activity.finish(timing?.seconds);
+      const answer = latest();
+      blocks.forEach(b => { paint(b); finishAnswer(b.el); });  // only once finished: a half-written diagram would fail to draw
+      const worked = activity.finish(timing?.seconds ?? traceSeconds());
       if (web.size) foot.append(webSourcesEl([...web.values()]));
       if (passages.length) foot.append(passagesEl(passages));
-      if (timing || text.trim()) foot.append(metaEl({ ...(timing || {}), stats, answer: text.trim() }, answer));
+      if (timing || worked || answer) foot.append(metaEl({ ...(timing || {}), worked, stats, answer: answer?.text.trim() }, answer?.el));
       finished = true;
       traceButton();
       stick();
     },
     error(message) {
-      streaming = false;
-      live.remove();
+      end();
       refreshStatus();  // a failed reply may mean the model went down: the dot says so at once
-      paint();
-      activity.stop();
+      blocks.forEach(b => paint(b));
+      const worked = activity.stop();
       foot.append(h("div", { class: "callout" }, h("b", {}, "This reply didn't finish."), message));
+      if (worked) foot.append(metaEl({ worked, stats }));
       finished = true;
       traceButton();
       stick();
     },
     stop(timing) {
-      streaming = false;
-      live.remove();
-      paint();
-      activity.stop(timing?.seconds);
-      foot.append(metaEl({ ...timing, stats, stopped: true, answer: text.trim() }, answer));
+      end();
+      blocks.forEach(b => paint(b));
+      const answer = latest(), worked = activity.stop(timing?.seconds);
+      foot.append(metaEl({ ...timing, worked, stats, stopped: true, answer: answer?.text.trim() }, answer?.el));
       finished = true;
       traceButton();
     },
   };
+  const end = () => { streaming = false; flowing = false; cancelAnimationFrame(frame); frame = 0; };
+  const text = chunk => view.text(chunk);
+  const traceSeconds = () => traces.reduce((s, t) => s + (t.seconds || 0), 0) || null;  // a saved turn's length
   return view;
 }
 
@@ -666,6 +677,7 @@ function replay(messages, chat, keepOpen = false) {  // returns the last reply's
       view.round();
       if (m.text) { view.text(m.text); last = m.text; }
       for (const t of m.tools || []) view.toolStart(t);
+      if (m.sent_back) view.checking();  // the app's check sent this reply back: it was a first draft
     } else if (m.role === "tool") {
       view.toolEnd({ id: m.id, name: m.name, status: m.is_error ? "failed" : "ok", summary: m.summary,
         ...("answer" in m ? { answer: m.answer } : {}), ...(m.skipped ? { skipped: true } : {}) });

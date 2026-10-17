@@ -56,7 +56,7 @@ from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
 from .workers.checks import JSON_BREAKS
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
-PICTURES_PER_TURN = 2  # generate_image calls in one turn before another is refused
+PICTURES_PER_TURN = 1  # generate_image calls in one turn before another is refused (unless main confirms)
 
 # A sentence promising an action (the reply's last three sentences are read): measured endings were
 # "One moment.", "Please wait while I execute the update", "I am writing a script now.", "Starting the
@@ -138,8 +138,11 @@ def pictures_again(turn: list[dict], call: dict) -> str | None:
     made = sum(1 for m in turn if m["role"] == "tool" and m.get("name") == "generate_image" and not m.get("is_error"))
     if made < PICTURES_PER_TURN:
         return None
-    return (f"Not made: {made} pictures were made in this turn already. Show the user the best one and say in a "
-            "sentence what is still off; they ask for another try if they want one." + CONFIRMABLE)
+    # Measured 2026-10-17: asked once for "a Dr. Stone image", main judged each picture by its description and made
+    # two a turn, three turns running - the user asked it to stop.
+    return (f"Not made: {'a picture was' if made == 1 else f'{made} pictures were'} made in this turn already. Show "
+            "the user what was made and say in a sentence what is off, if anything; they ask for another try if they "
+            "want one. If the user asked for more than one picture, make the same call again with confirm: true.")
 
 
 # How, not what, in a task for the analyst: files to save, libraries, code steps. Measured in the user's chats

@@ -183,7 +183,8 @@ def chat_messages(chat_id: str, request: Request) -> dict:
     chat = _chat(request, chat_id)
     turn = main_slot.live(chat_id)
     out = []
-    for m in _store(request).messages(chat_id):
+    stored = _store(request).messages(chat_id)
+    for i, m in enumerate(stored):
         if m.get("hidden"):
             continue
         attached = {"files": m["files"]} if m["role"] == "user" and m.get("files") else {}
@@ -194,8 +195,11 @@ def chat_messages(chat_id: str, request: Request) -> dict:
         if m["role"] == "user":
             out.append({"role": "user", "text": m.get("text", m.get("content", "")), "at": m["at"], **attached})
         elif m["role"] == "assistant":
+            # sent_back: the app's hidden check answered this reply - the page shows it as a first draft (app.js)
+            checked = i + 1 < len(stored) and stored[i + 1].get("hidden") and stored[i + 1].get("check")
             out.append({"role": "assistant", "text": m.get("text", ""), "at": m["at"],
-                        "tools": [{"id": c["id"], "name": c["name"], "input": c["input"]} for c in m.get("tool_calls", [])]})
+                        "tools": [{"id": c["id"], "name": c["name"], "input": c["input"]} for c in m.get("tool_calls", [])],
+                        **({"sent_back": True} if checked else {})})
         elif m["role"] == "tool":
             out.append({"role": "tool", "id": m["tool_call_id"], "name": m["name"], "is_error": m.get("is_error", False),
                         "summary": m["content"][:main_slot.SUMMARY_CHARS], **_answered(m["name"], m["content"])})
@@ -385,6 +389,18 @@ def item_file(ws_id: str, item_id: str, request: Request) -> FileResponse:
         return FileResponse(path, media_type=mime, headers=SAFE)
     return FileResponse(path, filename=Path(entry.get("name") or path.name).name,
                         media_type="application/octet-stream", headers=SAFE)
+
+
+@router.get("/workspaces/{ws_id}/items/{item_id}/preview")
+def page_preview(ws_id: str, item_id: str, request: Request) -> FileResponse:
+    """A page Zen wrote, as it opened when it was tried (browser.try_page): its card in the chat shows it. None for a
+    page changed since (its next try takes a new one)."""
+    from app.tools.file_ops import preview_path
+    ws = _item(request, ws_id, item_id)
+    shot, source = preview_path(ws, item_id), ws.path(item_id)
+    if not shot.is_file() or shot.stat().st_mtime < source.stat().st_mtime:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No picture of this page.")
+    return FileResponse(shot, media_type="image/png", headers={**SAFE, "Cache-Control": "no-cache"})
 
 
 @router.get("/workspaces/{ws_id}/items/{item_id}/png")

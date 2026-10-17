@@ -4,7 +4,7 @@
 import { api, iconUrl, imageUrl, itemUrl, state } from "./api.js";
 import { card, chartCard } from "./charts.js";
 import { consoleEl } from "./console.js";
-import { canView, htmlFrame, isHtml, madeKind, openItem } from "./files.js";
+import { canView, isHtml, madeKind, openItem } from "./files.js";
 import { openViewer } from "./viewer.js";
 import { cell, codeBlocks, copyText, css, escapeHtml, fileSize, fileTile, h, host, markdown, nf0, plural, polish, svg } from "./util.js";
 
@@ -115,8 +115,9 @@ export function finishAnswer(root) {
   });
   codeBlocks(root);
   const reply = root.closest(".reply");
-  const shown = new Set([...(reply?.querySelectorAll(".cards img") || [])].map(i => i.getAttribute("src")));
-  const charts = new Set([...(reply?.querySelectorAll(".cards [data-item]") || [])].map(c => c.dataset.item));
+  // what the reply's cards already show (cards sit in its flow, between its words)
+  const shown = new Set([...(reply?.querySelectorAll(".flow > :not(.answer) img") || [])].map(i => i.getAttribute("src")));
+  const charts = new Set([...(reply?.querySelectorAll(".flow > [data-item], .flow > :not(.answer) [data-item]") || [])].map(c => c.dataset.item));
   root.querySelectorAll("img").forEach(img => {
     const id = (img.dataset.item || img.getAttribute("src") || "").trim();
     if (/\.chart\.json$/i.test(id)) { answerChart(img, id, charts, reply); return; }  // a chart file: drawn live, once
@@ -157,9 +158,8 @@ async function answerChart(img, name, charts, reply) {
   if (!item) { try { state.items = await api(`/workspaces/${state.ws.id}/items`); } catch {} item = find(); }
   if (!item) { spot.remove(); return; }
   if (charts.has(item.id)) {
-    const card = reply?.querySelector(`.cards [data-item="${CSS.escape(item.id)}"]`), box = card?.parentElement;
+    const card = reply?.querySelector(`.flow > [data-item="${CSS.escape(item.id)}"], .flow > :not(.answer) [data-item="${CSS.escape(item.id)}"]`);
     card ? spot.replaceWith(card) : spot.remove();  // no card left: named twice, it is already shown
-    if (box && !box.children.length) box.remove();
     return;
   }
   charts.add(item.id);
@@ -290,12 +290,33 @@ function fileCard(a) {
   // the coder's save: what its last run drew, then its report (what Zen answers from); its run joins later
   const run = runEl(a.report ? [runPart("report", a)] : []);
   el.append(h("div", { class: "below" }, pictures((a.outputs || []).filter(id => id.startsWith("image_"))), run));
-  if (isHtml(a.name)) {  // a page, a game, a small tool: it runs right here
-    const live = h("div", { class: "html-live" });
-    el.querySelector(".below").prepend(live);
-    fetch(itemUrl(a.id)).then(r => r.ok ? r.text() : Promise.reject()).then(text => live.append(htmlFrame(text, a.name)))
-      .catch(() => live.remove());
-  }
+  return el;
+}
+
+// A page Zen wrote - a game, a tool: a card with its picture as it opened (taken when it was tried, browser.try_page),
+// its title and Open, which runs it in the file panel at a real window's size, with full screen there. Run inline in
+// the chat instead, a page sized to its window (100vh, a canvas the window's size) was cut or blank, and every game
+// kept running and sounding as the chat scrolled on (measured 2026-10-17).
+function pageCard(a) {
+  const item = { id: a.id, kind: "file", name: a.name, bytes: a.bytes };
+  const open = () => openItem(item);
+  const shot = h("button", { class: "page-shot", type: "button", title: `Open ${a.name}`, "aria-label": `Open ${a.name}` });
+  const pic = h("img", { alt: "", loading: "lazy", src: `${itemUrl(a.id).replace(/\/file$/, "/preview")}?v=${a.bytes ?? ""}` });
+  pic.addEventListener("error", () => { pic.remove(); shot.classList.add("none"); shot.innerHTML = svg("globe"); }, { once: true });
+  shot.append(pic);
+  shot.addEventListener("click", open);
+  const title = h("b", {}, a.name || "");
+  const what = h("div", { class: "what" }, title, h("small", {}, ["Page", a.bytes != null ? fileSize(a.bytes) : null]
+    .filter(Boolean).join(" · ")));
+  const el = h("div", { class: "card page-card enter" }, shot, h("div", { class: "page-side" }, what,
+    h("div", { class: "page-acts" }, h("button", { class: "btn-s on", type: "button", onclick: open },
+      h("span", { class: "btn-ic", html: svg("play") }), h("span", {}, "Open")),
+      action("a", "download", "Download", { href: itemUrl(a.id), download: a.name || "" }))));
+  // its own title, from the page (the file's name until then)
+  fetch(itemUrl(a.id)).then(r => r.ok ? r.text() : "").then(text => {
+    const named = /<title[^>]*>([^<]{1,80})<\/title>/i.exec(text)?.[1]?.trim();
+    if (named) { title.textContent = named; title.title = a.name; }
+  }).catch(() => {});
   return el;
 }
 function reportCard(a) {
@@ -332,6 +353,7 @@ export function codeCard(a) {
 export function artifactCard(a) {
   const make = { chart: chartCard, image: imageCard, diagram: diagramCard, weather: weatherCard,
                  table: tableCard, code: codeCard, file: fileCard, report: reportCard }[a.type];
+  if (a.type === "file" && isHtml(a.name)) return pageCard(a);
   return make ? make(a) : null;
 }
 

@@ -15,7 +15,7 @@ def no_real_browser_tries(request, monkeypatch):
     """A page written is tried in a real browser (browser.try_page): not in tests, unless a test asks for it."""
     if "real_browser" not in request.keywords:
         from app.tools import browser
-        monkeypatch.setattr(browser, "try_page", lambda html: None)
+        monkeypatch.setattr(browser, "try_page", lambda html, shot=None: None)
 
 
 @pytest.fixture

@@ -78,7 +78,9 @@ def test_read_in_lines_with_the_next_step(ws, index):
     table = ws.add_table(pd.DataFrame({"a": range(30)}), "t.csv")
     read = run(ws, index, "read", name=table).result
     assert read["rows"] == 30 and len(read["first_rows"]) == 10 and "analyze_or_code" in read["note"]
-    assert run(ws, index, "read").result["error"]["message"] == "read needs name: a file's name, e.g. 'report.md'."
+    # without a name: the files changed last are named (measured: an edit of the game just written, sent nameless)
+    assert run(ws, index, "read").result["error"]["message"] == ("read needs name: which file? The files changed most "
+                                                                  "recently: long.py.")
 
 
 def test_a_kind_word_inside_a_term_does_not_filter_the_search(ws, index):
@@ -216,7 +218,7 @@ def test_a_program_main_writes_is_parsed_and_said_to_be_unrun(ws, index):
     # played in the chat by the model itself)
     assert "from its card in the chat (Run), and type into it" in good["not_run"]
     page = files(ws, index, "write", name="cups.html", content="<button>Cup 1</button>\n").result
-    assert page["not_run"].startswith("cups.html works in the chat, under its card") and "analyze_or_code" not in page["not_run"]
+    assert page["not_run"].startswith("cups.html opens from its card in the chat") and "analyze_or_code" not in page["not_run"]
 
 
 def _png() -> bytes:
@@ -236,13 +238,21 @@ BROKEN_GAME = ("<button id=start>Start Game</button><p id=say>Press start</p><sc
 def test_a_page_that_fails_when_used_comes_back_broken(ws, index, monkeypatch):
     """Measured 2026-10-17: a cup game parsed, but Start died on 'sleep is not defined' and Zen said it was ready."""
     from app.tools import browser
-    monkeypatch.setattr(browser, "try_page", lambda html: {"errors": ["sleep is not defined"], "clicked": ["Start Game"]})
+    monkeypatch.setattr(browser, "try_page", lambda html, shot=None: {"errors": ["sleep is not defined"], "clicked": ["Start Game"]})
     r = files(ws, index, "write", name="cups.html", content=BROKEN_GAME)
     assert r.result["broken"] == ("cups.html fails when used: sleep is not defined (tried in a browser: after 'Start "
                                   "Game'). Fix it with files(mode='edit') before saying it works.")
-    monkeypatch.setattr(browser, "try_page", lambda html: {"errors": [], "clicked": ["Start Game", "cup"]})
+    monkeypatch.setattr(browser, "try_page", lambda html, shot=None: {"errors": [], "clicked": ["Start Game", "cup"]})
     fine = files(ws, index, "write", name="ok.html", content="<button>Start</button>")
-    assert "broken" not in fine.result and "2 controls clicked - with no errors" in fine.result["not_run"]
+    assert "broken" not in fine.result and "2 controls clicked and keys pressed - with no errors" in fine.result["not_run"]
+    # measured: a racing game whose Start stayed hidden - no error, a white board every time
+    monkeypatch.setattr(browser, "try_page", lambda html, shot=None: {"errors": [], "clicked": [], "flat": ["900x560 empty"]})
+    blank = files(ws, index, "write", name="race.html", content="<canvas width=900 height=560></canvas>")
+    assert "its canvas (900x560 empty) still shows one flat colour" in blank.result["broken"]
+    monkeypatch.setattr(browser, "try_page", lambda html, shot=None: {"errors": [], "clicked": [], "flat": [],
+                                                                      "over_at_start": "Game Over"})
+    over = files(ws, index, "write", name="snake.html", content="<canvas></canvas>")
+    assert over.result["broken"].startswith("snake.html shows 'Game Over' as it opens, before any key or click")
 
 
 @pytest.mark.real_browser
@@ -253,3 +263,18 @@ def test_the_real_browser_catches_what_only_using_the_page_shows():
     tried = browser.try_page(BROKEN_GAME)
     assert tried and tried["errors"] == ["sleep is not defined"] and "Start Game" in tried["clicked"]
     assert browser.try_page("<button onclick=\"this.textContent='Done'\">Go</button>")["errors"] == []
+    # a canvas nothing draws on, until a key that never comes; one drawn on; storage that works in the chat's frame
+    assert browser.try_page("<canvas width=300 height=200></canvas>")["flat"] == ["300x200 empty"]
+    drawn = "<canvas id=c width=300 height=200></canvas><script>c.getContext('2d').fillRect(0, 0, 50, 50)</script>"
+    assert browser.try_page(drawn)["flat"] == []
+    keyed = ("<canvas id=c width=300 height=200></canvas><script>addEventListener('keydown', e => {"
+             "if (e.key === 'ArrowUp') c.getContext('2d').fillRect(0, 0, 50, 50)})</script>")
+    assert browser.try_page(keyed)["flat"] == []
+    stored = "<p id=p></p><script>localStorage.setItem('best', 5); p.textContent = localStorage.getItem('best')</script>"
+    assert browser.try_page(stored)["errors"] == []
+    # a game over before anything was pressed - drawn on its canvas (measured: a snake that ran into itself at once); a
+    # hidden 'Game Over' waiting for its turn is fine
+    over = ("<canvas id=c width=300 height=200></canvas><script>const x = c.getContext('2d'); x.fillRect(0, 0, 9, 9);"
+            "x.fillText('Game Over', 100, 100)</script>")
+    assert browser.try_page(over)["over_at_start"] == "Game Over"
+    assert browser.try_page("<h2 hidden>Game Over</h2><button>Play</button>")["over_at_start"] is None

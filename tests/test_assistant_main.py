@@ -197,14 +197,14 @@ def test_the_rolling_window_cut_is_kept_between_turns(store, chat):
 def test_a_turn_that_outgrows_the_slot_shortens_its_older_tool_results(store, chat, monkeypatch):
     """Several big results in one turn: the current turn is never dropped, so its older tool results are
     shortened (newest two whole) - before, the step crashed (IndexError) or was sent over the limit."""
-    big = Tool("calculate", "test", registry.CalcIn, lambda c, a: ok({"text": "r" * 11_000}))
+    big = Tool("calculate", "test", registry.CalcIn, lambda c, a: ok({"text": "r" * 10_400}))
     monkeypatch.setitem(registry.TOOLS, "calculate", big)
     main = ScriptedProvider([tools_turn(call("calculate", expression=str(i))) for i in range(3)] + [answer("Done.")])
     events = run(send(store, chat["id"], "Work it out.", main, ScriptedProvider([])))
     assert events[-1]["type"] == "done"
     last = main.requests[-1]
     results = [m["content"] for m in last["messages"] if m["role"] == "tool"]
-    assert "shortened to save space" in results[0] and all("r" * 11_000 in r for r in results[1:])
+    assert "shortened to save space" in results[0] and all("r" * 10_400 in r for r in results[1:])
     assert estimate_tokens(last["system"], last["messages"], last["tools"]) <= prompt_limit(main)
 
 

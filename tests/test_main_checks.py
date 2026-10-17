@@ -244,8 +244,9 @@ def test_remember_without_saving_is_nudged_and_agent_md_edited(store, chat):
     assert "The user is Ary" in agent_md.body(ws)
 
 
-def test_a_third_picture_in_one_turn_is_stopped_unless_confirmed(store, chat, monkeypatch):
-    """Measured 2026-10-16: main judged its own pictures and made 4 in a row for one request (~2 min)."""
+def test_a_second_picture_in_one_turn_is_stopped_unless_confirmed(store, chat, monkeypatch):
+    """Measured 2026-10-16: main judged its own pictures and made 4 in a row for one request (~2 min); 2026-10-17: two
+    a turn, three turns running, for one "Dr. Stone image"."""
     from app.assistant import registry
     from app.assistant.registry import Tool
     from app.tools.core import ok
@@ -256,12 +257,11 @@ def test_a_third_picture_in_one_turn_is_stopped_unless_confirmed(store, chat, mo
     def draw(n: int, **more) -> dict:
         return {"id": f"draw_{n}", "name": "generate_image", "input": {"prompt": f"a cat, take {n}", **more}}
 
-    main = ScriptedProvider([turn(draw(1)), turn(draw(2)), turn(draw(3)), turn(draw(4, confirm=True)),
-                             answer("Here are the cats.")])
-    list(send(store, chat["id"], "draw a cat", main, ScriptedProvider([])))
+    main = ScriptedProvider([turn(draw(1)), turn(draw(2)), turn(draw(3, confirm=True)), answer("Here are the cats.")])
+    list(send(store, chat["id"], "draw two cats", main, ScriptedProvider([])))
     results = [m["content"] for m in store.messages(chat["id"]) if m["role"] == "tool"]
-    assert made == ["a cat, take 1", "a cat, take 2", "a cat, take 4"]  # the third stopped, the confirmed one ran
-    assert "2 pictures were made in this turn already" in results[2] and "confirm: true" in results[2]
+    assert made == ["a cat, take 1", "a cat, take 3"]  # the second stopped, the confirmed one ran
+    assert "a picture was made in this turn already" in results[1] and "confirm: true" in results[1]
 
 
 def test_main_sends_its_counted_prompt_size_so_a_long_reply_gets_the_room_left(store, chat):
