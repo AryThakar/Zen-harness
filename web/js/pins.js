@@ -29,13 +29,17 @@ export function pinsFromZen(pins) {  // Zen pinned or unpinned a file
   hooks.changed();
 }
 
+// Shown twice, one at a time: beside the title on a wide screen, and on a phone in a row of their own above the message
+// box - the bar had no room there (measured: a chip cut in half, its unpin out of reach, the title down to "Game ...")
 export function renderPins() {
-  const box = $("#pins");
   const items = pinned().map(id => state.items.find(i => i.id === id)).filter(Boolean);
-  box.replaceChildren(...items.map(i => h("span", { class: "pin-chip" },
+  const chip = i => h("span", { class: "pin-chip" },
     h("button", { class: "pin-open", type: "button", title: `${i.name} is pinned: what in it matches each message goes with it`,
                   onclick: () => hooks.open(i) }, fileTile(i.name), h("span", { class: "pin-name" }, i.name)),
     h("button", { class: "pin-x", type: "button", title: "Unpin", "aria-label": `Unpin ${i.name}`, html: svg("cross"),
-                  onclick: () => togglePin(i) }))));
-  box.hidden = !items.length;
+                  onclick: () => togglePin(i) }));
+  for (const box of [$("#pins"), $("#pinsDock")]) {
+    box.replaceChildren(...items.map(chip));
+    box.hidden = !items.length;
+  }
 }

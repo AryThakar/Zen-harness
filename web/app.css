@@ -1011,7 +1011,16 @@ body.landed .side, body.landed .main { animation: none; }
 .pin-x { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: var(--soft); }
 .pin-x:hover { background: var(--hover); color: var(--ink); }
 .pin-x svg.i { width: 12px; height: 12px; stroke-width: 2.4; }
-@media (max-width: 700px) { .pin-name { display: none; } .pin-chip { padding-right: 0; } }
+/* a phone: the pins leave the bar for a row of their own above the message box, names and all, scrolling sideways */
+.pins-dock { display: none; }
+@media (max-width: 700px) {
+  .top .pins { display: none; }
+  .pins-dock:not([hidden]) { display: flex; max-width: 768px; margin: 0 auto 8px; overflow-x: auto; scrollbar-width: none;
+    padding: 2px; position: relative; z-index: 1; }
+  .pins-dock::-webkit-scrollbar { display: none; }
+  .pins-dock .pin-chip { background: var(--composer); box-shadow: 0 0 0 1px var(--line); height: 32px; padding-right: 2px; }
+  .pins-dock .pin-name { max-width: 46vw; }
+}
 /* @ in the message box: the project's files, above it */
 .mention { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30; max-height: min(340px, 50vh);
   overflow-y: auto; padding: 6px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow), 0 0 0 1px var(--line);

@@ -155,10 +155,21 @@ export function activityEl(flow) {
   const busy = () => [...steps.values()].some(s => !s.done);
   // the head is there from the turn's start to its end - never hidden and shown again, which pushed the words below it
   // (measured: gone at the first word, back at the first step); the moon at the end only while nothing else moves
+  // the moon at the end: only while the model thinks with nothing else moving, and only where the head can't be seen -
+  // never a second moon right under the first (measured: "Thinking… 0:04" with a lone moon below it)
+  let headSeen = true;
   const sync = () => {
     head.classList.toggle("has-steps", steps.size > 0);
-    tail.hidden = !live || words || busy() || waitStart != null;
+    tail.hidden = !live || words || busy() || waitStart != null || headSeen || !flow.children.length;
   };
+  if ("IntersectionObserver" in window) {
+    const seen = new IntersectionObserver(([e]) => {
+      headSeen = e.isIntersecting;
+      if (!live) seen.disconnect();
+      sync();
+    }, { rootMargin: "-56px 0px 0px 0px" });  // under the glass top bar counts as out of view
+    seen.observe(head);
+  }
   const fold = open => {
     const reply = flow.parentElement;
     reply?.classList.toggle("folded", !open);
