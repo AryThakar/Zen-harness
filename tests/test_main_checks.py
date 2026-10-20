@@ -335,6 +335,18 @@ def test_a_page_whose_script_does_not_parse_is_fixed_before_it_is_called_ready(s
     assert [e for e in events if e["type"] == "done"][-1]["answer"] == "Fixed and ready: click Start."
 
 
+def test_a_currency_the_data_never_gives_is_sent_back():
+    """Measured 2026-10-22: a cafe's sales, a table with no currency, answered as "$16,839"."""
+    from app.assistant.checks import added_currency
+    worked = [{"role": "user", "text": "what sells best?"},
+              {"role": "tool", "name": "analyze_or_code", "content": '{"answer": "Coffee: revenue 209,225"}'}]
+    assert added_currency("Coffee leads with $209,225 of revenue.", worked, []) == "$"
+    assert added_currency("Coffee leads with 209,225 of revenue.", worked, []) is None
+    given = [{"role": "user", "text": "prices are in ₹"}, *worked]
+    assert added_currency("Coffee leads with ₹209,225.", given, []) is None  # the user named it
+    assert added_currency("An iPhone costs about $999.", [{"role": "user", "text": "iphone price?"}], []) is None  # no data
+
+
 def test_numbers_in_a_chat_without_a_helper_are_mains_own():
     from app.assistant.checks import unfounded_numbers
     turn_ = [{"role": "user", "text": "explain compound interest with an example"}]

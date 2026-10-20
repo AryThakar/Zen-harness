@@ -27,6 +27,7 @@ SERIES_ROWS = 15
 class Trace:
     """What a worker's tools returned - the evidence its result is checked against."""
     outputs: list[str] = field(default_factory=list)
+    data_outputs: list[str] = field(default_factory=list)  # outputs but a run's or a file write's (the model's own words)
     read_urls: set[str] = field(default_factory=set)
     found_urls: set[str] = field(default_factory=set)
     sources: set[str] = field(default_factory=set)
@@ -65,6 +66,8 @@ class Trace:
         if name in ("make_chart", "forecast") and result.status in ("ok", "partial") and result.artifact:
             self.charts += 1
         self.outputs.append(json.dumps(result.result, ensure_ascii=False, default=str))
+        if name != "run" and not (name == "files" and str(args.get("mode", "")).lower() in ("write", "edit")):
+            self.data_outputs.append(self.outputs[-1])  # what the data and the tools say - not the model's own code
         if result.status not in ("ok", "partial"):
             target = next((str(args[k]) for k in ("url", "query", "data", "file", "table") if args.get(k)), "")
             why = " ".join(str((result.result.get("error") or {}).get("message", result.status)).split())

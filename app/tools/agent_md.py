@@ -13,7 +13,7 @@ now, never stored in the history and never cut with old turns; a helper's task o
 model server reprocesses the prompt only when it changes, which is rare - attached to each turn's message instead,
 it would break the cached prompt every turn.
 Replaces notes (a separate kind and tool, the 5 latest pinned by date: a standing preference fell out of view after 5
-newer notes - docs/REBUILD_PLAN.md, 2.2).
+newer notes - docs/history/REBUILD_PLAN.md, 2.2).
 """
 
 from __future__ import annotations

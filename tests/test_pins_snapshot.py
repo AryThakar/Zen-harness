@@ -1,4 +1,4 @@
-"""Pinned and pointed-at files (docs/REBUILD_PLAN.md 2.2): the snapshot - what each file is, its coordinates and the
+"""Pinned and pointed-at files (docs/history/REBUILD_PLAN.md 2.2): the snapshot - what each file is, its coordinates and the
 parts of it that match the message - attached to the turn being answered and never stored; pins from the page and
 from the model; a file pointed at with @ named on its message."""
 

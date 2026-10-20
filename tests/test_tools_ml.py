@@ -223,7 +223,13 @@ def test_forecast_says_when_unreliable(ws):
 
 def test_forecast_counts_rows_and_checks_inputs(ws):
     data = ws.add_table(monthly_sales(24), "sales")
+    # one row every day: a count of rows is a flat line - refused, naming the columns to forecast (measured 2026-10-22:
+    # a cafe's four rows a day forecast as "rows" in every demo run)
     r = forecast(ws, data, "day", time_unit="week")
+    assert r.status == "invalid_arguments" and "same number of rows" in r.result["error"]["message"]
+    days = monthly_sales(24)
+    events = ws.add_table(pd.concat([days, days.iloc[::3]], ignore_index=True), "events")  # 1 or 2 rows a day
+    r = forecast(ws, events, "day", time_unit="week")
     assert r.result["value"] == "rows" and r.result["combined_by"] == "count"
     assert forecast(ws, data, "amount", "amount").status == "invalid_arguments"
     short = ws.add_table(monthly_sales(1), "short")

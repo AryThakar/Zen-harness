@@ -9,7 +9,6 @@ const ASK = "Ask anything · @ points at a file";  // the message box's own plac
 
 const DANGER = new Set(["delete_files", "replace_file"]);
 let open = null;  // { card, onChoose }
-export const askOpen = () => !!open;
 
 const helperOf = card => helperName(card.via || card.tool || card.name);
 function who(card) {

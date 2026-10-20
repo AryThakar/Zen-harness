@@ -1,9 +1,9 @@
 # Zen - architecture
 
-How the assistant works, read from the code after the rebuild (2026-10-15) and the testing pass that followed
-(2026-10-16: section 12). Why it is built this way, phase by
-phase with what was measured, is in [REBUILD_PLAN.md](REBUILD_PLAN.md); who owns what, and every guard and check,
-in [SYSTEM_MAP.md](SYSTEM_MAP.md).
+How the assistant works, read from the code after the rebuild (2026-10-15), the testing pass that followed
+(2026-10-16: section 12) and the passes from the user's own chats (2026-10-17 to 10-22: section 13). Why it is built
+this way, phase by phase with what was measured, is in [history/REBUILD_PLAN.md](history/REBUILD_PLAN.md); who owns
+what, and every guard and check, in [SYSTEM_MAP.md](SYSTEM_MAP.md).
 
 ## 1. The idea
 
@@ -37,7 +37,7 @@ browser (web/)  --HTTP + server-sent events-->  FastAPI (app/main.py, app/api/as
 | Process | What it is | Who starts it |
 |---|---|---|
 | The app | `uvicorn app.main:app` - the API and the chat page on http://localhost:8000 | you |
-| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today Qwen 3.6 35B-A3B on Kaggle's two T4s, reached through `C:\zen-data\kaggle\bridge.py` (a local address forwarding to the notebook's tunnel; it names itself, so the page says the model runs on Kaggle); a local llama-server works the same way | you |
+| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today Qwen 3.6 35B-A3B on Kaggle's two T4s (`kaggle/zen-qwen36-server.ipynb`), reached through `kaggle/bridge.py` (a local address forwarding to the notebook's tunnel with its password; it names itself, so the page says the model runs on Kaggle); a local llama-server works the same way | you |
 | Or a cloud model | for testing the harness with a stronger model: `BIZ_LLM_PROVIDER=gemini`, `nvidia` or `groq` and its key in `.env` (app/providers/cloud.py) - each free plan measured too small for the full tests (section 12) | you |
 | The embedding server | llama-server with EmbeddingGemma and its picture projector, port 8070, this computer only | the app, on first use; stopped when it exits (app/rag/embed_server.py) |
 | The browser | Playwright MCP (Edge, headless, no profile) for pages a plain read can't get | the app, on first use; closed when idle (app/tools/browser.py) |
@@ -46,7 +46,7 @@ Settings come from environment variables or the project's `.env` (app/config.py)
 the embedding server's files, Playwright MCP's folder, the data folder, thinking on or off, the assistant's and
 the user's names. Without the embedding server, search falls back to fastembed's bge-small on the CPU; without
 Playwright MCP, pages that need a browser are reported as unreadable. The prompt limit follows the model server
-(its slot size from /props, less the room for the reply): 20,480 tokens a slot on Kaggle today.
+(its slot size from /props, less the room for the reply): 65,536 tokens a slot on Kaggle today.
 
 ## 3. The code
 
@@ -58,8 +58,9 @@ Playwright MCP, pages that need a browser are reported as unreadable. The prompt
 | `app/tools/` | the tools, each a plain function returning one result shape (`core.py`); the workspace (`workspace.py`), file types in one place (`filetypes.py`), agent.md (`agent_md.py`), the sandbox (`sandbox.py`), runs and the console (`run.py`, `console.py`), the search index (`search_index.py`) |
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
 | `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`); a cloud's OpenAI-compatible API (`cloud.py`) - Google's Gemini API, NVIDIA Build, Groq - for testing; a scripted model for tests |
-| `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat), `api.js`, `cards.js` (answer cards), `charts.js`, `steps.js` (the work behind a reply, the trace), `files.js` (the file panel), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
-| `tests/` | pytest, 628 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description; no model needed |
+| `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat, a reply's flow), `api.js`, `cards.js` (answer cards, page cards), `charts.js`, `steps.js` (the work behind a reply: its head, steps, the trace), `files.js` (the file panel, the page frame), `pdf.js` (the PDF viewer), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
+| `kaggle/` | the model on Kaggle: the notebook that runs llama-server with Qwen 3.6 on two T4s and opens a password-protected tunnel, and the bridge that makes it look local |
+| `tests/` | pytest, 660 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
 | `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn
@@ -100,9 +101,13 @@ LangGraph graph (agent -> tools -> agent ... -> end), streamed to the page; ever
   a helper told only "cut off" was cut off three times running, 3.5 minutes each); the same again ends the turn
   with a plain message. A helper ends with what it has after the same call is cut twice, or three cut-offs of any
   kind in a row.
-- **What the page sees while it works.** The steps (and a helper's own steps inside them) at the top of the
-  reply; once the reply has text, what is happening now ("Checking the answer...") at its end. A call being
-  written shows its file and size as they grow ("Writing game.html · 3.2 KB..."), from the stream.
+- **What the page sees while it works.** A reply is one flow in the order things happened - the model's words,
+  its steps (a helper's own steps inside them), the cards they made - and nothing moves later: words written before
+  a step stay where they were, quieter once the step follows; the last words are the answer. The reply's head, on
+  top, is its one status: how the turn is (thinking, writing, working, waiting for the user) and a timer; a call
+  being written shows its file and size ("Writing game.html · 3.2k characters..."). When the turn ends every step
+  still running is settled (stopped, or didn't finish), the head says how it went ("Worked for 2m 26s · 6 steps")
+  and the work folds away - a click on the head shows it again; what the turn made and its answer always stay.
 - **After the turn.** The turn is indexed for recall, the workspace's new files are indexed, a new chat is
   named, and a trace is stored - main's steps and tokens, every tool call, each helper's steps and checks -
   opened from a button under the answer.
@@ -244,15 +249,24 @@ session - what it printed and what the user typed - is kept in the file's report
 
 ## 10. The page
 
-One chat page (web/): projects and chats on the left; answers with their cards - native charts (hover values, full
-screen, download as PNG or CSV), tables, pictures, diagrams, a file's card (an .html file runs in it; a Python
-file has Run, opening the console), sources (a video opens in the viewer at 16:9), questions; the work behind each
-reply (steps, a helper's steps, the trace); the live state at the end of a reply; a dot in the header for the
-model's state (ready, loading, unreachable - said in plain words) and where it runs (this computer, Kaggle or a
-cloud). The file panel: paths, a search box (find), the
-Memory section with agent.md, pins, earlier versions and restore, editing text files, previews (Markdown, HTML in a
-sealed frame with no network, PDF, tables, charts, code). The message box: @ to point at a file or pin it, pinned
-files as chips in the header.
+One chat page (web/): projects and chats on the left (a grid of projects; a chat answering shows the moon);
+answers with their cards - native charts (hover values, full screen, download as PNG or CSV), tables, pictures,
+diagrams, a file's card (a Python file has Run, opening the console), a page's card (its picture as it opened, its
+title, Open), sources (a video opens in the viewer at 16:9), questions; the work behind each reply (section 4) and
+its trace; a dot in the header for the model's state (ready, loading, unreachable - said in plain words) and where
+it runs (this computer, Kaggle or a cloud). The file panel: paths, a search box (find), the Memory section with
+agent.md, pins, earlier versions and restore, editing text files, previews - Markdown; an HTML page running in a
+sealed frame with no network, at a window's size, with full screen, its own storage kept per page; PDFs drawn by
+PDF.js in the app's colours (pages follow the dark theme, a sun and moon keep their own colours, the page in view,
+zoom, a source tag's page); tables, charts, code. The message box: @ to point at a file or pin it; pinned files as
+chips beside the title, or on a phone in a row above the message box. Phones get their own layout: a grid of two
+projects, suggestions as a grid, pictures within the screen, the file panel's head on two lines.
+
+**A page Zen writes is tried before it is called ready** (file_ops.written_code, browser.try_page): its script must
+parse, then it is opened in the headless browser under the chat frame's own policy - its controls clicked, the keys
+a game is played with pressed, for 10 seconds at most - and an error, a canvas that stays one flat colour, or "Game
+Over" on show before anything was pressed comes back to the model as broken, with the reason. The picture taken as
+it opens is its card's preview.
 
 Libraries come pinned from a CDN (marked, DOMPurify, Chart.js, KaTeX, highlight.js, and Mermaid when a diagram
 is drawn). The API refuses
@@ -269,7 +283,8 @@ versions the tests passed with.
 On the real model (`bench/`, llama-server running): each phase's acceptance - `phase2.py` (the helpers),
 `phase4.py` (find, pins, agent.md), `phase5.py` (routing probes, a dev and a held-out half) - and `combos.py`, 20
 jobs of 3-6 tools each from new stores with fixed data: 10 for finding what fails, 10 held out and run once. Their
-reports are kept beside them; REBUILD_PLAN.md section 8 records the results as they came.
+reports are kept beside them; [history/REBUILD_PLAN.md](history/REBUILD_PLAN.md) section 8 records the results as
+they came.
 
 ## 12. The testing pass (2026-10-16)
 
@@ -294,3 +309,22 @@ The same score. Qwen passed the two jobs Gemma failed in every run (a slide deck
 exchange rate in an exact sum) and failed four that Gemma passed - two with right answers (a strict check; a built
 tool skipped for SQL), one tool skipped for a matplotlib picture, one file not written as a checklist. Today's fixes
 were in Qwen's run only. Qwen became the working model.
+
+## 13. From the user's own chats (2026-10-17 to 10-22)
+
+Each pass read the user's chats as the model saw them - the exact prompts, tool results and hidden checks - and
+fixed what the harness did wrong, not what the model could be talked out of:
+
+- **The page.** A reply as one flow with its head on top (section 4); pages as cards that open in the file panel;
+  the PDF viewer; phone layouts; a stopped turn that leaves nothing live; one card per file per reply.
+- **Pages and games.** Checked in a real browser before "ready" (section 10), which caught a Start button calling a
+  missing function, a white board, and a snake that ended the game on its first step; a hidden "Game Over" overlay
+  is not mistaken for a shown one (it once cost 8 minutes of chasing a bug that wasn't there).
+- **Helpers.** The web helper finishes once each asked thing has a good source (a song's link took 6 minutes of
+  music sites before); a helper whose answer is sent back on its last step gets one step more to fix it (it once
+  lost the answer, and main ran the task twice more); a chart file given as data says it is a chart, not a table.
+- **main.** One picture a turn unless the user asked for more; told that its words with a call are shown as it
+  goes (no second "You're right"); never widens a helper's task; an edit without a file's name is told which files
+  changed last.
+- **Context.** Earlier turns' tool results and long call arguments are kept short in the rolling window, so a long
+  chat stays fast and its prompt cache holds.

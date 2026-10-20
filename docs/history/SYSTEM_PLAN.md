@@ -71,7 +71,7 @@ Tier 1
   playable HTML in a sealed frame; question chains (measured: a quiz of 10 questions runs to its end - each
   answer starts the turn's rounds afresh); the item contract (one naming rule for every kind, workspace.py);
   the turn trace, stored and shown in the UI (a button under each answer opens how it ran).
-- The read-through: every source file read whole (docs/REVIEW_LOG.md - 13 findings, each fixed or decided,
+- The read-through: every source file read whole (docs/history/REVIEW_LOG.md - 13 findings, each fixed or decided,
   the fixes tested; the high one, a turn too big for main's slot, crashed before).
 - Versions: requirements.lock holds every library's tested version; the UI's libraries are pinned.
 - Decided not to build: a separate capability list - main reads every tool's and helper's own description,
@@ -165,7 +165,7 @@ policy to measure. ("Try again, answer quickly" after a reply that thought until
   - A rule placed where the numbers are written: the helper keeps the data's own unit (it wrote $ for sales with
     no currency, and main repeated it).
 
-Next: docs/REBUILD_PLAN.md (frozen 2026-10-10) - the shared building blocks (files, pins, agent.md, search, the helper on files, charts, maths) and its build order; the parked findings (section 14) are measured again after it.
+Next: docs/history/REBUILD_PLAN.md (frozen 2026-10-10) - the shared building blocks (files, pins, agent.md, search, the helper on files, charts, maths) and its build order; the parked findings (section 14) are measured again after it.
 
 Sections 1-13 below are the detail behind this decision; where they differ from it, this section wins.
 

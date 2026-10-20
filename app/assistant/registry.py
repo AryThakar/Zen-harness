@@ -387,7 +387,7 @@ FILE_MODE_LABELS = {"list": ("Listing files", "Listed files"), "find": ("Searchi
                     "pin": ("Pinning a file", "Pinned a file"), "unpin": ("Unpinning a file", "Unpinned a file")}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in [
-    # Each description in one order (docs/REBUILD_PLAN.md, section 3): what it does, in the words a user or a task
+    # Each description in one order (docs/history/REBUILD_PLAN.md, section 3): what it does, in the words a user or a task
     # would use; what it returns; when to use it; when not, and which tool instead.
     Tool("get_weather", "Weather and air quality where the user is - found automatically, don't ask them - or in a "
        "named place. Returns the weather now (temperature, feels-like, rain, wind, UV, air quality) and the local "

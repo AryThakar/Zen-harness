@@ -1,4 +1,4 @@
-"""The workspace as one folder of real files (docs/REBUILD_PLAN.md, phase 1): a file's path is its one name for
+"""The workspace as one folder of real files (docs/history/REBUILD_PLAN.md, phase 1): a file's path is its one name for
 every reader, one write path keeps it unique and versioned, the search index follows the folder, and a workspace
 of the first layout is moved into this one with nothing lost."""
 

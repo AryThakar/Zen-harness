@@ -448,6 +448,10 @@ class Workspace:
         wanted = " or ".join(kinds) if kinds and len(kinds) <= 2 else "file"
         if other:
             e = self._reg["items"][other]
+            if e["name"].endswith(".chart.json") and kinds and "table" in kinds:
+                # measured 2026-10-22: a forecast's chart given to make_chart as data, then scripts to combine charts
+                raise ToolError(f"{e['name']} is a chart already made - the user sees it. To show its numbers another "
+                                "way, chart the table they came from; charts are not data.", field=field)
             raise ToolError(f"{e['name']} is {_a(e['kind'])}, not {_a(wanted)}."
                             + WRONG_KIND.get((e["kind"], kinds[0] if kinds else ""), "").format(path=e["name"]),
                             field=field)

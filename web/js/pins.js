@@ -1,4 +1,4 @@
-// Files pinned to the chat (docs/REBUILD_PLAN.md 2.2): what in them matches each message goes with every turn - the
+// Files pinned to the chat (docs/history/REBUILD_PLAN.md 2.2): what in them matches each message goes with every turn - the
 // server builds that snapshot for the turn and keeps none of it. Shown as chips in the chat header; pinned and unpinned
 // there, in the file panel and in the @ menu - and by Zen (files pin), whose change arrives as a "pins" artifact.
 

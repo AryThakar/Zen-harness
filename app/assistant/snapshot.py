@@ -1,5 +1,5 @@
 """The snapshot: what the files the user pinned to the chat, or pointed at with @, hold for the message being answered -
-retrieved fresh each turn and attached to that turn only (docs/REBUILD_PLAN.md 2.2).
+retrieved fresh each turn and attached to that turn only (docs/history/REBUILD_PLAN.md 2.2).
 
 For each file: what it is, its coordinates - a document's outline (its headings with their pages), a program's
 functions with their lines, a table's columns - and the parts that match the user's message: a document's passages

@@ -67,6 +67,14 @@ def forecast(ws: Workspace, data: str, date: str | None = None, value: str | Non
     frame = df.dropna(subset=[date] + ([value] if value else []))
     if frame.empty:
         raise ToolError("No rows have both a date and a value.", invalid=False)
+    numbers = [str(c) for c in frame.columns if c != date and pd.api.types.is_numeric_dtype(frame[c])
+               and not pd.api.types.is_bool_dtype(frame[c])]
+    if not value and not by and numbers and frame.groupby(frame[date].dt.normalize()).size().nunique() == 1:
+        # measured 2026-10-22: a cafe's sales, four rows a day, forecast as "rows" in every demo run - a flat line,
+        # charted beside the real forecasts
+        per_day = int(frame.groupby(frame[date].dt.normalize()).size().iloc[0])
+        raise ToolError(f"Every date has the same number of rows ({per_day}): a count of rows has nothing to forecast. "
+                        f"Name the number column to forecast as value: {', '.join(numbers[:6])}.", field="value")
     freq = _auto_freq(frame[date]) if time_unit == "auto" else CODE[time_unit]
     label = value or "rows"
     warning = ws.issues_warning(data)

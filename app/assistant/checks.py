@@ -49,11 +49,11 @@ import re
 
 from collections.abc import Callable
 
-from .prompts import (ANNOUNCE_NUDGE, BROKEN_CODE_NUDGE, BROKEN_NUDGE, CLAIM_NUDGE, FILE_NUDGE, NUMBERS_NUDGE,
-                      REMEMBER_NUDGE)
+from .prompts import (ANNOUNCE_NUDGE, BROKEN_CODE_NUDGE, BROKEN_NUDGE, CLAIM_NUDGE, CURRENCY_NUDGE, FILE_NUDGE,
+                      NUMBERS_NUDGE, REMEMBER_NUDGE)
 from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
-from .workers.checks import JSON_BREAKS
+from .workers.checks import JSON_BREAKS, MONEY
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
 PICTURES_PER_TURN = 1  # generate_image calls in one turn before another is refused (unless main confirms)
@@ -323,6 +323,16 @@ def unfounded_numbers(text: str, turn: list[dict], history: list[dict]) -> list[
     return missing if len(missing) >= UNFOUNDED_MIN else []
 
 
+def added_currency(text: str, turn: list[dict], history: list[dict]) -> str | None:
+    """A currency sign on the reply's numbers that nothing the tools returned or the user wrote uses, in a turn a
+    helper worked on data in - or None. Measured 2026-10-22: a cafe's sales, a table with no currency, answered as
+    "$16,839" and "$36,422" (the prompt's rule against it was not enough)."""
+    if not any(m["role"] == "tool" and m.get("name") in DATA_HELPERS and not m.get("is_error") for m in turn):
+        return None
+    evidence = "".join(str(m.get("content") or m.get("text") or "") for m in history + turn if m["role"] in ("tool", "user"))
+    return next((sign for sign in dict.fromkeys(MONEY.findall(text)) if sign not in evidence), None)
+
+
 def still_broken(turn: list[dict], now: Callable[[str], str | None] | None = None) -> list[tuple[str, str]]:
     """(file, why) for each file this turn wrote or edited that still can't run, by its latest write - a Python file
     or a page whose script doesn't parse or fails when used (file_ops.written_code). Measured 2026-10-17: a cup game
@@ -376,6 +386,9 @@ def nudge_for(text: str, turn: list[dict], exists: Callable[[str], bool] | None 
         # went round for 15 minutes, then handed the user the fix); a page main fixes itself, tried in a browser
         name, why = broken[0]
         return (BROKEN_CODE_NUDGE if name.lower().endswith(".py") else BROKEN_NUDGE).format(why=why)
+    sign = added_currency(text, turn, history or [])
+    if sign:
+        return CURRENCY_NUDGE.format(sign=sign)
     unfounded = unfounded_numbers(text, turn, history or [])
     if unfounded:
         return NUMBERS_NUDGE.format(numbers=", ".join(unfounded[:6]))

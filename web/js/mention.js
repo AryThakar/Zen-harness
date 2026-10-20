@@ -1,4 +1,4 @@
-// @ in the message box (docs/REBUILD_PLAN.md 2.2): a file of the project pointed at, so it goes with this message
+// @ in the message box (docs/history/REBUILD_PLAN.md 2.2): a file of the project pointed at, so it goes with this message
 // without being uploaded again - typed "@sal" lists the files whose names hold it; the one picked becomes a chip in the
 // message box, like an attachment, and is sent with the message (the model is told which files, and gets what in
 // them matches). Each row can also pin its file to the chat.
@@ -11,7 +11,6 @@ export const hooks = { point: () => {} };
 const SHOWN = 8;
 let menu = null, hits = [], at = 0, range = null;
 
-export const mentionOpen = () => !!menu;
 
 // The "@word" just before the caret: where it starts and ends, and the word
 function word() {

@@ -3,7 +3,7 @@
 The index is the workspace's files seen for search - never a second copy. One sync (index_items) brings it
 in step with the folder however a file arrived (an upload, a download, files' write, a script's output, a
 table a tool made) or changed: a document's text is extracted (PDF, Word, PowerPoint, .txt, .md -
-claude-cloud's tested extractor), split into ~250-word passages that never cross a page or heading, and
+this project's tested extractor), split into ~250-word passages that never cross a page or heading, and
 indexed; code in blocks of lines; a chart file by its title, kind and axes; a picture by its name, prompt and
 caption, and by what it shows when the embedding model takes pictures; a table by its name, columns and a few
 values. It runs after every turn, upload and run, and before every find. Scanned PDFs (images of pages) have

@@ -131,6 +131,10 @@ BROKEN_CODE_NUDGE = ("[App check: {why} Give it to analyze_or_code with the file
 NUMBERS_NUDGE = ("[App check: your reply gives numbers that no tool returned and the user never gave ({numbers}). "
                  "Write it again with only the numbers the results give - a table or chart the user already sees is "
                  "mentioned, not retyped - and call any figure of your own an estimate.]")
+# A currency sign the data never gives, on main's numbers (measured: a cafe's sales, no currency, answered in "$").
+CURRENCY_NUDGE = ("[App check: your reply puts {sign} on numbers, but nothing the tools returned or the user wrote "
+                  "uses {sign} - the data gives no currency. Write the reply again with the numbers as the data has "
+                  "them, no currency sign.]")
 # The user asked to remember something and the reply saved nothing (measured: "I will remember that", no note).
 REMEMBER_NUDGE = ("[App check: the user asked you to remember this, but nothing was saved - only agent.md keeps "
                   "it. Add it now: files(mode='write', name='agent.md', content=its text plus the new line).]")

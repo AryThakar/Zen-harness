@@ -9,10 +9,4 @@ All names, emails and numbers are made up.
 | `shopify_orders.csv` | Shopify orders export | Recognised by the built-in profile: the order number is in `Name`, the date and customer are only on the first line of each order (filled in automatically), per-line discounts are used, order totals and personal columns are ignored |
 | `superstore_sample.csv` | Kaggle "Superstore" dataset | Only line totals (`Sales`, `Profit`) and a fractional discount - unit price and unit cost are worked out; month-first dates |
 | `agency_invoices.csv` | A service agency's invoice list | No quantity or unit price, only an amount per invoice - quantity becomes 1 |
-
-Bigger realistic data comes from the generator:
-
-```bash
-python -m app.datagen                            # 18 months, canonical format
-python -m app.datagen --format messy --months 6  # POS-style export to test cleaning
-```
+| `cafe_daily_sales.csv` | A cafe's daily sales by item, a year | 1,460 rows: weekends busier, hot drinks up in winter, a slow upward trend - for charts, comparisons and forecasts (the demo uses it) |

@@ -1,5 +1,5 @@
 """A picture that arrives with a name that says nothing - a pasted image.png, IMG_1234.jpg, a screenshot - is named from a
-one-line caption the vision model writes, and the caption is kept on it, where find searches it (docs/REBUILD_PLAN.md
+one-line caption the vision model writes, and the caption is kept on it, where find searches it (docs/history/REBUILD_PLAN.md
 2.1: eight uploads were all called image.png, and "which is the receipt?" had nothing to go on).
 
 It runs while the picture uploads, before the message that brings it is sent - so the model never sees a rename in the

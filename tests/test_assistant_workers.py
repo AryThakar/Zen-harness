@@ -243,6 +243,27 @@ def test_data_worker_numbers_must_come_from_tool_results(ctx):
     assert "33%" in model.requests[3]["messages"][-1]["content"]
 
 
+def test_data_worker_adds_no_currency_the_data_lacks(ctx):
+    """Measured 2026-10-22: a cafe's sales, no currency in the table, answered as "$209,225" - and main copied it."""
+    data = ctx.ws.add_table(pd.DataFrame({"item": ["Coffee", "Tea"], "revenue": [209225.0, 57533.0]}), "cafe.csv")
+    model = ScriptedProvider([
+        tools_turn(call("inspect_data", data=data)),
+        tools_turn(call("query_data", sql=f"SELECT item, sum(revenue) AS revenue FROM {data} GROUP BY item")),
+        report(answer="Coffee leads with $209,225 of revenue."),
+        report(answer="Coffee leads with 209,225 of revenue."),
+    ])
+    out = run_worker(model, ENGINEER, "What sells best?", ctx)
+    assert "$ is on your numbers, but the data has no currency" in model.requests[3]["messages"][-1]["content"]
+    assert out["answer"] == "Coffee leads with 209,225 of revenue." and "warnings" not in out
+    # the model's own script printing "$" is no evidence of a currency (measured the same day)
+    from app.assistant.workers.checks import _numbers_problem
+    from app.assistant.workers.evidence import Trace
+    trace = Trace(outputs=['{"rows": [["Coffee", 209225.0]]}', '{"output": "Coffee: $209225"}'],
+                  data_outputs=['{"rows": [["Coffee", 209225.0]]}'],
+                  python_runs=[('print(f"Coffee: ${total}")', True)])
+    assert any("no currency" in p for p in _numbers_problem("Coffee earned $209,225.", trace, "What sells best?"))
+
+
 def test_the_report_on_a_table_is_titled_by_the_task(ctx):
     """The title is the task's first line, written by the app: a report without one cost the 26B a step."""
     ctx.ws.add_table(pd.DataFrame({"roll": [1, 2, 3, 4, 5, 6]}), "rolls.csv")
@@ -754,6 +775,18 @@ def test_a_finish_cut_off_at_the_last_step_gets_one_short_try(ctx, fake_web):
     twice = ScriptedProvider(searches + [ModelTurn(text="", stop="max_tokens")] * 2)
     out = run_worker(twice, PROFILES["web"], "rates?", ctx)
     assert out["warnings"] == ["the helper ran out of steps without finishing"] and out["ran"].startswith("Ran web_search")
+
+
+def test_a_finish_sent_back_at_the_last_step_gets_one_step_to_fix_it(ctx, fake_web):
+    """Measured 2026-10-22: an answer sent back on the helper's last step (numbers worked out in its head) - "ran out
+    of steps", the answer lost, and main handed the whole task over twice more."""
+    steps = PROFILES["web"].max_steps
+    searches = [tools_turn(call("web_search", query=f"q{i}")) for i in range(steps)]
+    model = ScriptedProvider(searches + [submit(answer="Rates rose.", sources=[7]),
+                                         submit(answer="I could not find it in the snippets.")])
+    out = run_worker(model, PROFILES["web"], "rates?", ctx)
+    assert "there is no page 7" in model.requests[-1]["messages"][-1]["content"]
+    assert out["answer"] == "I could not find it in the snippets." and "warnings" not in out
 
 
 def test_a_read_runs_as_the_helper_made_it(ctx, monkeypatch):

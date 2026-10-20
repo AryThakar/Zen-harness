@@ -25,3 +25,6 @@ data/assistant/
 
 # Claude Code settings for this machine (local paths to llama-server and models)
 .claude/
+
+# the bridge's address and password for this session (kaggle/bridge.env.example shows its two lines)
+kaggle/bridge.env

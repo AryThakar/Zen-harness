@@ -227,6 +227,10 @@ def run_worker(provider: Provider, profile: Profile, task: str, ctx: ToolContext
                 if isinstance(outcome, dict) and (not outcome["problems"] or retried):
                     return _done(ctx, profile, outcome["result"], trace, outcome["problems"], task=task)
                 retried = retried or isinstance(outcome, dict)
+                if last:  # sent back on its last step: one step more to fix it (measured 2026-10-22: a cafe forecast's
+                    # answer sent back for numbers worked out in its head, on step 12 of 12 - "ran out of steps", the
+                    # answer lost, and main handed the whole task over twice more: 15 minutes)
+                    short_again = True
                 feedback = (outcome if isinstance(outcome, str) else
                             FIX_FINISH.format(finish=profile.finish) + "; ".join(outcome["problems"]))
                 messages.append({"role": "tool", "tool_call_id": call["id"], "name": profile.finish,

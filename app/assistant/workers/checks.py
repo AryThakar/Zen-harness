@@ -19,6 +19,7 @@ GAVE_UP = re.compile(r"\W*(?:I|we)\s+(?:could not|couldn'?t|cannot|can'?t|was un
 
 
 URL = re.compile(r"https?://[^\s)\]>\"'`]+")
+MONEY = re.compile(r"([$€£₹¥])\s?\d")  # a currency sign on a number
 
 
 def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
@@ -163,5 +164,13 @@ STILL_FAILS = re.compile(r"\b(?:still (?:fails|failing|raises|errors|broken|has 
 def _numbers_problem(text: str, trace: Trace, context: str) -> list[str]:
     evidence = trace.outputs + [context] + [code for code, _ in trace.python_runs]
     missing = ungrounded_numbers(text, evidence)
-    return [f"these numbers are not in any tool result: {', '.join(missing)}; copy numbers exactly from the "
-            "results, or compute them with query_data (SELECT arithmetic needs no table)"] if missing else []
+    problems = [f"these numbers are not in any tool result: {', '.join(missing)}; copy numbers exactly from the "
+                "results, or compute them with query_data (SELECT arithmetic needs no table)"] if missing else []
+    # a currency sign the data never gives (measured 2026-10-22: a cafe's sales with no currency answered in "$" -
+    # and main copied it, the helper's answer being its evidence). Only the data and the task count: the model's own
+    # scripts printed "$" too, and passed it off as found
+    seen = "".join(trace.data_outputs + [context])
+    signs = [s for s in dict.fromkeys(MONEY.findall(text)) if s not in seen]
+    if signs:
+        problems.append(f"{signs[0]} is on your numbers, but the data has no currency: write them without it")
+    return problems

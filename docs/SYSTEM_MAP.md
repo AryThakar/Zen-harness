@@ -1,7 +1,7 @@
-# System map - after the rebuild (2026-10-15) and the testing pass (2026-10-16)
+# System map - after the rebuild (2026-10-15), the testing pass (2026-10-16) and the passes from the user's chats (to 2026-10-22)
 
 Who owns what, and every guard, check and nudge, read from the code after the seven phases of
-[REBUILD_PLAN.md](REBUILD_PLAN.md). How it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md). The first map
+[REBUILD_PLAN.md](history/REBUILD_PLAN.md). How it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md). The first map
 (the read of 2026-10-10, before the rebuild) is in the git history.
 
 The principle, the user's: **a fixed contract with small genuine variations (a path in any case, a copied listing
@@ -69,6 +69,18 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | result checks | web: pages cited were read, file links in downloads; knowledge: sources a tool returned; analyst: every number in a tool result or a run | truth | one chance to fix, then a warning main passes on |
 | runner nudges | cut off, no call, the conversation full, steps left, fix the finish, the pictures it is shown | serves the model | - |
 | provider: Gemma's calls as text | a call written in Gemma's own syntax read as the call | format adapter | - |
+| main: pictures | a second generate_image in one turn is stopped (measured: two a turn, three turns running, for one "Dr. Stone image") | judgment | `confirm: true` when the user asked for more than one |
+| main: a typed table | a helper task carrying ten or more numbers typed from web results, before the page's table was downloaded, is stopped: files download brings it in exact | truth | `confirm: true` |
+| main: dictated method | a helper task naming libraries, code steps or a statistical method is stopped: what is wanted, never how | contract | `confirm: true` |
+| main: numbers no result holds | a reply in a turn a helper worked in, with three or more numbers no tool returned and the user never gave: one hidden [App check] | truth | write it with the results' numbers, or call it an estimate |
+| main: a file still broken | a reply after writing a page or program that still doesn't run (a page's script, Python that doesn't parse): one hidden [App check] | truth | fix it, or say plainly it doesn't work yet |
+| main: the last step | the turn's last step has no tools and is told never to hand the user the work | serves the user | - |
+| files: a page written | its script must parse; then it is opened headless (file_ops.written_code, browser.try_page) - controls clicked, keys pressed, 10 s at most - and an error, a canvas of one flat colour, or "Game Over" on show before any input comes back as broken | truth | fix it before saying it works |
+| files: no name | an edit, read or rename without a name is told which files changed last | contract | the next call |
+| download: a raw host | an HTML file from raw.githubusercontent.com is a file, not a page | correctness | - |
+| workspace: a chart as data | a chart file given where a table is wanted says it is a chart already made, and to chart the table it came from | contract | the table |
+| runner: a finish sent back on the last step | one step more to fix it (measured: "ran out of steps", the answer lost, the task handed over twice more) | serves the model | - |
+| runner: a short finish | a finish cut off by the length limit on the last step gets one more step for a short one | serves the model | - |
 
 ## 4. Tests that hold the contracts
 
@@ -81,7 +93,8 @@ consistent is a limit to record, not a prompt to bend (section 5).
   the folder; no key in any result a model reads.
 - `test_console.py`, `test_pins_snapshot.py`, `test_assistant_main.py` (the slot never overflows, the snapshot is
   never stored), `test_main_checks.py` (each check from a measured failure, and the replies it must leave alone),
-  and the tools' own tests - 628 in all, no model needed.
+  and the tools' own tests - 660 in all, no model needed; one test (marked real_browser) opens pages in the
+  headless browser when it is installed.
 
 ## 5. Known limits (measured, recorded - not prompted around)
 
@@ -109,5 +122,8 @@ a limit both models show is the models' class, not one model:
 - **The sandbox is not a security boundary**: a separate process with an audit hook, for one user's own
   assistant; a native library that opens files on its own is not covered.
 - **A timing flake**: test_open_figures_are_saved_once failed once in a full run and passed the five runs since.
-- **The model is remote**: the 26B runs on a Kaggle notebook through a quick tunnel; a new session gets a new
-  address (bridge.env), and while it is down the page says so - nothing else can answer.
+- **The model is remote**: Qwen 3.6 runs on a Kaggle notebook through a quick tunnel (kaggle/); a new session gets
+  a new address (kaggle/bridge.env), and while it is down the page says so - nothing else can answer.
+- **The analyst can over-work a simple question** - five forecasts and three charts for "what sells best, and what
+  might next month look like", then scripts to combine them (2026-10-22). A finish sent back on its last step now
+  gets a step to fix it, so the work is no longer lost; how much it does before finishing is the model's.

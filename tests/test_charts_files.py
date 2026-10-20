@@ -1,4 +1,4 @@
-"""Charts as files (docs/REBUILD_PLAN.md, phase 3): a chart - from make_chart, forecast or a script's chart() - is one
+"""Charts as files (docs/history/REBUILD_PLAN.md, phase 3): a chart - from make_chart, forecast or a script's chart() - is one
 chart file the page draws live; its picture is drawn from that file only when a document or a download needs it."""
 
 from __future__ import annotations
