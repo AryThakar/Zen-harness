@@ -16,7 +16,7 @@ starts llama-server there and opens a password-protected address that Zen on you
 2. In the right-hand panel: *Accelerator* `GPU T4 x2`, *Internet* `On` (Kaggle asks for a phone-verified account),
    *Persistence* `No persistence`.
 3. *Run All*. After a few minutes the last cell prints an **address** and a **password**.
-4. **The Windows app:** start `Zen.exe` and paste them in. **From source:** copy `bridge.env.example` to `bridge.env`,
+4. **The Windows app:** start `Zen-harness.exe` and paste them in. **From source:** copy `bridge.env.example` to `bridge.env`,
    paste them in, and run `python kaggle/bridge.py` beside the app.
 
 Keep the notebook's tab open while you use Zen. A session lasts up to 12 hours, and Kaggle gives about 30 GPU hours

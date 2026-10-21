@@ -41,7 +41,7 @@ body:
     attributes:
       label: How you run it
       options:
-        - The Windows app (Zen.exe)
+        - The Windows app (Zen-harness.exe)
         - From source
     validations:
       required: true

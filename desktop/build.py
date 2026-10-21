@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-"""Builds the Windows folder Zen.exe runs from, and its zip - offline, from this computer:
+"""Builds the Windows folder Zen-harness.exe runs from, and its zip - offline, from this computer:
 
-    .venv/Scripts/python.exe desktop/build.py            (then dist/Zen-harness/Zen.exe)
+    .venv/Scripts/python.exe desktop/build.py            (then dist/Zen-harness/Zen-harness.exe)
     .venv/Scripts/python.exe desktop/build.py --zip      (and dist/Zen-harness-<version>-windows-x64.zip)
 
     dist/Zen-harness/
-        Zen.exe         desktop/Zen.cs, compiled with the C# compiler every Windows has (.NET Framework 4)
-        settings.env    the model's address and password (Zen.exe asks for them the first time) and other settings
+        Zen-harness.exe desktop/Zen.cs, compiled with the C# compiler every Windows has (.NET Framework 4)
+        settings.env    the model's address and password (Zen-harness.exe asks for them the first time) and other settings
         runtime/        the Python this venv was made from (the interpreter and its standard library) and the libraries
                         Zen needs: the files pip installed for them, copied from this venv - the versions the tests pass
                         with, nothing downloaded. The code sandbox runs its scripts with this Python too.
@@ -38,7 +38,7 @@ from packaging.requirements import Requirement
 REPO = Path(__file__).resolve().parents[1]
 DIST = REPO / "dist" / "Zen-harness"
 PROJECT = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-PLAYWRIGHT_MCP = Path(os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", r"C:\zen-data\playwright-mcp"))
+PLAYWRIGHT_MCP = Path(os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", REPO.parent / "playwright-mcp"))  # beside the repo
 
 # The base Python's own parts left out: tests, IDLE and Tk (nothing of Zen's draws a Tk window), debug and
 # free-threaded builds, headers - a quarter of its size
@@ -46,9 +46,9 @@ SKIP_LIB = {"site-packages", "test", "idlelib", "tkinter", "turtledemo", "ensure
 SKIP_FILE = re.compile(r"(_d\.(exe|dll|pyd)|\.pdb|\dt\.(exe|dll)|_tkinter\.pyd|tcl\d+t?\.dll|tk\d+t?\.dll"
                        r"|\.cp\d+t-win_amd64\.pyd)$", re.I)
 SETTINGS = """\
-# Zen harness settings - NAME=value lines, read by Zen.exe each time it starts.
+# Zen harness settings - NAME=value lines, read by Zen-harness.exe each time it starts.
 # The model: the Kaggle notebook (zen\\kaggle\\zen-qwen36-server.ipynb) prints these two in its last cell.
-# Zen.exe asks for them the first time, and again when the notebook has a new address.
+# Zen-harness.exe asks for them the first time, and again when the notebook has a new address.
 # Leave them empty to use a llama-server running on this computer at 127.0.0.1:8080.
 KAGGLE_URL=
 KAGGLE_PASSWORD=
@@ -137,7 +137,7 @@ def copy_tools() -> None:
 def compile_launcher() -> None:
     csc = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
     done = subprocess.run([str(csc), "/nologo", "/target:winexe", "/optimize+", "/platform:anycpu", "/codepage:65001",
-                           f"/win32icon:{REPO / 'desktop' / 'zen.ico'}", f"/out:{DIST / 'Zen.exe'}",
+                           f"/win32icon:{REPO / 'desktop' / 'zen.ico'}", f"/out:{DIST / 'Zen-harness.exe'}",
                            "/r:System.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll",
                            str(REPO / "desktop" / "Zen.cs")], capture_output=True, text=True)
     if done.returncode:

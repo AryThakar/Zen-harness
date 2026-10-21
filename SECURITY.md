@@ -29,7 +29,7 @@ the properties it is meant to keep:
 - **Pages Zen writes** run in the chat's sandboxed frame under a Content Security Policy that loads nothing from
   anywhere (`web/js/files.js`), and are tried headless under the same policy before they are called ready.
 - **Your data stays on disk, unencrypted.** Projects, files, chats and their search index live in `data/` (the
-  Windows app: `data\` next to `Zen.exe`). Back it up or delete it like any folder of documents.
+  Windows app: `data\` next to `Zen-harness.exe`). Back it up or delete it like any folder of documents.
 - **Secrets.** API keys live in `.env` (git-ignored) or the Windows app's `settings.env`; the scripts the
   sandbox runs never see them, and no tool result the model reads includes them.
 

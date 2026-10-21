@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// Zen.exe: starts Zen harness on this computer and opens it in a window of its own.
+// Zen-harness.exe: starts Zen harness on this computer and opens it in a window of its own.
 //
 // The folder it sits in (desktop/build.py makes it):
-//     Zen.exe          this launcher
+//     Zen-harness.exe  this launcher
 //     settings.env     the model's address and password, and any other setting (NAME=value lines)
 //     runtime\         Python with Zen's libraries (the code sandbox runs scripts with this Python too)
 //     zen\             app\, web\ and kaggle\bridge.py

@@ -1,0 +1,15 @@
+# LF everywhere, including Windows checkouts (every text file is stored that way already).
+* text=auto eol=lf
+
+# Pictures, video, fonts, sounds and the icon are binary.
+*.png   binary
+*.gif   binary
+*.jpg   binary
+*.ico   binary
+*.mp4   binary
+*.ogg   binary
+*.woff2 binary
+*.xlsx  binary
+
+# Measurement results are reviewed as reports (their .md), not line by line.
+bench/**/*.json -diff linguist-generated

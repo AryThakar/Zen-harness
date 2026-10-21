@@ -18,7 +18,9 @@
 
 </div>
 
-![Zen's start screen: a project's new chat, with suggestions from its files](docs/images/start.png)
+<a href="docs/teaser.mp4"><img src="docs/images/teaser.gif" width="860" alt="Zen at work: a question typed on the start screen, the answer's table, charts and forecast, a web answer with its source, a game played beside the chat"></a>
+
+<p align="center"><sub>Recorded on the real model, the waits while it thinks cut out. <a href="docs/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="docs/demo.mp4">a real session, 80 s</a></sub></p>
 
 Zen talks with you and hands focused work to three helpers - one for the web, one for your documents and earlier
 chats, and an analyst-programmer for your tables and programs - inside a **project**: one folder of real files.
@@ -26,11 +28,7 @@ What must be right - facts, numbers, files, a game that actually starts - is che
 left to the model.
 
 It runs on **Qwen 3.6 35B-A3B** through llama.cpp: on your own GPU, or free on a Kaggle notebook's two T4s reached
-through a small bridge (the notebook is in [`kaggle/`](kaggle/)). Both videos are recorded on the real model, the
-waits while it thinks cut out.
-
-<a href="docs/teaser.mp4"><img src="docs/images/teaser.gif" alt="Zen at work: a question typed, the answer's charts and forecast"></a>
-<p align="center"><sub>A question about a year of cafe sales, and the answer. <a href="docs/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="docs/demo.mp4">a real session, 80 s</a></sub></p>
+through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
 
 ## What it does
 
@@ -64,9 +62,11 @@ waits while it thinks cut out.
 <td><img src="docs/images/picture.png" alt="A picture"><br><sub><b>Pictures</b>, made in the chat</sub></td>
 <td><img src="docs/images/diagram.png" alt="A diagram"><br><sub><b>Diagrams</b>, drawn from Mermaid and kept readable in either theme</sub></td>
 </tr>
+<tr>
+<td><img src="docs/images/start.png" alt="A project's new chat"><br><sub><b>Start a chat</b> - suggestions from the project's own files</sub></td>
+<td><img src="docs/images/projects.png" alt="Projects"><br><sub><b>Projects</b> - each its own chats, files and notes</sub></td>
+</tr>
 </table>
-
-![Projects: each its own chats, files and notes](docs/images/projects.png)
 
 On a phone it has its own layout:
 
@@ -110,10 +110,10 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 1. Download `Zen-harness-1.0.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
    and unzip it anywhere (it needs no install: Python, its libraries and the browser tools are inside).
 2. Start the model on Kaggle (step 2 below, *On Kaggle*, point 1 only).
-3. Double-click **Zen.exe** and paste the address and password the notebook printed. Zen opens in a window of its
+3. Double-click **Zen-harness.exe** and paste the address and password the notebook printed. Zen opens in a window of its
    own; closing it stops Zen. Your projects stay in the folder's `data\`; other settings go in `settings.env`.
 
-The notebook prints a new address each time it starts: Zen.exe notices and asks again. To build the folder yourself:
+The notebook prints a new address each time it starts: Zen-harness.exe notices and asks again. To build the folder yourself:
 `.venv/Scripts/python.exe desktop/build.py --zip` (it copies this venv's Python and libraries - nothing is downloaded -
 and compiles [`desktop/Zen.cs`](desktop/Zen.cs) with the C# compiler every Windows has).
 
@@ -164,12 +164,21 @@ month look like? Show me a chart."*
 
 **Optional, recommended:**
 - *Search by meaning* - a llama.cpp build that knows EmbeddingGemma 2 and its two files (`embeddinggemma-2-Q8_0.gguf`
-  and its `mmproj`); set the three `ASSISTANT_EMBED_*` settings and the app starts it itself. Without them, search
-  uses a small CPU model (bge-small, downloaded once).
-- *A real browser* - Node and Microsoft Edge, with Playwright MCP in a folder of its own
-  (`npm install @playwright/mcp`) named by `ASSISTANT_PLAYWRIGHT_MCP`. It reads pages drawn by JavaScript, and it
-  tries the pages and games Zen writes before they are called ready.
-- *Pictures* - a key from enter.pollinations.ai as `POLLINATIONS_KEY`.
+  and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set the three `ASSISTANT_EMBED_*` settings and the app starts it
+  itself. Without them, search uses a small CPU model (bge-small, downloaded once).
+- *A real browser* - Node and Microsoft Edge, with [Playwright MCP](https://github.com/microsoft/playwright-mcp) in a
+  folder of its own (`npm install @playwright/mcp`) named by `ASSISTANT_PLAYWRIGHT_MCP`. It reads pages drawn by
+  JavaScript, and it tries the pages and games Zen writes before they are called ready.
+- *Pictures* - a key from [enter.pollinations.ai](https://enter.pollinations.ai) as `POLLINATIONS_KEY`.
+
+### The models, and where they come from
+
+| Model | What it does in Zen | Files, and where to get them |
+|---|---|---|
+| **Qwen 3.6 35B-A3B** (Unsloth's dynamic quant) | The assistant and its helpers; reads pictures | `Qwen3.6-35B-A3B-UD-Q4_K_S.gguf` and `mmproj-F16.gguf` from [unsloth/Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) - the Kaggle notebook downloads them itself |
+| **EmbeddingGemma 2** (optional) | Search by meaning across files, chats and pictures | `embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf` from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) |
+| **bge-small-en-v1.5** | Search by meaning without EmbeddingGemma (text only, CPU) | [Qdrant/bge-small-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q), downloaded once by fastembed |
+| **llama.cpp** | Serves both models | [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) - the notebook uses b11474's Linux CUDA build; EmbeddingGemma 2 needs b11515 or later |
 
 ## Settings
 
@@ -204,17 +213,28 @@ each phase's acceptance and 20 jobs (10 held out) - with their reports beside th
 
 ## Layout
 
-| Folder | What is there |
-|---|---|
-| `app/assistant/` | main's turn, its checks, the prompts, every tool's contract, the chat store; `workers/` - the helpers |
-| `app/tools/` | the tools, each a plain function; the project folder, the sandbox, the search index, the page check |
-| `app/rag/`, `app/providers/`, `app/api/` | document reading and embeddings; the model providers; the HTTP API |
-| `web/` | the chat page (no build step) |
-| `kaggle/` | the notebook that serves the model on Kaggle, and the bridge |
-| `desktop/` | the Windows app: `Zen.exe`'s source and the script that builds its folder and zip |
-| `tests/`, `bench/` | the tests; measurements on the real model |
-| `docs/` | architecture, the system map, the build history, screenshots |
-| `data/samples/` | small sample tables for trying it and for the tests |
+```
+Zen-harness/
+├── app/                    the server (FastAPI)
+│   ├── main.py             the app: the API and the page
+│   ├── assistant/          main's turn, its checks, the prompts, every tool's contract, the chat store
+│   │   └── workers/        the three helpers: their loop, finish contracts and result checks
+│   ├── tools/              the tools, each a plain function: data and charts, forecasts, the web, files,
+│   │                       the code sandbox, the browser page check, the project folder and its search index
+│   ├── rag/                reading documents, and the embedding model for search by meaning
+│   ├── providers/          the model behind both slots: llama.cpp (and clouds, for testing the harness)
+│   └── api/                the HTTP API the page talks to
+├── web/                    the chat page: plain HTML, CSS and JavaScript modules, no build step
+├── kaggle/                 the notebook that serves the model on Kaggle, and the bridge to it
+├── desktop/                the Windows app: Zen-harness.exe's source and the script that builds its zip
+├── tests/                  664 tests, no model needed
+├── bench/                  measurements on the real model, with their reports
+├── docs/                   architecture, the system map, the build history, screenshots and videos
+├── data/samples/           sample tables to try it on (data/ also holds your projects: git-ignored)
+└── examples/               every data tool run on public datasets, without a model
+```
+
+Settings live in `.env` (from `.env.example`, git-ignored); exact library versions in `requirements.lock`.
 
 ## Status
 
@@ -227,7 +247,7 @@ address). See [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md), section 5.
 
 - **Everything on Kaggle** - the app and its search model beside Qwen in the notebook, so a computer needs nothing
   installed.
-- **Connect by QR code** - the notebook shows a code; Zen.exe or a phone scans it instead of copying an address and
+- **Connect by QR code** - the notebook shows a code; Zen-harness.exe or a phone scans it instead of copying an address and
   a password.
 - **On a phone** - Zen already has a phone layout; with the app on Kaggle, a phone opens it from the QR code and adds
   it to its home screen.
