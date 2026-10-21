@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Text out of documents: PDF, Word (.docx), PowerPoint (.pptx), plain text and Markdown - the one
 reader for uploads, files(read) and web links to documents.
 

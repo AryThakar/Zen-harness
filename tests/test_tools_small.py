@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """agent.md, ask_user and draw_diagram - direct tests."""
 
 from __future__ import annotations

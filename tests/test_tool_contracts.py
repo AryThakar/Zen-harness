@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Every tool's contract, checked the same way for all - a tool added is checked with no test of its own.
 
 - a call missing a required field is refused, naming the field;

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """run_python - direct tests (each runs a real Python process)."""
 
 from __future__ import annotations
@@ -55,6 +56,18 @@ def test_open_figures_are_saved_once(ws):
     assert crashed.result.get("files", []) == [] and "ZeroDivisionError" in crashed.result["errors"]
     ended = run_python(ws, plot + "import sys\nsys.exit(0)", name="ends.py").result  # sys.exit(0) finished it
     assert [f["path"] for f in ended["files"]] == ["figure_1.png"]
+
+
+def test_matplotlib_builds_its_font_cache_once_and_its_notice_is_no_error(ws, tmp_path):
+    """Measured 2026-10-21: each run had its own font cache, built again (1-4 s); past 5 s on a busy machine,
+    matplotlib's notice on stderr made a finished chart read as an error."""
+    from app.tools.sandbox import MPL_CACHE, _env, own_errors
+    assert _env(tmp_path / "a", tmp_path / "a" / "tmp")["MPLCONFIGDIR"] == _env(tmp_path / "b", tmp_path / "b" / "tmp")["MPLCONFIGDIR"] == str(MPL_CACHE)
+    noise = "Matplotlib is building the font cache; this may take a moment.\n"
+    assert own_errors(noise, ws, tmp_path) == ""
+    assert own_errors(noise + "ValueError: bad\n", ws, tmp_path) == "ValueError: bad\n"
+    drawn = run_python(ws, "import matplotlib.pyplot as plt\nplt.plot([1, 2])\nplt.savefig('a.png')").result
+    assert "errors" not in drawn and any(MPL_CACHE.glob("fontlist*.json"))  # the shared cache, written there
 
 
 def test_a_missing_module_is_said_once_with_what_is_installed(ws):

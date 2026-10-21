@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Small documents of every kind search reads (Markdown, Word, PDF, text), built in memory for the tests."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The Groq provider, against a small fake of its OpenAI-compatible API (no network)."""
 
 import json

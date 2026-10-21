@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A provider that replays a script - for tests and for exercising the whole chat
 pipeline (graph, tools, streaming, UI) without calling a real model."""
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Does main solve a maths problem itself, or hand it away? The user's own maths questions, asked
 of the real model with main's real instructions and tools, a few runs each: the first tool it picks
 (analyze_or_code / research_web / calculate / none), its calculate calls, whether the answer shows steps

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Read CSV / Excel exports into a raw table of strings.
 
 Handles the junk real exports contain: title lines above the header, unknown

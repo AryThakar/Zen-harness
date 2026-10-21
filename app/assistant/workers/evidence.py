@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What a helper's tools returned (Trace) - the evidence its result is checked against - and the guards
 before a call runs. A guard either serves the model or protects the user: a repeat of a call that worked gets its
 earlier result back (nothing runs, nothing is refused); a call that already failed, or a page that couldn't be

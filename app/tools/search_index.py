@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """One search engine for the files (documents, code, charts, pictures, tables), past conversations and pages read:
 SQLite FTS5 + embeddings.
 

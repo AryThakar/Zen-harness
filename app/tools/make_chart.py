@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """make_chart: a chart computed from a table by code, ready for the UI to draw.
 
     line       x = a date (bucketed by time_unit) or number; y = a number combined by agg;

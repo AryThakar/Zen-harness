@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What every tool returns, and how tool errors become results instead of crashes.
 
 A tool result has two audiences. ``result`` is compact JSON for the model: the numbers it may

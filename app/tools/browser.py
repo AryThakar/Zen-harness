@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A real browser for the pages a plain read can't get - a page drawn by JavaScript, or one a site shows only
 to browsers - through Playwright MCP (Microsoft's MCP server for Playwright, Apache 2.0) and the official
 MCP Python SDK.

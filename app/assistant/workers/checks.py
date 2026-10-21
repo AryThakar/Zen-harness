@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The checks a helper's result must pass before main sees it: a web answer read from pages, cited by the pages'
 numbers, with its file links in downloads; knowledge sources really returned; every number in the engineer's
 answer from a tool result or a run. A check verifies; it never edits the result: a failed one names the problem

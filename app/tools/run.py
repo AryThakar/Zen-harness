@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """run: a helper runs a Python file of the workspace - in the workspace's folder, through the one engine
 (sandbox.ENGINE) - and the app keeps what it knows of the file's last run as its report: facts written by code
 (passed or failed, what it printed, what it made), so main and the next task know the file without its code.

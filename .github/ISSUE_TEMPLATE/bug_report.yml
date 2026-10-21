@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Zen harness does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't paste private files or chats. A description of what you asked, with any personal details
+        changed, is enough. "Worked for" under a reply shows the steps Zen took: a screenshot of it helps a lot.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you asked or did, what you expected, and what Zen did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Make a project and add sales.csv
+        2. Ask "what sells best?"
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The server's output around the problem
+      description: The terminal running uvicorn, or `data\logs\zen.log` in the Windows app's folder.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Release or commit
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you run it
+      options:
+        - The Windows app (Zen.exe)
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: The model and where it runs
+      placeholder: Qwen 3.6 35B-A3B on the Kaggle notebook / on my RTX 4090
+    validations:
+      required: true

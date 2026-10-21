@@ -95,7 +95,7 @@ consistent is a limit to record, not a prompt to bend (section 5).
   the folder; no key in any result a model reads.
 - `test_console.py`, `test_pins_snapshot.py`, `test_assistant_main.py` (the slot never overflows, the snapshot is
   never stored), `test_main_checks.py` (each check from a measured failure, and the replies it must leave alone),
-  and the tools' own tests - 663 in all, no model needed; one test (marked real_browser) opens pages in the
+  and the tools' own tests - 664 in all, no model needed; one test (marked real_browser) opens pages in the
   headless browser when it is installed.
 
 ## 5. Known limits (measured, recorded - not prompted around)
@@ -123,7 +123,9 @@ a limit both models show is the models' class, not one model:
   the analysis tools from scripts (REBUILD_PLAN section 7), not more wording.
 - **The sandbox is not a security boundary**: a separate process with an audit hook, for one user's own
   assistant; a native library that opens files on its own is not covered.
-- **A timing flake**: test_open_figures_are_saved_once failed once in a full run and passed the five runs since.
+- **A timing flake, found and fixed (2026-10-21)**: test_open_figures_are_saved_once failed only in busy full runs.
+  Each project's runs rebuilt matplotlib's font cache (1-4 s per new project); past 5 s matplotlib says so on
+  stderr, and the chart read as an error. The cache is now one for every project, and the notice is not an error.
 - **The model is remote**: Qwen 3.6 runs on a Kaggle notebook through a quick tunnel (kaggle/); a new session gets
   a new address (kaggle/bridge.env), and while it is down the page says so - nothing else can answer.
 - **The analyst can over-work a simple question** - five forecasts and three charts for "what sells best, and what

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What every model provider implements.
 
 Conversation history is kept in a small provider-neutral format (plain dicts, so

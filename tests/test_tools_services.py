@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """get_weather and generate_image against fake web services (httpx.MockTransport) - no network."""
 
 from __future__ import annotations

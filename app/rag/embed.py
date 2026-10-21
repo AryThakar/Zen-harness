@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Embeddings for semantic search.
 
 An Embedder turns passages and questions into L2-normalised float32 vectors, so

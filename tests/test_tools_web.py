@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """web_search (fake engine) and read_webpage (fake server and DNS) - no network."""
 
 from __future__ import annotations

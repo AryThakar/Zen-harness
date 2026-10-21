@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The store: workspaces, chats, messages, and what deleting each one removes."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """view_image: main looks at an image item and gets an answer to a question about it.
 
 The model can't read pixels from a file; this asks Gemma's own vision encoder (the projector loaded in

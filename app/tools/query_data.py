@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """query_data: exact numbers from the workspace tables with one read-only DuckDB query.
 
 Tables are queried by their file names (SELECT region, sum(amount) FROM "sales.csv" GROUP BY region - the

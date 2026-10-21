@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """draw_diagram: a Mermaid diagram (flowchart, sequence, class, state, ER, gantt, pie, mindmap,
 timeline) drawn by the UI.
 

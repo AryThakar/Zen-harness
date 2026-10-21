@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """view_image and the coder working with images - the vision model replaced by a recording stand-in."""
 
 from __future__ import annotations

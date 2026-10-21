@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """compare: is a difference, correlation, association or A/B result real, or could it be chance?
 
 The model says what kind of question it is; the code picks the test from the column types:

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """How much of main's prompt llama.cpp has to read again each turn: the old layout (workspace listing
 and pinned notes in the system prompt) against the new one (a static system prompt; the workspace
 and notes appended to the user's messages, app/assistant/context.py). The same 6-turn chat both

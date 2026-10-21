@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """recall: find what was said in earlier conversations.
 
 After every finished turn the agent calls remember_turn (not a model tool). A turn is indexed as

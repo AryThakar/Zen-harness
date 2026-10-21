@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The one reader: the text of a stored file or note, from a line on, with its report - for main
 (files(mode='read')) and the helpers (read_file) alike.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """find (files' mode) and recall over one SQLite FTS5 + embeddings index."""
 
 from __future__ import annotations

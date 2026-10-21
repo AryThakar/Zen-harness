@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """How does the main model use calculate? 20 everyday maths questions, asked of the real model with
 main's real instructions and tools; every expression it writes into calculate is recorded as it was
 written (notation, functions, one step or many), with whether it used the tool at all, handed the

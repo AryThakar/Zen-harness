@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant's web app: its API (app/api/assistant.py) and its chat page (web/index.html, with its
 styles, scripts, fonts and sound served from web/ under /static).
 

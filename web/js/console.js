@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The console: a Python file of the workspace running with the user at the keyboard (REBUILD_PLAN 2.12). What it
 // prints streams in as it is written; a line typed here goes to its input(). Started from the file - its card in the
 // chat or the file panel - it keeps to one block: a head (what runs, for how long, Stop or Run again), the session,

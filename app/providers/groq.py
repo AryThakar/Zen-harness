@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A model on Groq's cloud (its OpenAI-compatible chat API): BIZ_LLM_PROVIDER=groq, GROQ_API_KEY in .env,
 BIZ_GROQ_MODEL (default gpt-oss-120b). What every cloud shares is in cloud.py.
 

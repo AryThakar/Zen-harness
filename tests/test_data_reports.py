@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The report on a table: the analyst-programmer's finish on a task about a table is kept on it (the task as its
 title, its answer and caveats, the app's facts after), shown first in the next task on it; every number from a tool
 result. Driven by a scripted model."""

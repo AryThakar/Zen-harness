@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The viewer: a picture, a diagram, a chart or a video, full size over the chat (which blurs behind it). It grows
 // from where the thing sat; scroll zooms where the pointer is, drag moves it, a click zooms in and back,
 // a click beside it closes; x, Esc, or the download button at the top right. A video plays at 16:9 with its

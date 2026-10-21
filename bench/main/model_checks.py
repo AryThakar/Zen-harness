@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Were the main slot's failures the model, or the sampling it ran with? Each failure is replayed
 against the raw model - the same prompt and situation as when it happened, none of the code
 fixes in the way - N times under the sampling left from the earlier Qwen setup and N times under

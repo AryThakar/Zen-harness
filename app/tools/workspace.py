@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The workspace: one folder of real files, where a file's path is its one name - for the user (the file
 panel, an @ in the message box), main, every helper, a script (its working folder) and the search index.
 

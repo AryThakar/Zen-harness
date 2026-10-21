@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """forecast: the next periods of a value over time, with its trend and seasonal pattern, a range and an
 honest reliability check.
 

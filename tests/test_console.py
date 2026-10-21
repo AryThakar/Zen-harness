@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The console (app/tools/console.py): a workspace's Python program run with the user typing - its output streamed as
 it is written, typed lines to its input(), Stop and the limits, and the session kept in the file's report."""
 

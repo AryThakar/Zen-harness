@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """ask_user: a question for the user, shown in the UI with option buttons, a text box and Skip.
 
 The tool only builds the question; the agent pauses until the user answers, then the model gets

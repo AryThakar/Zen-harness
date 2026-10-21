@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Main's tools, asked of the real model through the real turn (app.assistant.main.send): the same
 instructions, tools, helpers and checks as in the app. Per case: every tool that ran, in order - main's
 own and its helpers' - with its input and status, and the reply; the case's check (bench/main/suites.py)

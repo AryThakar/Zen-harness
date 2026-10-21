@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The work behind a reply, in the reply's own order: each run of tool steps is a short list where it happened,
 // between the model's words (nothing moves later), with a helper's own steps inside its step and what they found
 // (search results, pages read, tables, code). The reply's head, on top, says how the turn is and for how long, and

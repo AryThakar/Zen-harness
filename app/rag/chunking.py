@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Split extracted blocks into passages for search.
 
 A passage is about TARGET_WORDS words, made of whole paragraphs where possible

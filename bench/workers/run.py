@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Run the worker benchmark against the local model (llama-server, worker slot 1, thinking on).
 
     python -m bench.workers.run dev            # or: holdout, all; optional role filter: dev data

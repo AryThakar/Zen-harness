@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """One helper task: the opening message, the step loop (guards, tools, pictures, the steps left), the finish call with
 its checks, and the result main gets - in one envelope, with the files the task made or changed and a table's report.
 

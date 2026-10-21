@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The cases bench/main/tool_probe.py asks the real model, by suite: one suite per tool of main's
 own, written from what users asked in real chats (and the readings a small model gets wrong).
 

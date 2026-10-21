@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The worker runner, registry and rolling window, driven by a scripted model (no LLM)."""
 
 from __future__ import annotations

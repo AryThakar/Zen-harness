@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A PDF in the file panel, drawn by PDF.js in Zen's own colours: its pages one under another on the panel's background
 // (the browser's own viewer brought its grey and its toolbar into the app), and a floating bar - the page, zoom, and the
 // pages' colours. In the dark theme the pages are dark too, following the app as it changes; the sun and moon switch

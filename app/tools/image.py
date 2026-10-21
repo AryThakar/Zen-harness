@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """generate_image: an image from a description, saved in the workspace and shown in the chat.
 
 Ported from the Zen Rust image tool (native_tools/image_generation.rs). The image comes from

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The MCP client (browser.McpServer) against a stand-in MCP server over stdio (tests/fake_mcp_server.py), and
 browser.page's reading of its answers - no Node, no browser, no network."""
 

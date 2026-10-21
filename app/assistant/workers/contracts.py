@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What each helper is, defined once: its result shape (what it hands main), its profile (instructions,
 tools, step limit, the check its result must pass) and how main and the user know it (Delegate).
 

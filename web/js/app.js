@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Zen's page: the intro, the theme, projects and their chats, the start screen, the message box, and a
 // reply as it streams (or as a saved chat replays through the same calls).
 

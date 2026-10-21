@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Finished documents: every chart is a chart file whose picture is drawn when a document needs it (chart_image.py),
 and Word and slide files are written from Markdown with those pictures in them (file_ops.py) - opened again with
 python-docx and python-pptx."""

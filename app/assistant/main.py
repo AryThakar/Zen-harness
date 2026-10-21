@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The main slot: talks with the user, does quick things itself and hands focused work to the workers.
 
 A turn is the user's message, then model steps and tool calls until the model answers. It runs as a

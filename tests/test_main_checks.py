@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """main's honesty checks (app/assistant/checks.py): the detectors on replies measured in the user's own
 test chat, and each check through a whole main turn with a scripted model."""
 

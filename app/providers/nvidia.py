@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A model on NVIDIA Build (build.nvidia.com, its OpenAI-compatible API): BIZ_LLM_PROVIDER=nvidia, NVIDIA_API_KEY in
 .env (a key from build.nvidia.com, nvapi-...), BIZ_NVIDIA_MODEL. What every cloud shares is in cloud.py. For testing
 the app's harness with a strong model: its free use is for development, about 40 requests a minute (2026-10-15:

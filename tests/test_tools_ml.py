@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Direct tests of predict and forecast - no model involved."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Trace the main slot end to end: a running server, real models on both slots, every streamed event
 in order with the second it arrived - what main did itself, what it handed to a worker, what the
 worker did, what was shown, the questions and the answers.

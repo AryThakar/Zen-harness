@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant's tools: plain functions with direct tests, no model involved.
 
 Every tool returns a ToolResult (core.py): a status, a compact result for the model and an optional

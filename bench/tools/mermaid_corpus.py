@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Every Mermaid diagram the model has written in the user's chats - draw_diagram calls and ```mermaid
 blocks in answers - before and after draw_diagram's mending, for checking against the real renderer.
 

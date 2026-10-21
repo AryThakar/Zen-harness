@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """main's honesty checks: what the system guarantees about main's own replies and calls, by code.
 
 Two kinds, as everywhere in the app: the guards before a call judge it, so they say why they stopped it and run

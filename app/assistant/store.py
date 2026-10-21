@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Workspaces, their chats and every chat's messages, in one SQLite file.
 
     workspaces  id, name, created_at, updated_at

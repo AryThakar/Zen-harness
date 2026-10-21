@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The trafilatura gate: does trafilatura read web pages better than today's extractor (web._html_text)?
 
 Pages: every distinct page the web helper read in the user's chats, read by the HTML extractor (pages read

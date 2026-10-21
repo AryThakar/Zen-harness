@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The acceptance test: whole jobs, the way the user works - several tools and helpers in a chain, through the
 real turn (app.assistant.main: the same prompts, tools, helpers and checks as the app), on the real models.
 

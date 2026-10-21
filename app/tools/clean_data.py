@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """clean_data: apply chosen cleaning steps to a table and save the result as a new table.
 
 Each step is a fixed, tested operation with parameters; nothing is guessed. The original table is

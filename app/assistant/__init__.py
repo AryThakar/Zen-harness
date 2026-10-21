@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant around the tools: the turn loop, the helpers, what each model call sees and the checks.
 
     main.py      main's turn (LangGraph: agent -> tools -> agent), streamed to the UI; asks and approvals

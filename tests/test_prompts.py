@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Each rule in one place (app/assistant/prompts.py): what one model reads - its role prompt, its tools'
 descriptions and their fields' descriptions - says no sentence twice."""
 

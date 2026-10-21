@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """predict: learn a column from the others, say how well that works and what drives it, and save the
 predictions as a new table.
 

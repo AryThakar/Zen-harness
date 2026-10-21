@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """files(): the one tool for the workspace's files - for main and for the helpers (who get find, read, write and
 edit): list, find, read, write, edit, rename, delete, download.
 

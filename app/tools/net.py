@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """HTTP for the tools that call web services: timeouts, a bounded retry on transient errors only
 (429, 408, 5xx, connection failures), and errors that say whether retrying could help.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A model on a cloud's OpenAI-compatible chat API: for testing the app with a model this laptop can't run.
 Two clouds use it - Google's Gemini API (gemini.py) and Groq (groq.py) - each a few settings on this class.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The console: a Python file of the workspace run with the user at the keyboard (REBUILD_PLAN 2.12). The program's
 output streams to the page as it is written, and each line the user types goes to its input() - a game, a menu, a quiz.
 

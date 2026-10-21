@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Charts: the analyst's chart artifacts, drawn in the answer itself (no boxes). One series takes the data
 // colour; groups take the series colours. Each chart can open larger in the viewer.
 

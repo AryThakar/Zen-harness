@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Builds the Windows folder Zen.exe runs from, and its zip - offline, from this computer:
 
     .venv/Scripts/python.exe desktop/build.py            (then dist/Zen-harness/Zen.exe)
@@ -11,6 +12,7 @@
                         with, nothing downloaded. The code sandbox runs its scripts with this Python too.
         zen/            app/, web/ and kaggle/ (the notebook and the bridge to it)
         samples/        the sample tables, to try Zen on
+        README.md, LICENSE, THIRD_PARTY_NOTICES.md
         tools/          node.exe and Playwright MCP: the browser Zen reads blocked pages with and tries its games in
                         (Edge itself is Windows' own)
 
@@ -117,7 +119,8 @@ def copy_code() -> None:
     for part in ("app", "web", "kaggle"):
         shutil.copytree(REPO / part, DIST / "zen" / part, ignore=ignore)
     shutil.copytree(REPO / "data" / "samples", DIST / "samples", ignore=ignore)
-    shutil.copy2(REPO / "README.md", DIST / "README.md")
+    for doc in ("README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+        shutil.copy2(REPO / doc, DIST / doc)
 
 
 def copy_tools() -> None:

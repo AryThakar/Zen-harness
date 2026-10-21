@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The server: its JSON calls, uploads with progress, and the server-sent events a turn streams.
 
 export const API = "/assistant";

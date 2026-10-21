@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Actions that wait for the user's permission (the user's rule), all asked through files()
 (file_ops.py): importing a data file from a link as a table, downloading one file from GitHub,
 deleting a workspace item, and replacing a file the user brought.

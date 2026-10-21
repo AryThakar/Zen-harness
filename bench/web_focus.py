@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Does focusing a long page by meaning find what words alone miss? Ten long pages, each with a question
 worded unlike the page and a fact the shown text must contain (written before either way was run, never
 tuned on). Each page is read once (live) and focused both ways: by words alone (web._focus, the app's),

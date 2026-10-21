@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Every tool the models can call: an input schema (pydantic -> JSON schema, the model sees the
 descriptions) and a handler. A call is validated against its schema before anything runs; a
 wrong argument comes back as an invalid_arguments result the model can fix.

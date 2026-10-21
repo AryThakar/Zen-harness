@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A stand-in for Playwright MCP over stdio, for tests: browser_navigate and browser_evaluate answer the way it
 does (a '### Page' block; a '### Result' JSON value), and one tool fails."""
 

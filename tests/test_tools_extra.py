@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """calculate, read_file, the workspace listing and the sandbox path() helper."""
 
 from __future__ import annotations

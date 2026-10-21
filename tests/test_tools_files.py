@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """files() - main's one tool for the workspace's files: list, find, read, write, delete, download."""
 
 from __future__ import annotations

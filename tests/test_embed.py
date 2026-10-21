@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Search by meaning with an embedding server: ServerEmbedder against a stand-in llama-server (its prompts,
 batches, pictures, failures), re-indexing when the model changes, each model's own cut-off, pictures in the
 index and the store keeping it current - and, when llama-server and EmbeddingGemma 2 are on this computer,

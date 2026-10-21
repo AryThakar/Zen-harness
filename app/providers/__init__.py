@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant's model providers: llama-server (both slots - main and the helpers), a cloud's model for testing
 the app with a stronger one (cloud.py: NVIDIA Build in nvidia.py, Google's Gemini API in gemini.py, Groq in groq.py), and a scripted model for
 tests."""

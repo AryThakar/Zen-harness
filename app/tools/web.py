@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """web_search and read_webpage: find pages, then read one, with the source for every fact.
 
 web_search  - titles, links and snippets from public search engines via the ddgs package (no key);

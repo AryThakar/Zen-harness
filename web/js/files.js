@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The project's files: the Files & data panel (everything in the project), the file panel beside the chat
 // (code like an editor, Markdown as a page, text, tables as a grid, HTML running in a sealed frame - a page or
 // game the coder made can be played - PDFs in the browser's viewer), the sandbox in it (a text file edited

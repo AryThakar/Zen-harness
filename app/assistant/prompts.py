@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The role prompts and the runner's nudges: every instruction a model reads that no single tool owns.
 
 The assistant's instructions are three layers, and each rule lives in exactly one of them

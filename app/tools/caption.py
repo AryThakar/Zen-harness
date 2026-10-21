@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A picture that arrives with a name that says nothing - a pasted image.png, IMG_1234.jpg, a screenshot - is named from a
 one-line caption the vision model writes, and the caption is kept on it, where find searches it (docs/history/REBUILD_PLAN.md
 2.1: eight uploads were all called image.png, and "which is the receipt?" had nothing to go on).

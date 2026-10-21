@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Direct tests of find_patterns - planted patterns are found, shuffled data gives none. No model involved."""
 
 from __future__ import annotations

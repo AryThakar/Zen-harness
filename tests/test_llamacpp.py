@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The llama.cpp provider, against a small fake llama-server (no model needed)."""
 
 import json

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A picture whose name says nothing (a pasted image.png) is named from a caption the vision model writes; the caption
 is kept and find searches it (caption.py)."""
 

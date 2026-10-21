@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Documents for search: extraction and chunking (app/rag); the ranking is the search index's
 (tests/test_tools_search.py)."""
 

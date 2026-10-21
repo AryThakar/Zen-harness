@@ -1,17 +1,36 @@
+<div align="center">
+
+<img src="docs/images/logo.png" width="84" alt="">
+
 # Zen harness
 
-**A personal assistant that gets real work out of an open model you run yourself.** Zen talks with you and hands
-focused work to three helpers - one for the web, one for your documents and earlier chats, and an analyst-programmer
-for your tables and programs - inside a **project**: one folder of real files. What must be right - facts, numbers,
-files, a game that actually starts - is checked by code before you see it, not left to the model.
+**A personal assistant that gets real work out of an open model you run yourself.**
+
+[![Release](https://img.shields.io/github/v/release/AryThakar/Zen-harness?color=6E56CF)](https://github.com/AryThakar/Zen-harness/releases/latest)
+[![CI](https://github.com/AryThakar/Zen-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/AryThakar/Zen-harness/actions/workflows/ci.yml)
+![Platform: Windows 10 | 11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)
+![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB)
+![Model: Qwen 3.6 35B-A3B](https://img.shields.io/badge/model-Qwen%203.6%2035B--A3B-8E7DF5)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
+
+[**Download for Windows**](https://github.com/AryThakar/Zen-harness/releases/latest) ·
+[Teaser, 30 s](docs/teaser.mp4) · [A real session](docs/demo.mp4) · [How it works](docs/ARCHITECTURE.md)
+
+</div>
+
+![Zen's start screen: a project's new chat, with suggestions from its files](docs/images/start.png)
+
+Zen talks with you and hands focused work to three helpers - one for the web, one for your documents and earlier
+chats, and an analyst-programmer for your tables and programs - inside a **project**: one folder of real files.
+What must be right - facts, numbers, files, a game that actually starts - is checked by code before you see it, not
+left to the model.
 
 It runs on **Qwen 3.6 35B-A3B** through llama.cpp: on your own GPU, or free on a Kaggle notebook's two T4s reached
-through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
+through a small bridge (the notebook is in [`kaggle/`](kaggle/)). Both videos are recorded on the real model, the
+waits while it thinks cut out.
 
-![Zen answering a question about a year of cafe sales, with a chart and a forecast](docs/images/data.png)
-
-**Videos:** [the 30-second teaser](docs/teaser.mp4) · [a real session](docs/demo.mp4) - recorded on the real model,
-the waits while it thinks cut out.
+<a href="docs/teaser.mp4"><img src="docs/images/teaser.gif" alt="Zen at work: a question typed, the answer's charts and forecast"></a>
+<p align="center"><sub>A question about a year of cafe sales, and the answer. <a href="docs/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="docs/demo.mp4">a real session, 80 s</a></sub></p>
 
 ## What it does
 
@@ -28,12 +47,26 @@ the waits while it thinks cut out.
 - **Make things** - Word documents and slides from Markdown with charts in them, pictures, diagrams.
 - **Ask before acting** - downloads, deleting and changing your own files wait for your click.
 
-| | |
-|---|---|
-| ![Web research with sources](docs/images/web.png) | ![A game made in the chat, as a card](docs/images/game.png) |
-| ![The game open in the file panel](docs/images/game-open.png) | ![A reply's work opened: the steps between its words](docs/images/steps.png) |
-| ![A picture](docs/images/picture.png) | ![A diagram](docs/images/diagram.png) |
-| ![The cafe answer: what sells best, and next month's forecast](docs/images/data-answer.png) | ![Projects, each its own chats, files and notes](docs/images/projects.png) |
+<table>
+<tr>
+<td width="50%"><img src="docs/images/data-answer.png" alt="The cafe answer"><br><sub><b>Ask your data</b> - a year of cafe sales: what sells best, and next month's revenue with its range</sub></td>
+<td width="50%"><img src="docs/images/data.png" alt="Charts and a forecast"><br><sub>The same answer's live charts and forecast, drawn from the file - every number from a tool</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/web.png" alt="Web research with sources"><br><sub><b>Research with sources</b> - it reads the pages, and cites only what it read</sub></td>
+<td><img src="docs/images/steps.png" alt="A reply's work opened"><br><sub><b>See how it was found</b> - every step and its result, folded away once the answer is done</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/game.png" alt="A game made in the chat"><br><sub><b>Build things that run</b> - a game, tried in a real browser before it's called ready</sub></td>
+<td><img src="docs/images/game-open.png" alt="The game open beside the chat"><br><sub>It opens from its card, beside the chat, and plays there</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/picture.png" alt="A picture"><br><sub><b>Pictures</b>, made in the chat</sub></td>
+<td><img src="docs/images/diagram.png" alt="A diagram"><br><sub><b>Diagrams</b>, drawn from Mermaid and kept readable in either theme</sub></td>
+</tr>
+</table>
+
+![Projects: each its own chats, files and notes](docs/images/projects.png)
 
 On a phone it has its own layout:
 
@@ -122,7 +155,7 @@ Slot 0 is the conversation, slot 1 the helpers; the app's prompt limit follows e
 ### 3. Start
 
 ```bash
-.venv/Scripts/uvicorn.exe app.main:app
+.venv/Scripts/python.exe -m uvicorn app.main:app
 ```
 
 Open http://localhost:8000, make a project, and ask - or start from
@@ -164,7 +197,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 .venv/Scripts/python.exe -m pytest
 ```
 
-660 tests, no model needed: the tools directly, the conversation and the helpers with scripted models, the API
+664 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
 through its client, and every tool's contract and description against its schema. With Playwright MCP installed,
 one test also opens pages in the real headless browser. Measurements on the real model are scripts in `bench/` -
 each phase's acceptance and 20 jobs (10 held out) - with their reports beside them.
@@ -178,6 +211,7 @@ each phase's acceptance and 20 jobs (10 held out) - with their reports beside th
 | `app/rag/`, `app/providers/`, `app/api/` | document reading and embeddings; the model providers; the HTTP API |
 | `web/` | the chat page (no build step) |
 | `kaggle/` | the notebook that serves the model on Kaggle, and the bridge |
+| `desktop/` | the Windows app: `Zen.exe`'s source and the script that builds its folder and zip |
 | `tests/`, `bench/` | the tests; measurements on the real model |
 | `docs/` | architecture, the system map, the build history, screenshots |
 | `data/samples/` | small sample tables for trying it and for the tests |
@@ -188,3 +222,25 @@ A working personal project, built and tested on Windows with one user. Known lim
 model can still over-work a simple question or skip a built tool for a script, the sandbox is a limit for your own
 assistant rather than a security boundary, and a Kaggle session ends after about 12 hours (a new one gets a new
 address). See [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md), section 5.
+
+## Roadmap
+
+- **Everything on Kaggle** - the app and its search model beside Qwen in the notebook, so a computer needs nothing
+  installed.
+- **Connect by QR code** - the notebook shows a code; Zen.exe or a phone scans it instead of copying an address and
+  a password.
+- **On a phone** - Zen already has a phone layout; with the app on Kaggle, a phone opens it from the QR code and adds
+  it to its home screen.
+
+## License
+
+Zen harness is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+- **Noncommercial use is free** - personal use, study, research, hobby projects, and use by charities, schools and
+  public bodies. Keep the license and the `Required Notice: Copyright 2026 AryThakar` line at the top of
+  [LICENSE](LICENSE) with any copy.
+- **Commercial use is not licensed.** To use Zen harness in a product, a paid service or other commercial work,
+  ask [AryThakar](https://github.com/AryThakar) for a commercial license.
+
+The model, llama.cpp and the libraries Zen harness uses are separate works under their own licenses: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

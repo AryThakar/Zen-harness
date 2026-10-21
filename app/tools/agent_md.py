@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """agent.md: the project's standing memory - one short Markdown file at the top of the workspace, always in view of
 main and every helper: the user's standing instructions, their preferences and facts about them and their work.
 

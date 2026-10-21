@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Questions and permissions, asked in the message box. While Zen waits on the user the box becomes the
 // question (it stays in view; what is typed is the answer), and once they decide it goes, leaving one
 // line in the chat. Esc only ever skips or cancels; a delete is given by a click only, never a key.

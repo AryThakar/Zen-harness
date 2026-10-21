@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# The model is not in the repository, so CI covers everything that does not need it: the tools, the contracts,
+# the checks and the store, with fixed inputs. Tests that need the headless browser skip themselves where there is
+# none. The real check of a change to what the model reads is a run on the model (CONTRIBUTING.md).
+jobs:
+  tests:
+    name: Tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install
+        run: python -m pip install -r requirements.lock -e .
+
+      - name: Test
+        run: python -m pytest -q

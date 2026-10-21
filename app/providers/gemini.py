@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A model on Google's Gemini API (its OpenAI-compatible chat API): BIZ_LLM_PROVIDER=gemini, GEMINI_API_KEY in
 .env (a key from aistudio.google.com), BIZ_GEMINI_MODEL (default gemini-3.5-flash). What every cloud shares is in
 cloud.py. For testing the app with a stronger model than the local one - the same harness, another model.

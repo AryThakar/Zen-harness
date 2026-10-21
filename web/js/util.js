@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Small shared pieces: building elements, icons, numbers and dates, Markdown with maths, code blocks,
 // dialogs and toasts.
 

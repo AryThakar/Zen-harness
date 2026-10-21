@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Trace real worker runs: every event in order, with timings - what the model was given, what it
 called, what each tool returned, the hints and checks, and the result handed to the main slot.
 

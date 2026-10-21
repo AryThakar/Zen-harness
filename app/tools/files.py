@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The files seen for search, and find: which files match a query - by their path and by what is in them.
 
 The index is the workspace's files seen for search - never a second copy. One sync (index_items) brings it

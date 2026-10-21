@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Run every data and ML tool on real public datasets, the way the assistant would - but with fixed
 arguments and no model, so what you see is exactly what the tools do.
 

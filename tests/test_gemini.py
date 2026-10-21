@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The Gemini provider, against a fake of its OpenAI-compatible API shaped like the real one's answers (read from
 the API on 2026-10-15; no network here)."""
 

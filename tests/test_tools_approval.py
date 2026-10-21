@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Actions that wait for the user's permission: import_table, download_file, delete_files - the request
 (nothing downloaded or deleted), the action once allowed, and the whole turn pausing for it."""
 

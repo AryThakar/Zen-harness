@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant's HTTP API end to end, with scripted models on both slots."""
 
 from __future__ import annotations

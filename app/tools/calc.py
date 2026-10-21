@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """calculate: exact maths, so the model never works numbers out in its head - arithmetic at once, and the rest
 (equations, derivatives, integrals, limits, sums, matrices) by SymPy.
 

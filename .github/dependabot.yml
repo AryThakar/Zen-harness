@@ -1,0 +1,22 @@
+# Monthly dependency update pull requests. CI runs on each one, so an update that breaks the tests shows up as a
+# failing pull request rather than on `main`.
+#
+# Major versions are not proposed: requirements.lock holds the versions the tests and the real model were run
+# with, and a major upgrade (pandas, numpy, the forecasting libraries) is a deliberate change, tried on the model.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

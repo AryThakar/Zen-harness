@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A program is a file: written with files, run with run, changed with files(edit), run again (each run is a real
 Python process). The file is the state - the next task goes on from it - and its report is the facts of its last run."""
 

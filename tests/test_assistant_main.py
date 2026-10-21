@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The main slot's turn, driven by scripted models on both slots (no LLM)."""
 
 from __future__ import annotations

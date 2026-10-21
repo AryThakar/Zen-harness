@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Direct tests of analyze_text with the word-hashing test embedder - no model involved. (Its quality with the
 real embedding model is measured in the module docstring.)"""
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Phase 4's acceptance on the real model (docs/history/REBUILD_PLAN.md, section 5): finding and memory, through the real turn -
 the same prompts, tools, helpers and checks as the app - each from a new store in a temporary folder.
 

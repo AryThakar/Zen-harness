@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The snapshot: what the files the user pinned to the chat, or pointed at with @, hold for the message being answered -
 retrieved fresh each turn and attached to that turn only (docs/history/REBUILD_PLAN.md 2.2).
 

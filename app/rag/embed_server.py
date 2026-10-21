@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The embedding server, run by the app: llama-server with --embeddings and the model's picture projector,
 started the first time search or indexing needs it and stopped when the app exits - one less thing to start
 by hand. It listens on this computer only (the host and port of ASSISTANT_EMBED_URL).

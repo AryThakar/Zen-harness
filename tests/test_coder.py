@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Programs: the analyst-programmer writes a program as a workspace file (files), runs it (run), changes it
 (files edit) and runs it again. The file is the state - the next task goes on from it, a Stop or a failed model loses
 nothing - and main gets the facts (what ran, the files made or changed, what the last run printed), never the code.

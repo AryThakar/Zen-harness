@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What kind of file a name is - one definition for every part of the app (uploads, downloads, links read, the
 file panel, files(), scripts' outputs, the reader, the search index).
 
@@ -36,16 +37,8 @@ def suffix(name: str) -> str:
     return PurePath(str(name).strip()).suffix.lower()
 
 
-def is_table(name: str) -> bool:
-    return suffix(name) in TABLE
-
-
 def is_document(name: str) -> bool:
     return suffix(name) in DOCUMENT
-
-
-def is_image(name: str) -> bool:
-    return suffix(name) in IMAGE
 
 
 def is_code(name: str) -> bool:

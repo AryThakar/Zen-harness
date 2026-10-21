@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Worker sub-agents: the second model slot doing one focused task with a narrow toolset.
 
 The main slot delegates with research_web / ask_knowledge / analyze_or_code. Each runs a worker profile - its

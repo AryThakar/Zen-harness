@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Bridge: makes llama-server on Kaggle look like a local one, so Zen runs unchanged.
 
 Listens where Zen expects its model (127.0.0.1:8080) and passes every request to the Kaggle notebook's

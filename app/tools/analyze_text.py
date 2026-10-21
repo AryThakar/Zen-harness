@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """analyze_text: what a text column is about - themes, the user's own labels, or the rows like a phrase.
 
     themes    texts grouped by meaning: local embeddings (the search index's model) and

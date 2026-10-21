@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """get_weather: local time, weather, UV and air quality for a place - now, or up to 7 days ahead.
 
 Ported from the Zen Rust environment tool (native_tools/environment.rs) and extended with a place

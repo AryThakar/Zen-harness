@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """The assistant's API: workspaces, chats, the conversation itself, uploads and what the UI shows.
 
     GET    /assistant/status                                  is the model server up; the assistant's and the user's names

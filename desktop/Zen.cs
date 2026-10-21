@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Zen.exe: starts Zen harness on this computer and opens it in a window of its own.
 //
 // The folder it sits in (desktop/build.py makes it):

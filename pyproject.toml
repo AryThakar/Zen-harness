@@ -7,6 +7,8 @@ name = "zen-harness"
 version = "1.0.0"
 description = "Zen harness: a personal assistant that gets real work out of an open model you run yourself - a main assistant with web, knowledge, data and coding helpers."
 readme = "README.md"
+license = { file = "LICENSE" }  # PolyForm Noncommercial 1.0.0
+authors = [{ name = "AryThakar" }]
 requires-python = ">=3.11"
 dependencies = [
     "charset-normalizer>=3.0",
@@ -36,6 +38,10 @@ dependencies = [
     "statsforecast>=2.0",
     "uvicorn>=0.30",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AryThakar/Zen-harness"
+Releases = "https://github.com/AryThakar/Zen-harness/releases"
 
 [project.optional-dependencies]
 # Libraries for the scripts the assistant runs (run_python): charts, maths, data, ML, files.

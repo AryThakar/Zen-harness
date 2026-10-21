@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Check and run SQL written by the AI (query_data).
 
 Defence in depth:

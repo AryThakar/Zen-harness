@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Time periods shared by make_chart and forecast: bucketing dates, and leaving out partial edges.
 
 A sum over a month that has only 10 days of data is not a 'drop'. For sums and counts, a first or

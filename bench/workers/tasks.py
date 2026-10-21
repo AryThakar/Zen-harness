@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Worker benchmark tasks: real data, real documents, live web; every answer checked by code.
 
 Each task belongs to the dev set (used while improving the workers) or the holdout set (run once,

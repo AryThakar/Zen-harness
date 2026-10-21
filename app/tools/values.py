@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Parse the messy values found in real exports - for any domain and locale.
 
 Every parser takes a Series of strings and returns the parsed values plus a

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """How long does the model think? Replays the user's real messages through main with thinking
 unlimited and counts each reply's thinking, to set the thinking budget from data, not a guess.
 

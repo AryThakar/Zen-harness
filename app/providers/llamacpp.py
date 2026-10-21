@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """A local model served by llama.cpp's ``llama-server`` (its OpenAI-compatible chat API).
 
     llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf --temp 1.0 --top-p 0.95 --top-k 20 --presence-penalty 1.5 ...

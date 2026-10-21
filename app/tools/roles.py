@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Column roles: what each column is for, read from its name and its values, the same for every tool.
 
     date      when a row happened                 forecast, unusual periods, recency in segments

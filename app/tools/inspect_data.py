@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """inspect_data: a first look at a table, and what could be cleaned.
 
 It reports and suggests; it never changes the data. Every suggestion is a ready clean_data step

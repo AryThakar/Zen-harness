@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Should web_search reorder its results by meaning? Measured on the user's own stored searches: a result
 is useful when the answer that followed cited its page. Compared: the engines' own order, meaning alone
 (the query against each result's title and snippet), and both fused by rank (RRF, as the search index does).

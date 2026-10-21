@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What a turn shows besides its text: tables, pictures, diagrams, weather, files, reports, code
 // runs and sources. They sit in the answer itself; the chart artifacts are in charts.js.
 

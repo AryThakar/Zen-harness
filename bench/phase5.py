@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Phase 5's acceptance on the real model (docs/history/REBUILD_PLAN.md, sections 3 and 5): after one pass over every tool
 description and prompt, does main route each kind of request where its tools say it goes?
 

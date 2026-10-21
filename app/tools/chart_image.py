@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Charts as files: a chart a tool made (make_chart, forecast, find_patterns' unusual periods) or a script made
 (chart() in the sandbox) is a chart file - charts/<its title>.chart.json, the data and how to draw it. The page
 draws it live (Chart.js: animated, values on hover); where a picture is needed - a Word document or a slide deck

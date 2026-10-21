@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Tool calls a Gemma 4 model wrote into its text instead of the tool-call channel, turned back
 into calls.
 

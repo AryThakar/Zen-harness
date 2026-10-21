@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """run_python: run a short Python script for what no other tool covers.
 
 The script runs in a separate Python process (the app's own interpreter, so the libraries in
@@ -38,6 +39,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -57,6 +59,11 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 IMAGES = (*IMAGE, ".svg")  # what counts as a figure the script saved itself (then open figures aren't saved again)
 CELL = "_cell.py"  # the set-up that runs the script
 SCRIPT = "script.py"  # the model's code (its tracebacks name this file)
+# matplotlib's font cache, one for every project: in each run's own folder it was built again for each new project,
+# 1-4 s - and over 5 s on a busy machine, when matplotlib says so on stderr and the run read as failed (a test that
+# failed only in full runs, 2026-10-21)
+MPL_CACHE = Path(tempfile.gettempdir()) / "zen-harness-matplotlib"
+MPL_NOTICE = re.compile(r"^Matplotlib is building the font cache; this may take a moment\.\r?\n?", re.M)
 
 PRELUDE = '''# --- added by run_python ---
 import json as _json, os as _os, sys as _sys, shutil as _shutil, datetime as _dt
@@ -70,8 +77,9 @@ _ZEN = _os.path.join(_WS, ".zen")
 def _norm(p):
     return _os.path.normcase(_os.path.realpath(p))
 _HERE = _norm(_os.getcwd())
-_WRITABLE = [_HERE, _norm(_os.environ.get("TEMP") or _os.getcwd())]  # the files, and the run's own temporary folder
-_READ = [_norm(p) for p in {{_WS, _os.getcwd(), _sys.prefix, _sys.base_prefix, _sys.exec_prefix,
+# the files, the run's own temporary folder, and matplotlib's font cache (one for every project: MPL_CACHE)
+_WRITABLE = [_HERE, _norm(_os.environ.get("TEMP") or _os.getcwd()), _norm({mpl!r})]
+_READ = [_norm(p) for p in {{_WS, _os.getcwd(), _sys.prefix, _sys.base_prefix, _sys.exec_prefix, {mpl!r},
                              _os.path.join(_os.environ.get("SystemRoot", r"C:\\Windows"), "Fonts")}}]
 _TRACKED = {{_norm(_os.path.join(_WS, f)): k for k, f in {tracked!r}.items()}}
 _PROTECTED = {{_norm(_os.path.join(_WS, f)) for f in {protected!r}}}
@@ -409,19 +417,22 @@ def _prepare(ws: Workspace, code: str, name: str | None, run_dir: Path) -> list[
     """Write the set-up (the audit hook and the helpers a script may call) and the code into run_dir; the command
     that runs them, in the workspace's folder with _env(run_dir, run_dir / "tmp")."""
     (run_dir / "tmp").mkdir(parents=True, exist_ok=True)
+    MPL_CACHE.mkdir(parents=True, exist_ok=True)
     tracked = {k: ws.entry(k)["file"] for k in ws.ids()}
     protected = [str(p.relative_to(ws.root)).replace("\\", "/") for p in ws.protected()]  # the user's files, agent.md
     script = str((run_dir / SCRIPT).resolve())
     (run_dir / CELL).write_text(PRELUDE.format(ws=str(ws.root.resolve()), script=script, name=name or script,
-                                               images=tuple(IMAGES), tracked=tracked, protected=protected),
+                                               images=tuple(IMAGES), tracked=tracked, protected=protected,
+                                               mpl=str(MPL_CACHE.resolve())),
                                 encoding="utf-8")
     (run_dir / SCRIPT).write_text(code, encoding="utf-8")
     return [sys.executable, "-I", "-X", "utf8", str((run_dir / CELL).resolve())]
 
 
 def own_errors(errors: str, ws: Workspace, run_dir: Path) -> str:
-    """A script's error output as the script's own: the set-up's frames and the folders' paths taken out."""
-    errors = OWN_FRAME.sub("", errors)
+    """A script's error output as the script's own: the set-up's frames and the folders' paths taken out - and
+    matplotlib's notice that it is building its font cache (a slow first build, not an error)."""
+    errors = OWN_FRAME.sub("", MPL_NOTICE.sub("", errors))
     return errors.replace(str(ws.files.resolve()) + os.sep, "").replace(str(run_dir.resolve()) + os.sep, "")
 
 
@@ -457,7 +468,7 @@ def _env(home: Path, tmp: Path) -> dict:
     """Only what Python needs - nothing from the app's environment (API keys, tokens) leaks in."""
     env = {"PATH": os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("SystemRoot", r"C:\Windows")]),
            "HOME": str(home), "USERPROFILE": str(home), "TEMP": str(tmp), "TMP": str(tmp), "TMPDIR": str(tmp),
-           "MPLBACKEND": "Agg", "MPLCONFIGDIR": str(tmp), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
+           "MPLBACKEND": "Agg", "MPLCONFIGDIR": str(MPL_CACHE), "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8",
            "PYTHONDONTWRITEBYTECODE": "1",  # no __pycache__ folders among the user's files
            # n_jobs=-1 (scikit-learn, joblib) runs in this process instead of starting worker programs.
            "JOBLIB_MULTIPROCESSING": "0"}

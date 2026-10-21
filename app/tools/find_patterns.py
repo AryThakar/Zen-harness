@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """find_patterns: groups of similar things, unusual values, and items that occur together.
 
     segments  group similar customers (or products, places, rows) by their numbers - k-means on

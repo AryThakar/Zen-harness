@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """What every model call gets without having to ask, and how long histories fit a slot.
 
 What the workspace holds (each file's path and size - never content) is built by code, so a small model

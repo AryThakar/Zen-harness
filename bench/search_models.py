@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Search by meaning: EmbeddingGemma 2 (llama-server) against bge-small (fastembed), on held-out questions
 about the user's own workspaces (data/assistant/eval/search_heldout.json - user data, not committed).
 

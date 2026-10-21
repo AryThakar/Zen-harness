@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Settings, read from environment variables - and from the project's .env file, so keys work
 however the app is started (from a terminal, an IDE or another tool), without system variables."""
 

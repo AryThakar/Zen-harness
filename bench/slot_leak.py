@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Does llama-server mix one conversation's output into another's? Two conversations, each with its own code word
 and topic, asked to write long answers - one after the other on one slot, both at once on one slot, and both at
 once on the two slots - and each answer checked for the other's word or topic.
