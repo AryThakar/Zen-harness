@@ -14,13 +14,13 @@
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
 
 [**Download for Windows**](https://github.com/AryThakar/Zen-harness/releases/latest) ·
-[Teaser, 30 s](docs/teaser.mp4) · [A real session](docs/demo.mp4) · [How it works](docs/ARCHITECTURE.md)
+[Teaser, 30 s](https://arythakar.github.io/Zen-harness/teaser.mp4) · [A real session](https://arythakar.github.io/Zen-harness/demo.mp4) · [How it works](docs/ARCHITECTURE.md)
 
 </div>
 
-<a href="docs/teaser.mp4"><img src="docs/images/teaser.gif" width="860" alt="Zen at work: a question typed on the start screen, the answer's table, charts and forecast, a web answer with its source, a game played beside the chat"></a>
+<a href="https://arythakar.github.io/Zen-harness/teaser.mp4"><img src="docs/images/teaser.gif" width="860" alt="Zen at work: a question typed on the start screen, the answer's table, charts and forecast, a web answer with its source, a game played beside the chat"></a>
 
-<p align="center"><sub>Recorded on the real model, the waits while it thinks cut out. <a href="docs/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="docs/demo.mp4">a real session, 80 s</a></sub></p>
+<p align="center"><sub>Recorded on the real model, the waits while it thinks cut out. <a href="https://arythakar.github.io/Zen-harness/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="https://arythakar.github.io/Zen-harness/demo.mp4">a real session, 80 s</a></sub></p>
 
 Zen talks with you and hands focused work to three helpers - one for the web, one for your documents and earlier
 chats, and an analyst-programmer for your tables and programs - inside a **project**: one folder of real files.
