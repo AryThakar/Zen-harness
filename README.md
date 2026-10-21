@@ -18,9 +18,9 @@
 
 </div>
 
-<a href="https://arythakar.github.io/Zen-harness/teaser.mp4"><img src="docs/images/teaser.gif" width="860" alt="Zen at work: a question typed on the start screen, the answer's table, charts and forecast, a web answer with its source, a game played beside the chat"></a>
+<a href="https://arythakar.github.io/Zen-harness/teaser.mp4"><img src="docs/images/teaser.webp" width="860" alt="Zen at work: a project opened, a sales file attached and asked about, its charts and forecast, a web answer with its source, a game it built being played, a picture and a diagram"></a>
 
-<p align="center"><sub>Recorded on the real model, the waits while it thinks cut out. <a href="https://arythakar.github.io/Zen-harness/teaser.mp4">The whole teaser, 30 s with sound</a> · <a href="https://arythakar.github.io/Zen-harness/demo.mp4">a real session, 80 s</a></sub></p>
+<p align="center"><sub>Recorded live on the real model; the waits while it thinks are sped up. <a href="https://arythakar.github.io/Zen-harness/teaser.mp4">The whole teaser, 40 s with sound</a> · <a href="https://arythakar.github.io/Zen-harness/demo.mp4">a real session, 80 s</a></sub></p>
 
 Zen talks with you and hands focused work to three helpers - one for the web, one for your documents and earlier
 chats, and an analyst-programmer for your tables and programs - inside a **project**: one folder of real files.
@@ -55,8 +55,8 @@ through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
 <td><img src="docs/images/steps.png" alt="A reply's work opened"><br><sub><b>See how it was found</b> - every step and its result, folded away once the answer is done</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/game.png" alt="A game made in the chat"><br><sub><b>Build things that run</b> - a game, tried in a real browser before it's called ready</sub></td>
-<td><img src="docs/images/game-open.png" alt="The game open beside the chat"><br><sub>It opens from its card, beside the chat, and plays there</sub></td>
+<td><img src="docs/images/game.png" alt="A neon Breakout game made in the chat, as a card"><br><sub><b>Build things that run</b> - a game, tried in a real browser before it's called ready</sub></td>
+<td><img src="docs/images/game-open.png" alt="The Breakout game being played full width"><br><sub>It opens from its card and plays right there - this one, Zen's first try</sub></td>
 </tr>
 <tr>
 <td><img src="docs/images/picture.png" alt="A picture"><br><sub><b>Pictures</b>, made in the chat</sub></td>
