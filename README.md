@@ -146,7 +146,7 @@ projector:
 
 ```bash
 llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf --mmproj mmproj-F16.gguf -c 131072 -np 2 --no-kv-unified \
-  -fa on -ctk q8_0 -ctv q8_0 --reasoning-format deepseek --temp 1.0 --top-p 0.95 --top-k 20 --presence-penalty 1.5 \
+  -fa on -ctk q8_0 -ctv q8_0 --reasoning-format deepseek --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 1.5 \
   --host 127.0.0.1 --port 8080
 ```
 
