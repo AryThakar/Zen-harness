@@ -1,4 +1,4 @@
-"""Phase 2's acceptance on the real model (docs/REBUILD_PLAN.md, section 5): the jobs that failed in the user's chat
+"""Phase 2's acceptance on the real model (docs/history/REBUILD_PLAN.md, section 5): the jobs that failed in the user's chat
 of 2026-10-10, run through the real turn - the same prompts, tools, helpers and checks as the app - each from a new
 store in a temporary folder, never the user's data.
 

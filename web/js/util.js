@@ -203,11 +203,17 @@ const PROJECT_FILES = { renderer: { image({ href, text }) {
   try { path = decodeURI(href); } catch {}
   return `<img data-item="${escapeHtml(path)}" alt="${escapeHtml(text || "")}">`;
 } } };
+// ~~struck~~ only with two tildes: one is "about" in a reply (measured 2026-10-21: "the most (~1,455/day), while
+// Thursdays are slowest (~1,160/day)" came out struck through between the two). No match is no strike (no fallback).
+const STRIKE = { tokenizer: { del(src) {
+  const m = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?!~)/.exec(src);
+  if (m) return { type: "del", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+} } };
 let mathOn = false, filesOn = false;
 export function markdown(text) {
   if (window.marked && window.DOMPurify) {
     if (window.katex && !mathOn) { marked.use(MATH); mathOn = true; }
-    if (!filesOn) { marked.use(PROJECT_FILES); filesOn = true; }
+    if (!filesOn) { marked.use(PROJECT_FILES, STRIKE); filesOn = true; }
     return DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }));
   }
   return escapeHtml(text).replace(/\n/g, "<br>");

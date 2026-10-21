@@ -345,6 +345,11 @@ def test_a_currency_the_data_never_gives_is_sent_back():
     given = [{"role": "user", "text": "prices are in ₹"}, *worked]
     assert added_currency("Coffee leads with ₹209,225.", given, []) is None  # the user named it
     assert added_currency("An iPhone costs about $999.", [{"role": "user", "text": "iphone price?"}], []) is None  # no data
+    # the helper kept its "$" after its own check sent it back: its answer, warned about, proves nothing (2026-10-21)
+    warned = [{"role": "user", "text": "what sells best?"},
+              {"role": "tool", "name": "analyze_or_code", "content": '{"answer": "Coffee: $209,224.80", "warnings": '
+               '["$ is on your numbers, but the data has no currency: write them without it"]}'}]
+    assert added_currency("Coffee leads with $209,225.", warned, []) == "$"
 
 
 def test_numbers_in_a_chat_without_a_helper_are_mains_own():

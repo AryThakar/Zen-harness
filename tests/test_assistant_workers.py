@@ -548,6 +548,25 @@ def test_a_question_without_an_answer_is_accepted_first_time(ctx):
     assert out["question_for_user"] == "Day first or month first?" and len(model.requests) == 1
 
 
+def test_an_answer_with_a_question_beside_it_is_sent_back(ctx, monkeypatch):
+    """Measured 2026-10-21: the web helper found and cited the answer, then asked "Would you like more details?" - the
+    question paused the turn and the user never saw the answer."""
+    page = {"url": "https://www.nobelprize.org/prizes/physics/2026/press-release/", "title": "Press release",
+            "text": "The Nobel Prize in Physics 2026 was awarded to Francis Halzen."}
+    monkeypatch.setitem(registry.TOOLS, "read_webpage", Tool("read_webpage", "r", registry.ReadPageIn,
+                                                             lambda c, a: ok(dict(page))))
+    model = ScriptedProvider([
+        tools_turn(call("read_webpage", url=page["url"])),
+        submit(answer="Francis Halzen won it.", sources=[page["url"]],
+               question_for_user="Would you like more details on how IceCube works?"),
+        submit(answer="Francis Halzen won it.", sources=[page["url"]], suggestion="How IceCube works, if wanted."),
+    ])
+    out = run_worker(model, PROFILES["web"], "Who won the Nobel Prize in Physics this year?", ctx)
+    sent_back = model.requests[2]["messages"][-1]["content"]
+    assert "you gave an answer and a question_for_user" in sent_back
+    assert out["answer"] == "Francis Halzen won it." and "question_for_user" not in out
+
+
 def test_a_table_is_inspected_before_anything_is_computed_on_it(ctx):
     ctx.ws.add_table(pd.DataFrame({"pizza": ["a", "b", "Total"], "quantity": [2, 3, 5]}), name="sales.csv")
     model = ScriptedProvider([tools_turn(call("query_data", sql="SELECT count(*) FROM data_1")),

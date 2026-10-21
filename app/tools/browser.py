@@ -231,8 +231,10 @@ CLICK_THROUGH = """async () => {
   // over before it began: 'Game Over' on show (in the page, or drawn on its canvas in the page) before any key or click
   // (measured 2026-10-17: a snake that didn't move yet ran into itself on its first step - Game Over, score 0, at once).
   // On show is what a person would see: no ancestor hidden or see-through, on screen, on top (measured the same night:
-  // 2048's overlay, opacity 0 on its parent, was taken for shown - and Zen chased a bug that wasn't there for 8 minutes)
-  const OVER = /\\b(game over|you (lose|lost|died)|crashed)\\b/i;
+  // 2048's overlay, opacity 0 on its parent, was taken for shown - and Zen chased a bug that wasn't there for 8 minutes).
+  // The words lead the text: an instruction that mentions them ("Any key after game over to restart") says nothing
+  // (measured 2026-10-21: it was quoted as the game over, and Zen rewrote a working draw loop four times)
+  const OVER = /^\\W*(game over|you (lose|lost|died)|crashed)\\b/i;
   const visible = e => {
     if (e.checkVisibility && !e.checkVisibility({opacityProperty: true, visibilityProperty: true})) return false;
     let opacity = 1;
@@ -242,8 +244,14 @@ CLICK_THROUGH = """async () => {
     const top = document.elementFromPoint(Math.min(innerWidth - 1, Math.max(0, r.left + r.width / 2)), Math.min(innerHeight - 1, Math.max(0, r.top + r.height / 2)));
     return !!top && (e.contains(top) || top.contains(e));
   };
-  const shown = [...document.querySelectorAll('body *')].filter(e => e.children.length === 0 && OVER.test(e.textContent || '') && visible(e));
-  const overAtStart = (shown[0] && shown[0].textContent.trim().slice(0, 40)) || window.__said.find(t => OVER.test(t)) || null;
+  const over = () => {
+    const shown = [...document.querySelectorAll('body *')].filter(e => e.children.length === 0 && OVER.test((e.textContent || '').trim()) && visible(e));
+    return (shown[0] && shown[0].textContent.trim().slice(0, 40)) || window.__said.find(t => OVER.test(t.trim())) || null;
+  };
+  // and again three seconds in, still untouched: a snake that sets off at once is in the wall by then, before a person
+  // has found the keys (measured 2026-10-21: four snakes out of four did, and the check, a second in, saw one)
+  let overAtStart = over();
+  if (!overAtStart) { await wait(2500); overAtStart = over(); }
   const keys = ['Enter', ' ', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'w', 'a', 'd'];
   for (let round = 0; round < 2 && !window.__errs.length && Date.now() < end; round++) {
     const targets = [...document.querySelectorAll('button, input[type=button], input[type=submit], [onclick], [role=button], '

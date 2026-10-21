@@ -53,7 +53,7 @@ from .prompts import (ANNOUNCE_NUDGE, BROKEN_CODE_NUDGE, BROKEN_NUDGE, CLAIM_NUD
                       NUMBERS_NUDGE, REMEMBER_NUDGE)
 from .registry import CONFIRMABLE, split_confirm
 from .workers import DELEGATES, _call_key, numbers_in, ungrounded_numbers
-from .workers.checks import JSON_BREAKS, MONEY
+from .workers.checks import JSON_BREAKS, MONEY, NO_CURRENCY
 
 INVENTED_MIN = 3  # numbers no one gave, in one helper task, before it is refused
 PICTURES_PER_TURN = 1  # generate_image calls in one turn before another is refused (unless main confirms)
@@ -329,7 +329,10 @@ def added_currency(text: str, turn: list[dict], history: list[dict]) -> str | No
     "$16,839" and "$36,422" (the prompt's rule against it was not enough)."""
     if not any(m["role"] == "tool" and m.get("name") in DATA_HELPERS and not m.get("is_error") for m in turn):
         return None
-    evidence = "".join(str(m.get("content") or m.get("text") or "") for m in history + turn if m["role"] in ("tool", "user"))
+    # a helper's answer its own check warned about (its sign is on no data) is no evidence: measured 2026-10-21, the
+    # analyst kept "$40,060" after being sent back once, and main copied it - the answer itself "proved" the sign
+    evidence = "".join(str(m.get("content") or m.get("text") or "") for m in history + turn
+                       if m["role"] == "user" or m["role"] == "tool" and NO_CURRENCY not in str(m.get("content") or ""))
     return next((sign for sign in dict.fromkeys(MONEY.findall(text)) if sign not in evidence), None)
 
 

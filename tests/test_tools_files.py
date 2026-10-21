@@ -252,7 +252,8 @@ def test_a_page_that_fails_when_used_comes_back_broken(ws, index, monkeypatch):
     monkeypatch.setattr(browser, "try_page", lambda html, shot=None: {"errors": [], "clicked": [], "flat": [],
                                                                       "over_at_start": "Game Over"})
     over = files(ws, index, "write", name="snake.html", content="<canvas></canvas>")
-    assert over.result["broken"].startswith("snake.html shows 'Game Over' as it opens, before any key or click")
+    assert over.result["broken"].startswith("snake.html shows 'Game Over' within three seconds of opening, before any "
+                                            "key or click")
 
 
 @pytest.mark.real_browser
@@ -281,3 +282,12 @@ def test_the_real_browser_catches_what_only_using_the_page_shows():
     # measured: 2048's overlay waits with opacity 0 on its parent - taken for shown, Zen chased it for 8 minutes
     waiting = "<div style='opacity:0; pointer-events:none'><h2>Game Over!</h2></div><button>New game</button>"
     assert browser.try_page(waiting)["over_at_start"] is None
+    # measured 2026-10-21: the instructions under a snake that waits for its first key were quoted as its game over
+    told = "<canvas width=300 height=200></canvas><div>Arrow keys to move · Any key after game over to restart</div>"
+    assert browser.try_page(told)["over_at_start"] is None
+    # measured the same day: a snake that sets off at once is in the wall a second or two later, untouched
+    runs = ("<canvas id=c width=300 height=200></canvas><script>const x = c.getContext('2d'); let s = 0;"
+            "const t = setInterval(() => { x.fillRect(s++ * 10, 90, 9, 9);"
+            " if (s > 15) { clearInterval(t); x.fillText('Game Over', 100, 100) } }, 100)</script>")
+    assert browser.try_page(runs)["over_at_start"] == "Game Over"
+    assert browser.try_page("<h2>GAME OVER - score 0</h2>")["over_at_start"] == "GAME OVER - score 0"

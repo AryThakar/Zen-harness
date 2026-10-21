@@ -144,9 +144,11 @@ function showProjects() {
       h("div", { class: "p-top" }, h("span", { class: "tile", style: `--hue: ${projectHue(w.id)}` }, initial(w.name)), more),
       h("div", { class: "p-name", title: w.name }, w.name), stats, last,
       h("div", { class: "p-used" }, cap(used(w.updated_at))));
-    // what's inside: its files and its latest chat, filled in once they arrive
+    // what's inside: its files and its latest chat, filled in once they arrive (its own notes, agent.md, aren't counted:
+    // a new project read "1 file")
     Promise.all([api(`/workspaces/${w.id}/items`).catch(() => null), api(`/workspaces/${w.id}/chats`).catch(() => null)]).then(([items, chats]) => {
-      if (items) stats.textContent = [w.chats ? plural(w.chats, "chat") : "No chats yet", items.length ? plural(items.length, "file") : ""].filter(Boolean).join(" · ");
+      const files = items?.filter(i => !i.memory).length;
+      if (items) stats.textContent = [w.chats ? plural(w.chats, "chat") : "No chats yet", files ? plural(files, "file") : ""].filter(Boolean).join(" · ");
       if (chats?.length) last.replaceChildren(h("span", { html: svg("chat") }), h("span", { class: "t" }, chats[0].title));
     });
     return el;

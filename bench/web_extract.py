@@ -5,7 +5,7 @@ through an API route - GitHub, YouTube, MediaWiki - never reach it and are left 
 once (live) and both extractors read the same HTML. trafilatura runs with its defaults, Markdown out, tables
 kept (the plan's fast path).
 
-Measured, with the rule fixed before running (docs/SYSTEM_PLAN.md, 13.1 gates):
+Measured, with the rule fixed before running (docs/history/SYSTEM_PLAN.md, 13.1 gates):
   failures   pages where one gives under 20 words and the other 100 or more
   facts      numbers the helper's answers took from the page (the sentence that cites it), found in each
              output - counted only where one of the two has them, so they really are on the page

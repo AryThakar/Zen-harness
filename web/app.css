@@ -934,7 +934,8 @@ body.empty .jump { opacity: 0; pointer-events: none; }  /* nothing to jump to on
 :root[data-theme="light"] .composer:focus-within { box-shadow: 0 0 0 1px rgba(0,0,0,.16), 0 8px 24px rgba(0,0,0,.07); }
 
 /* ---------------------------------------------------------------- the intro (from Zen's own client) */
-.intro { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+/* above every layer while it plays: the projects page (25) came up over it a second in, and cut it short */
+.intro { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
   padding: 24px; background: #000; color: #f5f5f7;
   opacity: 0; visibility: hidden; pointer-events: none; animation: intro-veil 2.9s cubic-bezier(.25, .1, .25, 1) backwards; }
 @keyframes intro-veil { 0%, 83% { opacity: 1; visibility: visible; pointer-events: auto; }

@@ -319,7 +319,13 @@ fixed what the harness did wrong, not what the model could be talked out of:
   the PDF viewer; phone layouts; a stopped turn that leaves nothing live; one card per file per reply.
 - **Pages and games.** Checked in a real browser before "ready" (section 10), which caught a Start button calling a
   missing function, a white board, and a snake that ended the game on its first step; a hidden "Game Over" overlay
-  is not mistaken for a shown one (it once cost 8 minutes of chasing a bug that wasn't there).
+  is not mistaken for a shown one (it once cost 8 minutes of chasing a bug that wasn't there), nor is an instruction
+  that mentions it ("Any key after game over to restart" - four rewrites of a working game, once).
+- **Answers that reach the user.** A helper either answers or asks: an answer with a follow-up question beside it is
+  sent back (the question paused the turn and hid the answer); a currency the data never gives is caught in main's
+  reply even when a helper's answer carried it; a "~" before a number means "about", not a strikethrough; a diagram
+  box the model fills with a light colour gets dark words (the dark theme's white ones vanished on it).
+- **The intro** plays over everything: the projects page came up over it a second in and cut it short.
 - **Helpers.** The web helper finishes once each asked thing has a good source (a song's link took 6 minutes of
   music sites before); a helper whose answer is sent back on its last step gets one step more to fix it (it once
   lost the answer, and main ran the task twice more); a chart file given as data says it is a chart, not a table.

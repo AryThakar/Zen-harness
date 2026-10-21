@@ -292,9 +292,11 @@ def written_code(name: str, content: str, shot: Path | None = None) -> dict:
             return {**out, "broken": f"{name} fails when used: {tried['errors'][0]} (tried in a browser: after "
                                      f"'{last}'). Fix it with files(mode='edit') before saying it works."}
         if tried.get("over_at_start"):  # measured: a snake that ran into itself on its first step, at once
-            return {**out, "broken": f"{name} shows '{tried['over_at_start']}' as it opens, before any key or click: the "
-                                     "game ends by itself at the start (a snake that doesn't move yet runs into itself, a "
-                                     "timer already at zero). Fix it with files(mode='edit') before saying it works."}
+            return {**out, "broken": f"{name} shows '{tried['over_at_start']}' within three seconds of opening, before "
+                                     "any key or click: the game ends by itself before the player can start (a snake "
+                                     "that moves at once hits the wall before a key is pressed, one that doesn't move "
+                                     "yet runs into itself, a timer already at zero). Fix it with files(mode='edit') "
+                                     "before saying it works."}
         if tried.get("flat"):  # measured: a racing game whose Start button stayed hidden - a white board, three fixes
             return {**out, "broken": f"{name} opens without errors, but its canvas ({tried['flat'][0]}) still shows one "
                                      "flat colour after its controls were clicked and the arrow keys, space and Enter "

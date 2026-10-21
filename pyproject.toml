@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zen-assistant"
-version = "0.6.0"
-description = "Zen: a personal AI workbench on a local model - a main assistant with web, knowledge, data and coding helpers."
+name = "zen-harness"
+version = "1.0.0"
+description = "Zen harness: a personal assistant that gets real work out of an open model you run yourself - a main assistant with web, knowledge, data and coding helpers."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -39,11 +39,11 @@ dependencies = [
 
 [project.optional-dependencies]
 # Libraries for the scripts the assistant runs (run_python): charts, maths, data, ML, files.
-sandbox = ["beautifulsoup4>=4.12", "imbalanced-learn>=0.12", "lightgbm>=4.0", "networkx>=3.0",
+sandbox = ["beautifulsoup4>=4.12", "imbalanced-learn>=0.12", "jinja2>=3.1", "lightgbm>=4.0", "networkx>=3.0",
            "nltk>=3.8", "opencv-python-headless>=4.8", "polars>=1.0", "scikit-image>=0.22",
            "seaborn>=0.13", "statsmodels>=0.14", "sympy>=1.12", "tabulate>=0.9", "xgboost>=2.0", "xlrd>=2.0",
            "xlsxwriter>=3.1"]
-dev = ["zen-assistant[sandbox]", "httpx2>=2.0", "pytest>=8"]
+dev = ["zen-harness[sandbox]", "httpx2>=2.0", "pytest>=8"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

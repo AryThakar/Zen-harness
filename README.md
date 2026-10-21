@@ -10,7 +10,8 @@ through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
 
 ![Zen answering a question about a year of cafe sales, with a chart and a forecast](docs/images/data.png)
 
-**Demo video:** [docs/demo.mp4](docs/demo.mp4) - one session from start to finish, recorded on the real model.
+**Videos:** [the 30-second teaser](docs/teaser.mp4) · [a real session](docs/demo.mp4) - recorded on the real model,
+the waits while it thinks cut out.
 
 ## What it does
 
@@ -32,6 +33,7 @@ through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
 | ![Web research with sources](docs/images/web.png) | ![A game made in the chat, as a card](docs/images/game.png) |
 | ![The game open in the file panel](docs/images/game-open.png) | ![A reply's work opened: the steps between its words](docs/images/steps.png) |
 | ![A picture](docs/images/picture.png) | ![A diagram](docs/images/diagram.png) |
+| ![The cafe answer: what sells best, and next month's forecast](docs/images/data-answer.png) | ![Projects, each its own chats, files and notes](docs/images/projects.png) |
 
 On a phone it has its own layout:
 
@@ -70,7 +72,19 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 
 ## Run it
 
-### 1. The app
+### The Windows app - the quickest way
+
+1. Download `Zen-harness-1.0.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
+   and unzip it anywhere (it needs no install: Python, its libraries and the browser tools are inside).
+2. Start the model on Kaggle (step 2 below, *On Kaggle*, point 1 only).
+3. Double-click **Zen.exe** and paste the address and password the notebook printed. Zen opens in a window of its
+   own; closing it stops Zen. Your projects stay in the folder's `data\`; other settings go in `settings.env`.
+
+The notebook prints a new address each time it starts: Zen.exe notices and asks again. To build the folder yourself:
+`.venv/Scripts/python.exe desktop/build.py --zip` (it copies this venv's Python and libraries - nothing is downloaded -
+and compiles [`desktop/Zen.cs`](desktop/Zen.cs) with the C# compiler every Windows has).
+
+### 1. The app (from source)
 
 Python 3.11 or later (tested on 3.13), on Windows:
 

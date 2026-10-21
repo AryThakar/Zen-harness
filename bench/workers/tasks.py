@@ -21,7 +21,7 @@ from app.tools.files import add_document
 from app.tools.memory import remember_turn
 from app.tools.notes import save_note
 
-DATA = Path(os.environ.get("WORKER_BENCH_DATA", r"C:\zen-data\analyst\bench\data\locked"))
+DATA = Path(os.environ.get("WORKER_BENCH_DATA", Path(__file__).resolve().parents[1] / "data" / "locked"))
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 

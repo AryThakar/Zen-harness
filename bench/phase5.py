@@ -1,4 +1,4 @@
-"""Phase 5's acceptance on the real model (docs/REBUILD_PLAN.md, sections 3 and 5): after one pass over every tool
+"""Phase 5's acceptance on the real model (docs/history/REBUILD_PLAN.md, sections 3 and 5): after one pass over every tool
 description and prompt, does main route each kind of request where its tools say it goes?
 
     maths       -> calculate (main, no helper)

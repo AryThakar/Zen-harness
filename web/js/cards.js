@@ -81,6 +81,7 @@ async function drawMermaid(box, code, failed) {
     await mermaid.parse(code);  // first: a failed render leaves Mermaid's error picture in the page
     const { svg: drawing } = await mermaid.render(`mmd-${++seq}`, code);
     box.innerHTML = drawing;  // strict mode sanitises it
+    readableNodes(box);
     if (!diagrams.some(d => d.box === box)) diagrams.push({ box, code });
     drawnLate();
   } catch (e) {
@@ -89,6 +90,26 @@ async function drawMermaid(box, code, failed) {
       h("div", { class: "df-text" }, h("b", {}, "This diagram couldn't be drawn"), h("small", {}, "Its code has a mistake; the code is just below."),
         why ? h("pre", { class: "code" }, why) : null)));
     failed?.();
+  }
+}
+// A node the model filled with its own colour keeps its words readable: dark on a light fill, light on a dark one, unless
+// it set their colour too (measured 2026-10-21: a start box styled #e1f5fe, its words the dark theme's white - gone)
+function rgbOf(color) {
+  const c = (color || "").trim();
+  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+  if (m) { const s = m[1].length === 3 ? [...m[1]].map(x => x + x).join("") : m[1]; return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); }
+  m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c);
+  return m ? m.slice(1, 4).map(Number) : null;
+}
+function readableNodes(box) {
+  for (const node of box.querySelectorAll("g.node")) {
+    const shape = node.querySelector("rect, polygon, path, circle, ellipse");
+    const rgb = rgbOf(/fill:\s*([^;!]+)/.exec(shape?.getAttribute("style") || "")?.[1]);
+    const words = [...node.querySelectorAll(".nodeLabel, text")];
+    if (!rgb || words.some(w => /(^|;)\s*(color|fill)\s*:/.test(w.getAttribute("style") || ""))) continue;
+    const light = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+    const ink = light > 0.6 ? "#1d1d1f" : light < 0.35 ? "#f5f5f7" : null;
+    if (ink) words.forEach(w => { w.style.color = ink; w.style.fill = ink; });
   }
 }
 export function redrawDiagrams() {

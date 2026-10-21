@@ -452,6 +452,13 @@ def _submitted(profile: Profile, raw, trace: Trace, context: str) -> dict | str:
     """{'result', 'problems'} for a well-formed submission, or an error text to send back."""
     if not isinstance(raw, dict):
         return f"{profile.finish} needs JSON arguments."
+    if raw.get("question_for_user") and str(raw.get("answer") or "").strip():
+        # Asking is the whole result: the question pauses the turn for the user, and the answer beside it was never
+        # shown (measured 2026-10-21: the Nobel prize found and cited, then "Would you like more details on how
+        # IceCube works?" - the user got only the question). An offer of more is no question.
+        return (f"{profile.finish}: you gave an answer and a question_for_user. Ask only when you can't answer without "
+                "the user's choice (question_for_user with its options, and no answer); otherwise give the answer "
+                "alone - an idea for more goes in suggestion.")
     if raw.get("question_for_user"):  # asking is the whole result; small models leave the rest out
         raw = {**{k: "" for k, f in profile.result_model.model_fields.items() if f.is_required()}, **raw}
     try:

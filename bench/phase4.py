@@ -1,4 +1,4 @@
-"""Phase 4's acceptance on the real model (docs/REBUILD_PLAN.md, section 5): finding and memory, through the real turn -
+"""Phase 4's acceptance on the real model (docs/history/REBUILD_PLAN.md, section 5): finding and memory, through the real turn -
 the same prompts, tools, helpers and checks as the app - each from a new store in a temporary folder.
 
     lion_count  "How many lion images do I have?" over the 39 pictures of the user's Q1 sales project (copied, read

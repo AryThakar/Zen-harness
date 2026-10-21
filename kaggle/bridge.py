@@ -17,6 +17,7 @@ itself, and needs no bridge.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -32,8 +33,9 @@ HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "conte
 
 
 def settings() -> tuple[str, str]:
-    """KAGGLE_URL and KAGGLE_PASSWORD from bridge.env (or the command line: bridge.py URL PASSWORD)."""
-    values = {}
+    """KAGGLE_URL and KAGGLE_PASSWORD from bridge.env, the environment (as Zen.exe passes them) or the command
+    line (bridge.py URL PASSWORD)."""
+    values = {name: os.environ[name] for name in ("KAGGLE_URL", "KAGGLE_PASSWORD") if os.environ.get(name)}
     env = HERE / "bridge.env"
     if env.exists():
         for line in env.read_text(encoding="utf-8").splitlines():

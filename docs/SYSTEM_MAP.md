@@ -75,12 +75,14 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | main: numbers no result holds | a reply in a turn a helper worked in, with three or more numbers no tool returned and the user never gave: one hidden [App check] | truth | write it with the results' numbers, or call it an estimate |
 | main: a file still broken | a reply after writing a page or program that still doesn't run (a page's script, Python that doesn't parse): one hidden [App check] | truth | fix it, or say plainly it doesn't work yet |
 | main: the last step | the turn's last step has no tools and is told never to hand the user the work | serves the user | - |
-| files: a page written | its script must parse; then it is opened headless (file_ops.written_code, browser.try_page) - controls clicked, keys pressed, 10 s at most - and an error, a canvas of one flat colour, or "Game Over" on show before any input comes back as broken | truth | fix it before saying it works |
+| files: a page written | its script must parse; then it is opened headless (file_ops.written_code, browser.try_page) - controls clicked, keys pressed, 10 s at most - and an error, a canvas of one flat colour, or "Game Over" on show before any input comes back as broken (the words must lead the text: "Any key after game over to restart" is an instruction, not the game over - measured: it was quoted as one, and a working draw loop was rewritten four times) | truth | fix it before saying it works |
 | files: no name | an edit, read or rename without a name is told which files changed last | contract | the next call |
 | download: a raw host | an HTML file from raw.githubusercontent.com is a file, not a page | correctness | - |
 | workspace: a chart as data | a chart file given where a table is wanted says it is a chart already made, and to chart the table it came from | contract | the table |
 | runner: a finish sent back on the last step | one step more to fix it (measured: "ran out of steps", the answer lost, the task handed over twice more) | serves the model | - |
 | runner: a short finish | a finish cut off by the length limit on the last step gets one more step for a short one | serves the model | - |
+| runner: an answer and a question | a finish with both an answer and question_for_user is sent back: ask (no answer) or answer (no question); an offer of more goes in suggestion (measured: the Nobel prize found and cited, then "Would you like more details?" - the question paused the turn and the answer was never shown) | contract | the next finish |
+| main: a currency sign the data never gives | a reply after a data helper, with "$" (or €, £, ₹, ¥) on numbers no data, task or user message has: one hidden [App check]; a helper answer its own check warned about the sign is no evidence (measured: the analyst kept "$40,060", main copied it) | truth | write the numbers without it |
 
 ## 4. Tests that hold the contracts
 
@@ -93,7 +95,7 @@ consistent is a limit to record, not a prompt to bend (section 5).
   the folder; no key in any result a model reads.
 - `test_console.py`, `test_pins_snapshot.py`, `test_assistant_main.py` (the slot never overflows, the snapshot is
   never stored), `test_main_checks.py` (each check from a measured failure, and the replies it must leave alone),
-  and the tools' own tests - 660 in all, no model needed; one test (marked real_browser) opens pages in the
+  and the tools' own tests - 663 in all, no model needed; one test (marked real_browser) opens pages in the
   headless browser when it is installed.
 
 ## 5. Known limits (measured, recorded - not prompted around)
@@ -127,3 +129,10 @@ a limit both models show is the models' class, not one model:
 - **The analyst can over-work a simple question** - five forecasts and three charts for "what sells best, and what
   might next month look like", then scripts to combine them (2026-10-22). A finish sent back on its last step now
   gets a step to fix it, so the work is no longer lost; how much it does before finishing is the model's.
+- **A game that needs fixing often stays broken** (2026-10-21, "make me a small snake game", 5 runs): 2 worked as
+  first written (one waits for a key, as the stricter check now asks; one throws after the first death); 1 chased a
+  false alarm of the old check (fixed); 2 broke further with each edit - old_text that doesn't match, an edit
+  without its file name - and ended saying plainly it still didn't work. The check is right each time; fixing by
+  small edits is this model's weak spot.
+- **A rewrite after a hidden check can answer the check**: "You're right - my apologies" opened one, to a user who
+  had said nothing; the two checks that ask for a rewrite now say the user sees only the new reply.

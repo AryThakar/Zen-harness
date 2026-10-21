@@ -26,7 +26,7 @@ from app.tools.stats_test import stats_test
 from app.tools.workspace import Workspace
 
 HERE = Path(__file__).resolve().parent
-DATA = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE.parents[1] / "analyst" / "bench" / "data" / "locked"
+DATA = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE.parent / "bench" / "data" / "locked"
 out: list[str] = ["# Data tools on real data", "",
                   "Every call below is a direct tool call with fixed arguments (no AI model). "
                   "Results are what the model would receive.", ""]

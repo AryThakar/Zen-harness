@@ -20,6 +20,7 @@ GAVE_UP = re.compile(r"\W*(?:I|we)\s+(?:could not|couldn'?t|cannot|can'?t|was un
 
 URL = re.compile(r"https?://[^\s)\]>\"'`]+")
 MONEY = re.compile(r"([$€£₹¥])\s?\d")  # a currency sign on a number
+NO_CURRENCY = "the data has no currency"  # in a helper's warning: main's check (checks.added_currency) reads it too
 
 
 def _check_web(result: WebResult, trace: Trace, _context: str) -> list[str]:
@@ -172,5 +173,5 @@ def _numbers_problem(text: str, trace: Trace, context: str) -> list[str]:
     seen = "".join(trace.data_outputs + [context])
     signs = [s for s in dict.fromkeys(MONEY.findall(text)) if s not in seen]
     if signs:
-        problems.append(f"{signs[0]} is on your numbers, but the data has no currency: write them without it")
+        problems.append(f"{signs[0]} is on your numbers, but {NO_CURRENCY}: write them without it")
     return problems
