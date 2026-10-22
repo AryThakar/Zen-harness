@@ -39,7 +39,8 @@ from packaging.markers import default_environment
 from packaging.requirements import Requirement
 
 REPO = Path(__file__).resolve().parents[1]
-DIST = REPO / "dist" / "Zen-harness"
+# made in dist/, or in ZEN_BUILD_DIR - so a copy of Zen in use in dist/ (its data, its settings) is left alone
+DIST = Path(os.environ.get("ZEN_BUILD_DIR") or REPO / "dist") / "Zen-harness"
 # Microsoft's WebView2 SDK 1.0.4258.31 (NuGet Microsoft.Web.WebView2, BSD-3-Clause): the three files Zen's window needs
 WEBVIEW2 = REPO / "desktop" / "webview2"
 WEBVIEW2_FILES = ("Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll")
