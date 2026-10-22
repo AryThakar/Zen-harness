@@ -27,8 +27,7 @@ from .workspace import Workspace
 MAIN_CHARS = 8_000
 HELPER_CHARS = 12_000
 # Line numbers help to talk about code (filetypes.CODE); in data or prose they would be copied as if they were
-# content.
-MAX_FILE = 10 * 1024 * 1024
+# content. A file is read a page at a time, so its size needs no limit here (uploads have one: BIZ_MAX_UPLOAD_MB).
 KINDS = ("file", "image", "table")
 
 
@@ -51,8 +50,6 @@ def read(ws: Workspace, item: str, start: int | None, budget: int, tool: str = "
         return ok({"file": item, "name": name, **_not_text(ws, item, e, tool)})
     start = max(1, start or 1)  # start=0: counting from zero means the first line
     path = ws.path(item)
-    if path.stat().st_size > MAX_FILE:
-        raise ToolError(f"{item} is larger than 10 MB.", invalid=False)
     numbered = kind == "file" and Path(name).suffix.lower() in CODE
     lines = units(name, path.read_bytes(), numbered=numbered)
     if not lines:

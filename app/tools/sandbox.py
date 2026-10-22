@@ -45,6 +45,8 @@ import time
 from pathlib import Path
 from typing import Protocol
 
+from app.config import settings
+
 from .core import ToolError, ToolResult, jsonable
 from .filetypes import IMAGE
 from .chart_image import describe_chart, is_chart
@@ -55,7 +57,7 @@ MAX_TIMEOUT = 120
 MAX_OUTPUT = 10_000
 MAX_CODE = 50_000
 MAX_NEW_FILES = 10
-MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_FILE_BYTES = settings.max_upload_mb * 1024 * 1024  # a file a script makes: an upload's limit (BIZ_MAX_UPLOAD_MB)
 IMAGES = (*IMAGE, ".svg")  # what counts as a figure the script saved itself (then open figures aren't saved again)
 CELL = "_cell.py"  # the set-up that runs the script
 SCRIPT = "script.py"  # the model's code (its tracebacks name this file)
@@ -577,7 +579,7 @@ def _register(ws: Workspace, before: dict) -> tuple[list[dict], list[dict]]:
         big = p.stat().st_size > MAX_FILE_BYTES
         if known is None and (n >= MAX_NEW_FILES or big):
             p.unlink(missing_ok=True)  # the script's own new file: nothing of the user's
-            told.append({"path": rel, "note": "not kept: larger than 20 MB" if big
+            told.append({"path": rel, "note": f"not kept: larger than {MAX_FILE_BYTES // 2 ** 20} MB" if big
                          else f"not kept: at most {MAX_NEW_FILES} new files a run"})
             continue
         try:

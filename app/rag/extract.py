@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import PurePath
 
 from app.tools.filetypes import DOCUMENT as KINDS  # noqa: E402 - the one definition of a document
-MAX_BYTES = 20 * 1024 * 1024
 
 
 class DocumentError(ValueError):
@@ -50,9 +49,7 @@ def kind_of(filename: str) -> str:
 
 
 def extract(filename: str, data: bytes) -> Extracted:
-    kind = kind_of(filename)
-    if len(data) > MAX_BYTES:
-        raise DocumentError(f"The file is larger than {MAX_BYTES // (1024 * 1024)} MB.")
+    kind = kind_of(filename)  # any size: it is read into passages (uploads have their limit: BIZ_MAX_UPLOAD_MB)
     if not data:
         raise DocumentError("The file is empty.")
     stem = PurePath(filename).stem

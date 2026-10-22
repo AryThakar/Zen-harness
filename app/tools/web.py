@@ -26,7 +26,7 @@ read_webpage - the readable text of one page: HTML reduced to its main content (
 look       - what a link holds (name, type, size), read from its first bytes, for the user to
               approve before anything is downloaded (app/tools/approval.py); then fetch_table stores
               a data file (CSV, TSV, Excel) from any public link as a table, and fetch_file one file
-              from GitHub like an upload. The same address checks, a 20 MB cap; a web page instead
+              from GitHub like an upload. The same address checks, an upload's size cap; a web page instead
               of a file is refused with the files it links to.
 fetch_icon / fetch_image - a site's favicon or a page's preview image, fetched by the server with
               the same public-address checks (size-capped, verified to be an image), so the UI shows
@@ -55,6 +55,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit
 
 import httpx
+
+from app.config import settings
 
 from . import filetypes, net
 from .core import ToolError, ToolResult, ok, tool
@@ -600,8 +602,8 @@ TABLE_SUFFIXES = filetypes.TABLE  # a .txt is a document (filetypes), not a tabl
 TABLE_TYPES = {"text/csv": ".csv", "application/csv": ".csv", "text/tab-separated-values": ".tsv",
                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
                "application/vnd.ms-excel": ".xls"}
-MAX_TABLE_BYTES = 20 * 1024 * 1024
-MAX_FILE_BYTES = 20 * 1024 * 1024
+# a download is like an upload: the same limit (BIZ_MAX_UPLOAD_MB)
+MAX_TABLE_BYTES = MAX_FILE_BYTES = settings.max_upload_mb * 1024 * 1024
 GITHUB_HOSTS = {"github.com", "www.github.com", "raw.githubusercontent.com", "media.githubusercontent.com",
                 "gist.github.com", "gist.githubusercontent.com", "objects.githubusercontent.com",
                 "release-assets.githubusercontent.com", "codeload.github.com"}

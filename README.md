@@ -202,7 +202,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 | `ASSISTANT_THINKING` | the model thinks before answering: `on` (default) or `off` |
 | `ASSISTANT_MAX_TOKENS` | a reply's limit, thinking included (default 4096) |
 | `ASSISTANT_DATA_DIR` | where projects, chats and files are kept (default `data/assistant`) |
-| `BIZ_MAX_UPLOAD_MB` | the largest upload (default 100) |
+| `BIZ_MAX_UPLOAD_MB` | the largest file: an upload, a download, a file Zen's code makes (default 100) - reading one has no limit, it goes a page at a time |
 | `BIZ_LLM_PROVIDER` | `gemini`, `nvidia` or `groq` runs the app on a cloud model instead, for testing the harness (default `llamacpp`) |
 | `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY` | that cloud's key; `BIZ_GEMINI_MODEL`, `BIZ_NVIDIA_MODEL`, `BIZ_GROQ_MODEL` pick its model |
 
