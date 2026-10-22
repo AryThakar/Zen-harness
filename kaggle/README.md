@@ -1,11 +1,12 @@
 # The model on Kaggle
 
-Zen thinks with **Qwen 3.6 35B-A3B**. With no big GPU of your own, Kaggle runs it free on two T4s: this notebook
-starts llama-server there and opens a password-protected address that Zen on your PC talks to.
+Zen thinks with **Qwen 3.6 35B-A3B** and searches by meaning with **EmbeddingGemma 2**. With no big GPU of your
+own, Kaggle runs both free on two T4s: this notebook starts a llama-server for each there and opens one
+password-protected address that Zen on your PC talks to - your PC then runs no model at all.
 
 | File | What it is |
 |---|---|
-| [`zen-qwen36-server.ipynb`](zen-qwen36-server.ipynb) | The notebook: llama.cpp's Linux CUDA build, the model (about 21 GB) and a Cloudflare quick tunnel |
+| [`zen-qwen36-server.ipynb`](zen-qwen36-server.ipynb) | The notebook: llama.cpp's Linux CUDA builds, the models (about 22 GB), a small router (`/embed/...` to the search model, the rest to Qwen) and a Cloudflare quick tunnel |
 | [`bridge.py`](bridge.py) | Makes the notebook look like a llama-server on this computer (`127.0.0.1:8080`), so Zen runs unchanged |
 | [`bridge.env.example`](bridge.env.example) | The two lines the bridge reads, when you run from source |
 
@@ -25,7 +26,13 @@ Keep the notebook's tab open while you use Zen. A session lasts up to 12 hours, 
 a week. Each session gets a new address; with the Kaggle secret `LLAMA_API_KEY` set (*Add-ons → Secrets*), the
 password stays the same.
 
+**Search.** Zen-harness.exe sees the search model by itself as it starts (from source: two settings, in Zen's
+README). Your files' search vectors are kept on your PC; the model only makes them, and turns each search into one.
+While the notebook is off, Zen searches by keywords, and files added meanwhile get their vectors once it is back.
+An older copy of this notebook (Qwen only) still works: Zen then searches with its own small model.
+
 ## Privacy
 
-Your messages, and the parts of your files Zen reads to answer, go to your own notebook over HTTPS. Nothing is kept
-there after the session ends. Treat the address and password like a key: whoever has both can use your model.
+Your messages, and the parts of your files Zen reads to answer, go to your own notebook over HTTPS - and for search,
+your files' text and pictures, and what you search for. Nothing is kept there after the session ends. Treat the
+address and password like a key: whoever has both can use your models.

@@ -25,6 +25,7 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -38,6 +39,7 @@ static class Zen
     const string Model = "http://127.0.0.1:8080/health";  // the bridge, or a llama-server on this computer
     // Zen's app is up: its tool names answer at once (its status asks the model first - over Kaggle's tunnel, seconds)
     const string Up = App + "assistant/tools";
+    const string KaggleSearch = "http://127.0.0.1:8080/embed";  // the notebook's search model, through the bridge
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
     static readonly string SettingsFile = Path.Combine(Root, "settings.env");
     static readonly string Data = Path.Combine(Root, "data");
@@ -64,6 +66,7 @@ static class Zen
         {
             var settings = ReadSettings();
             if (!Connect(settings, splash)) return 1;
+            SearchOnKaggle(settings);
             splash.Say("Starting Zen…");
             var app = Start(Python(), "-m uvicorn app.main:app --host 127.0.0.1 --port 8000", "zen.log", settings);
             if (!WaitFor(Up, 120, app))
@@ -138,6 +141,36 @@ static class Zen
                 WriteSettings(settings);
             }
         }
+    }
+
+    // Search by meaning on Kaggle too, when the notebook runs its search model beside Qwen (EmbeddingGemma 2, at /embed):
+    // the app asks it through the bridge, and this computer runs no model at all. An older notebook has none - then the
+    // small model here, as before - and a search model set up in settings.env is kept.
+    static void SearchOnKaggle(Dictionary<string, string> settings)
+    {
+        string url;
+        if (!settings.TryGetValue("KAGGLE_URL", out url) || url.Length == 0 || settings.ContainsKey("ASSISTANT_EMBED_GGUF")) return;
+        var ask = Task.Factory.StartNew(() => Fetch(KaggleSearch + "/props", 15000));
+        while (!ask.IsCompleted) Pump(15);
+        var model = ask.Result == null ? Match.Empty : Regex.Match(ask.Result, "\"model_path\"\\s*:\\s*\"([^\"]+)\"");
+        if (!model.Success) return;
+        // the model file's name: it tags the vectors it makes, as the same file does run here
+        var file = model.Groups[1].Value;
+        settings["ASSISTANT_EMBED_GGUF"] = file.Substring(file.LastIndexOfAny(new[] { '/', '\\' }) + 1);
+        settings["ASSISTANT_EMBED_URL"] = KaggleSearch;
+    }
+
+    static string Fetch(string url, int ms)
+    {
+        try
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.Timeout = ms;
+            req.Proxy = null;
+            using (var res = (HttpWebResponse)req.GetResponse())
+            using (var text = new StreamReader(res.GetResponseStream(), Encoding.UTF8)) return text.ReadToEnd();
+        }
+        catch (Exception) { return null; }
     }
 
     static string Python() { return Path.Combine(Root, "runtime", "python.exe"); }

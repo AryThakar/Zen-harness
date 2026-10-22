@@ -148,6 +148,20 @@ class Bridge(BaseHTTPRequestHandler):
               f"{time.monotonic() - started:6.1f} s", flush=True)
 
 
+def search_model(upstream: str, password: str) -> str:
+    """The notebook's search model (at /embed, beside Qwen), or why there is none: an older notebook runs Qwen only,
+    and Zen then searches with its own small model."""
+    request = urllib.request.Request(upstream + "/embed/props", headers={
+        "Authorization": f"Bearer {password}", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            props = json.loads(response.read())
+        model = Path(str(props["model_path"]).replace("\\", "/")).name
+    except Exception:  # noqa: BLE001 - any failure, or no model named, means the same here
+        return "none on this notebook (Zen uses its own small model)"
+    return model + (", pictures too" if (props.get("modalities") or {}).get("vision") else "")
+
+
 def main():
     upstream, password = Link.current()
     if not upstream or not password:
@@ -160,6 +174,7 @@ def main():
         model = Path(props.get("model_path", "?").replace("\\", "/")).name
         vision = (props.get("modalities") or {}).get("vision")
         print(f"Kaggle is up: {model} (vision: {vision}, slots: {props.get('total_slots')})")
+        print(f"Search by meaning: {search_model(upstream, password)}")
     except Exception as exc:  # noqa: BLE001 - still start: the notebook may come up later
         print(f"Kaggle doesn't answer yet ({exc}); requests will fail until it does.")
     server = ThreadingHTTPServer(LISTEN, Bridge)

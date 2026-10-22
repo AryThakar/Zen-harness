@@ -39,7 +39,7 @@ browser (web/)  --HTTP + server-sent events-->  FastAPI (app/main.py, app/api/as
 | The app | `uvicorn app.main:app` - the API and the chat page on http://localhost:8000 | you |
 | The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today Qwen 3.6 35B-A3B on Kaggle's two T4s (`kaggle/zen-qwen36-server.ipynb`), reached through `kaggle/bridge.py` (a local address forwarding to the notebook's tunnel with its password; it names itself, so the page says the model runs on Kaggle); a local llama-server works the same way | you |
 | Or a cloud model | for testing the harness with a stronger model: `BIZ_LLM_PROVIDER=gemini`, `nvidia` or `groq` and its key in `.env` (app/providers/cloud.py) - each free plan measured too small for the full tests (section 12) | you |
-| The embedding server | llama-server with EmbeddingGemma and its picture projector, port 8070, this computer only | the app, on first use; stopped when it exits (app/rag/embed_server.py) |
+| The embedding server | llama-server with EmbeddingGemma and its picture projector: on Kaggle beside Qwen (the notebook's router serves it at `/embed`, reached through the bridge at `127.0.0.1:8080/embed`), or on this computer at port 8070 | the notebook; or the app, on first use, stopped when it exits (app/rag/embed_server.py) |
 | The browser | Playwright MCP (Edge, headless, no profile) for pages a plain read can't get | the app, on first use; closed when idle (app/tools/browser.py) |
 
 Settings come from environment variables or the project's `.env` (app/config.py): the chat model's address,
@@ -60,7 +60,7 @@ Playwright MCP, pages that need a browser are reported as unreadable. The prompt
 | `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`); a cloud's OpenAI-compatible API (`cloud.py`) - Google's Gemini API, NVIDIA Build, Groq - for testing; a scripted model for tests |
 | `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat, a reply's flow), `api.js`, `cards.js` (answer cards, page cards), `charts.js`, `steps.js` (the work behind a reply: its head, steps, the trace), `files.js` (the file panel, the page frame), `pdf.js` (the PDF viewer), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
 | `kaggle/` | the model on Kaggle: the notebook that runs llama-server with Qwen 3.6 on two T4s and opens a password-protected tunnel, and the bridge that makes it look local |
-| `tests/` | pytest, 671 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
+| `tests/` | pytest, 676 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
 | `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn

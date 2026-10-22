@@ -107,7 +107,7 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 
 ### The Windows app - the quickest way
 
-1. Download `Zen-harness-1.1.1-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
+1. Download `Zen-harness-1.2.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
    and unzip it anywhere (it needs no install: Python, its libraries and the browser tools are inside).
 2. Start the model on Kaggle (step 2 below, *On Kaggle*, point 1 only).
 3. Double-click **Zen-harness.exe** and paste the address and password the notebook printed. Zen opens in a window of its
@@ -136,8 +136,8 @@ nothing in it is required to start.
 **On Kaggle**, with no GPU of your own:
 
 1. Open [`kaggle/zen-qwen36-server.ipynb`](kaggle/zen-qwen36-server.ipynb) on Kaggle (*File → Import notebook*), set
-   *Accelerator* to `GPU T4 x2` and *Internet* to `On`, and *Run All*. It downloads llama.cpp and the model (about
-   21 GB) and prints an **address** and a **password**.
+   *Accelerator* to `GPU T4 x2` and *Internet* to `On`, and *Run All*. It downloads llama.cpp and the models (about
+   22 GB: Qwen, and EmbeddingGemma 2 for search) and prints an **address** and a **password**.
 2. Copy `kaggle/bridge.env.example` to `kaggle/bridge.env` and paste them in.
 3. Run the bridge: `.venv/Scripts/python.exe kaggle/bridge.py` - the model now answers at `127.0.0.1:8080`, as if it
    ran here. A later session's address goes in from Zen itself (the model's name at the top of a chat); the bridge
@@ -165,9 +165,13 @@ Open http://localhost:8000, make a project, and ask - or start from
 month look like? Show me a chart."*
 
 **Optional, recommended:**
-- *Search by meaning* - a llama.cpp build that knows EmbeddingGemma 2 and its two files (`embeddinggemma-2-Q8_0.gguf`
-  and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set the three `ASSISTANT_EMBED_*` settings and the app starts it
-  itself. Without them, search uses a small CPU model (bge-small, downloaded once).
+- *Search by meaning* - EmbeddingGemma 2, which finds pictures too. **On Kaggle:** the notebook runs it beside Qwen;
+  set `ASSISTANT_EMBED_GGUF=embeddinggemma-2-Q8_0.gguf` and `ASSISTANT_EMBED_URL=http://127.0.0.1:8080/embed` and
+  the app asks it through the bridge (Zen-harness.exe does this by itself). **On this computer:** a llama.cpp build
+  that knows it and its two files (`embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set
+  the three `ASSISTANT_EMBED_*` settings to their paths and the app starts it itself. Without either, search uses a
+  small CPU model (bge-small, downloaded once, text only). A project's files are vectorised by one model at a time:
+  after a switch, Zen does them again in the background.
 - *A real browser* - Node and Microsoft Edge, with [Playwright MCP](https://github.com/microsoft/playwright-mcp) in a
   folder of its own (`npm install @playwright/mcp`) named by `ASSISTANT_PLAYWRIGHT_MCP`. It reads pages drawn by
   JavaScript, and it tries the pages and games Zen writes before they are called ready.
@@ -178,9 +182,9 @@ month look like? Show me a chart."*
 | Model | What it does in Zen | Files, and where to get them |
 |---|---|---|
 | **Qwen 3.6 35B-A3B** (Unsloth's dynamic quant) | The assistant and its helpers; reads pictures | `Qwen3.6-35B-A3B-UD-Q4_K_S.gguf` and `mmproj-F16.gguf` from [unsloth/Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) - the Kaggle notebook downloads them itself |
-| **EmbeddingGemma 2** (optional) | Search by meaning across files, chats and pictures | `embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf` from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) |
-| **bge-small-en-v1.5** | Search by meaning without EmbeddingGemma (text only, CPU) | [Qdrant/bge-small-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q), downloaded once by fastembed |
-| **llama.cpp** | Serves both models | [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) - the notebook uses b11474's Linux CUDA build; EmbeddingGemma 2 needs b11515 or later |
+| **EmbeddingGemma 2** | Search by meaning across files, chats and pictures | `embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf` from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) - the Kaggle notebook downloads them itself |
+| **bge-small-en-v1.5** | Search by meaning without EmbeddingGemma - a model on your own GPU, an older notebook (text only, CPU) | [Qdrant/bge-small-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q), downloaded once by fastembed |
+| **llama.cpp** | Serves both models | [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) - the notebook uses b11474's Linux CUDA build for Qwen and b11515's for EmbeddingGemma 2, which needs b11515 or later |
 
 ## Settings
 
@@ -189,9 +193,9 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 | Setting | What it is |
 |---|---|
 | `BIZ_LLAMACPP_URL` | the chat model's llama-server (default `http://127.0.0.1:8080`) |
-| `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts |
-| `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector |
-| `ASSISTANT_EMBED_URL` | where the embedding server listens (default `http://127.0.0.1:8070`) |
+| `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts (empty: one already running is used - the notebook's, through the bridge) |
+| `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector (for the notebook's: its file name only) |
+| `ASSISTANT_EMBED_URL` | where the embedding server listens (default `http://127.0.0.1:8070`; the notebook's: `http://127.0.0.1:8080/embed`) |
 | `ASSISTANT_PLAYWRIGHT_MCP`, `ASSISTANT_BROWSER` | Playwright MCP's folder; the browser it drives (default `msedge`) |
 | `POLLINATIONS_KEY` | for generating pictures |
 | `ASSISTANT_NAME`, `ASSISTANT_USER_NAME` | the assistant's name (default Zen) and yours |
@@ -208,7 +212,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 .venv/Scripts/python.exe -m pytest
 ```
 
-671 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
+676 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
 through its client, and every tool's contract and description against its schema. With Playwright MCP installed,
 one test also opens pages in the real headless browser. Measurements on the real model are scripts in `bench/` -
 each phase's acceptance and 20 jobs (10 held out) - with their reports beside them.
@@ -229,7 +233,7 @@ Zen-harness/
 ├── web/                    the chat page: plain HTML, CSS and JavaScript modules, no build step
 ├── kaggle/                 the notebook that serves the model on Kaggle, and the bridge to it
 ├── desktop/                the Windows app: Zen-harness.exe's source and the script that builds its zip
-├── tests/                  671 tests, no model needed
+├── tests/                  676 tests, no model needed
 ├── bench/                  measurements on the real model, with their reports
 ├── docs/                   architecture, the system map, the build history, screenshots and videos
 ├── data/samples/           sample tables to try it on (data/ also holds your projects: git-ignored)

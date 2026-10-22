@@ -18,7 +18,8 @@ the properties it is meant to keep:
   bridge listens on `127.0.0.1:8080`; the embedding server, when used, on `127.0.0.1:8070`.
 - **The model is remote when it runs on Kaggle.** Your messages, and the parts of your files Zen reads to answer,
   go to the llama-server in your own Kaggle notebook, over the notebook's Cloudflare tunnel (HTTPS) and with its
-  password (`--api-key`). The notebook makes a new random password each session unless you set the Kaggle secret
+  password (`--api-key`) - and, when the notebook runs the search model too, your files' text and pictures to be
+  made into search vectors, and each search (the vectors themselves are kept on your PC). The notebook makes a new random password each session unless you set the Kaggle secret
   `LLAMA_API_KEY`. Treat the address and password like a key: whoever has both can use your model.
 - **Only Zen's page changes where the model runs.** `/assistant/model-link` refuses a request from another site's
   page (its Origin), tries a new address with its password before saving it, takes each as one line, and never
