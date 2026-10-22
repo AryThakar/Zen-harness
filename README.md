@@ -218,7 +218,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 .venv/Scripts/python.exe -m pytest
 ```
 
-681 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
+687 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
 through its client, and every tool's contract and description against its schema. With Playwright MCP installed,
 one test also opens pages in the real headless browser. Measurements on the real model are scripts in `bench/` -
 each phase's acceptance and 20 jobs (10 held out) - with their reports beside them.
@@ -239,7 +239,7 @@ Zen-harness/
 ├── web/                    the chat page: plain HTML, CSS and JavaScript modules, no build step
 ├── kaggle/                 the notebook that serves the models on Kaggle
 ├── desktop/                the Windows app: Zen-harness.exe's source and the script that builds its zip
-├── tests/                  681 tests, no model needed
+├── tests/                  687 tests, no model needed
 ├── bench/                  measurements on the real model, with their reports
 ├── docs/                   architecture, the system map, the build history, screenshots and videos
 ├── data/samples/           sample tables to try it on (data/ also holds your projects: git-ignored)

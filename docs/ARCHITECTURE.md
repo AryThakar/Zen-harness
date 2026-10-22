@@ -60,7 +60,7 @@ Playwright MCP, pages that need a browser are reported as unreadable. The prompt
 | `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat, a reply's flow), `api.js`, `cards.js` (answer cards, page cards), `charts.js`, `steps.js` (the work behind a reply: its head, steps, the trace), `files.js` (the file panel, the page frame), `pdf.js` (the PDF viewer), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
 | `app/model_link.py`, `app/connection.py` | the Model settings - Kaggle, this PC or a cloud - read, tried and written in place; the providers and the search model made again when they change |
 | `kaggle/` | the models on Kaggle: the notebook that runs llama-server with Qwen 3.6 and EmbeddingGemma 2 on two T4s and opens a password-protected tunnel |
-| `tests/` | pytest, 681 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
+| `tests/` | pytest, 687 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
 | `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn
