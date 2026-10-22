@@ -27,7 +27,6 @@ KAGGLE_URL, KAGGLE_PASSWORD = "KAGGLE_URL", "KAGGLE_PASSWORD"
 LOCAL_URL = "LOCAL_URL"
 CLOUD_URL, CLOUD_KEY, CLOUD_MODEL = "CLOUD_URL", "CLOUD_KEY", "CLOUD_MODEL"
 KINDS = ("kaggle", "local", "cloud")
-SECRETS = (KAGGLE_PASSWORD, CLOUD_KEY)  # never sent back to the page
 LOCAL_DEFAULT = "http://127.0.0.1:8080"
 EMBED = "/embed"  # the notebook's search model, under its address
 CODE = "zen1."  # a Zen code: the notebook's address and password in one line, base64 (it copies whole)
@@ -170,18 +169,3 @@ def _unanswered(exc: Exception, timeout: float) -> str:
     if "getaddrinfo" in str(reason) or "Name or service" in str(reason):
         return "That address can't be found"
     return f"That address can't be reached ({str(reason)[:80]})"
-
-
-def search_at(values: dict[str, str], timeout: float = 15) -> tuple[str, str, str] | None:
-    """The notebook's search model - (its address, the password, its model file's name) - when Kaggle is in use and
-    the notebook runs one (an older notebook has Qwen only); else None."""
-    if in_use(values) != "kaggle" or not ready("kaggle", values):
-        return None
-    url = values[KAGGLE_URL].rstrip("/") + EMBED
-    try:
-        with _get(url + "/props", values[KAGGLE_PASSWORD], timeout) as response:
-            props = json.loads(response.read() or b"{}")
-        name = str(props["model_path"]).replace("\\", "/").rsplit("/", 1)[-1]
-    except Exception:  # noqa: BLE001 - no search model there, however it fails
-        return None
-    return url, values[KAGGLE_PASSWORD], name

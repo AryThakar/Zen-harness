@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app import connection, model_link
+from app import model_link
 from app.api import assistant as assistant_api
 from app.assistant.store import Store
 from app.connection import Connection, Live, LiveEmbedder
@@ -126,6 +126,15 @@ def test_a_switch_keeps_what_was_saved_and_a_choice_not_set_up_says_what_it_need
     assert values["ZEN_MODEL"] == "kaggle" and values["LOCAL_URL"] == assistant_api.settings.llamacpp_url
 
 
+def test_zen_answers_only_at_its_own_address():
+    from app.main import create_app as real
+    app = real()  # no test parts: only 127.0.0.1 and localhost
+    assert TestClient(app, base_url="http://127.0.0.1:8000").get("/health").status_code == 200
+    assert TestClient(app, base_url="http://localhost:8000").get("/health").status_code == 200
+    rebound = TestClient(app, base_url="http://evil.example:8000").get("/health")  # a name pointed at this computer
+    assert rebound.status_code == 400 and "own address" in rebound.json()["detail"]
+
+
 def test_another_site_cannot_change_where_the_model_runs(client, tried):
     c, path = client
     r = c.post("/assistant/model-settings", json={"use": "cloud", "url": "https://evil.example/v1", "model": "x"},
@@ -155,8 +164,6 @@ def _changed(path, changes):
 
 def test_the_model_follows_the_settings_file_with_no_restart(tmp_path, monkeypatch):
     path = tmp_path / "model.env"
-    monkeypatch.setattr(model_link, "search_at", lambda values, timeout=15: None)  # an older notebook: Qwen only
-    monkeypatch.setattr(model_link, "check", lambda kind, values, timeout=20: (True, "x"))
     link = Connection(path, _settings())
     main, helpers = Live(link, 0), Live(link, 1)
     assert link.kind == "local" and main.name == "llamacpp" and main.base_url == "http://127.0.0.1:8080"
@@ -166,30 +173,27 @@ def test_the_model_follows_the_settings_file_with_no_restart(tmp_path, monkeypat
     _changed(path, {"ZEN_MODEL": "cloud", "CLOUD_URL": "https://api.groq.com/openai/v1", "CLOUD_KEY": "k",
                     "CLOUD_MODEL": "openai/gpt-oss-120b"})
     assert main.name == "cloud" and main.location() == "on groq.com" and helpers.model == "openai/gpt-oss-120b"
-    assert isinstance(LiveEmbedder(link)._connection.embedder(), NoEmbedder)  # a cloud: search by keywords
+    assert isinstance(LiveEmbedder(link)._connection.embedder(), NoEmbedder)  # a cloud, nothing here: keywords
 
 
-def test_search_is_the_notebooks_model_kept_by_name_while_it_is_away(tmp_path, monkeypatch):
+def test_with_kaggle_search_is_the_notebooks_and_nothing_is_probed(tmp_path, monkeypatch):
     path = tmp_path / "model.env"
     path.write_text("ZEN_MODEL=kaggle\n" + OLD, encoding="utf-8")
-    found = {"at": ("https://old.trycloudflare.com/embed", "old", "embeddinggemma-2-Q8_0.gguf")}
-    monkeypatch.setattr(model_link, "search_at", lambda values, timeout=15: found["at"])
-    monkeypatch.setattr(model_link, "check", lambda kind, values, timeout=20: (False, "Nothing answers"))
+    monkeypatch.setattr(model_link, "check", lambda *a, **k: pytest.fail("the notebook was asked"))
     search = LiveEmbedder(Connection(path, _settings()))
     assert search.name == "embeddinggemma-2-Q8_0" and search.url == "https://old.trycloudflare.com/embed"
-    assert search.api_key == "old"
-    found["at"] = None  # the notebook stopped: the same model, by name, so nothing is vectorised again
-    _changed(path, {"KAGGLE_URL": "https://new.trycloudflare.com"})
-    assert search.name == connection.NOTEBOOK_SEARCH and search.url == "https://new.trycloudflare.com/embed"
+    assert search.api_key == "old"  # its password
+    _changed(path, {"KAGGLE_URL": "https://new.trycloudflare.com"})  # a new session: the same model, by name
+    assert search.name == "embeddinggemma-2-Q8_0" and search.url == "https://new.trycloudflare.com/embed"
     _changed(path, {"ZEN_MODEL": "local"})
-    assert search.name == "none"  # a llama-server here, no search model: keywords
+    assert search.name == "none"  # a llama-server here, no search model set up: keywords
 
 
-def test_this_computers_search_model_comes_first(tmp_path, monkeypatch):
+def test_this_computers_search_model_is_for_this_pc_and_clouds(tmp_path, monkeypatch):
     path = tmp_path / "model.env"
-    path.write_text("ZEN_MODEL=kaggle\n" + OLD, encoding="utf-8")
-    monkeypatch.setattr(model_link, "search_at", lambda values, timeout=15: pytest.fail("the notebook was asked"))
+    path.write_text("ZEN_MODEL=local\n" + OLD, encoding="utf-8")
     search = LiveEmbedder(Connection(path, _settings(embed_gguf="C:/models/embeddinggemma-2-Q8_0.gguf", embed_server="",
-                                                      embed_url="http://127.0.0.1:8070")))
+                                                      embed_mmproj="", embed_url="http://127.0.0.1:8070",
+                                                      assistant_dir=str(tmp_path))))
     assert search.name == "embeddinggemma-2-Q8_0" and search.url == "http://127.0.0.1:8070"
     assert isinstance(search._connection.embedder(), ServerEmbedder)

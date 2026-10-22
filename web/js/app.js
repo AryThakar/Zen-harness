@@ -201,7 +201,30 @@ async function openSettings(kind = null, error = "") {
     ok.textContent = now.chosen && now.use === k ? "Save" : `Use ${PLACES[k]}`;
     setTimeout(() => (first[k].find(i => !i.value && i.type !== "password") || first[k][0]).focus(), 30);
   }
-  const form = h("div", { class: "settings" }, tabs, h("div", { class: "panes" }, ...Object.values(panes)), err);
+  // Search by meaning on this PC: EmbeddingGemma 2 - files already here used, the rest downloaded (app/search_model.py)
+  const search = h("div", { class: "search-setup" });
+  let polling = null;
+  async function drawSearch(st = null) {
+    st ??= await api("/search-model").catch(() => null);
+    if (!st) { search.hidden = true; return; }
+    const kaggle = now.chosen && now.use === "kaggle";
+    const where = st.ready ? (kaggle ? "Set up on this PC, for This PC and Cloud. Kaggle uses the notebook's."
+                                     : "EmbeddingGemma 2, on this PC: your files, chats and pictures.")
+      : kaggle ? "Kaggle uses the notebook's. For This PC and Cloud, set it up on this PC."
+      : "Off: search is by keywords. Set it up on this PC to search by meaning.";
+    const said = st.running ? `${st.step} ${st.done_mb} of ${st.total_mb} MB` : st.error || (st.step && !st.ready ? st.step : where);
+    const act = async action => { try { drawSearch(await send("POST", "/search-model", { action })); } catch (e) { toast(e.message, true); } };
+    search.replaceChildren(
+      h("div", { class: "ss-text" }, h("b", {}, "Search by meaning"), h("small", { class: st.error ? "err" : "" }, said)),
+      st.ready ? h("span", { class: "ss-on", html: svg("check") }) : h("button", { class: "btn-s", type: "button",
+        onclick: () => act(st.running ? "stop" : "start") },
+        st.running ? "Stop" : st.download_mb ? `Download · ${st.download_mb} MB` : "Use the files on this PC"),
+      st.running ? h("div", { class: "ss-bar" }, h("i", { style: `width: ${st.total_mb ? 100 * st.done_mb / st.total_mb : 0}%` })) : "");
+    clearTimeout(polling);
+    if (st.running) polling = setTimeout(() => { if (dialogOpen()) drawSearch(); }, 1000);
+  }
+  drawSearch();
+  const form = h("div", { class: "settings" }, tabs, h("div", { class: "panes" }, ...Object.values(panes)), err, search);
   form.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); ok.click(); } });
   const closed = showDialog({ title: "Model settings", text: "Where Zen's model runs. Zen tries it before saving, and your chat carries on.",
     ok: "Save", extra: form });

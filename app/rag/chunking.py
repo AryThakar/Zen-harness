@@ -25,10 +25,6 @@ class Chunk:
     page: int | None
     section: str | None
 
-    def search_text(self) -> str:
-        """What gets indexed: the heading gives a passage its context."""
-        return f"{self.section}\n{self.text}" if self.section and self.section not in self.text[:200] else self.text
-
 
 MIN_WORDS = 20  # a shorter passage (a lone title or heading) is merged into the next one
 

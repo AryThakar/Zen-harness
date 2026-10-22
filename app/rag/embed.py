@@ -83,6 +83,7 @@ class ServerEmbedder:
             self.min_similarity_pictures = model["min_similarity_pictures"]
             self.unsure_gap = model["unsure_gap"]
         self._start = start
+        self.server = None  # the server the app runs for it (local_embedder), if any
         self._failed_at = 0.0
         self._marker: str | None = None
 
@@ -212,17 +213,26 @@ class HashEmbedder:
 
 
 def make_embedder(settings) -> Embedder | None:
-    """The embedding server on this computer when one is set up (ASSISTANT_EMBED_GGUF: the model file; the app
-    starts llama-server itself when ASSISTANT_EMBED_SERVER names it), else None: keyword search. The Kaggle
-    notebook's is chosen by app/connection.py."""
+    """The embedding server on this computer when one is set up in the environment (ASSISTANT_EMBED_GGUF: the model
+    file; the app starts llama-server itself when ASSISTANT_EMBED_SERVER names it), else None: keyword search. The one
+    set up from Settings, and the Kaggle notebook's, are chosen by app/connection.py."""
     if not getattr(settings, "embed_gguf", ""):
         return None
-    start = None
-    if settings.embed_server:
+    return local_embedder(settings.embed_gguf, settings.embed_mmproj, settings.embed_server, settings.embed_url,
+                          Path(settings.assistant_dir) / "embed-server.log")
+
+
+def local_embedder(gguf: str, mmproj: str, server: str, url: str, log_path: Path) -> ServerEmbedder:
+    """EmbeddingGemma on this computer, at url: the app starts llama-server (server) itself on the first search;
+    without one named, a server already running there is used. Named after its model file, as the notebook's is.
+    Its .server (the one the app runs, or None) can be stopped while it isn't needed: the next search starts it."""
+    running = None
+    if server:
         from .embed_server import EmbedServer
-        start = EmbedServer(settings.embed_server, settings.embed_gguf, settings.embed_mmproj,
-                            settings.embed_url, Path(settings.assistant_dir) / "embed-server.log").start
-    return ServerEmbedder(settings.embed_url, Path(settings.embed_gguf).stem, start=start)
+        running = EmbedServer(server, gguf, mmproj, url, log_path)
+    embedder = ServerEmbedder(url, Path(gguf).stem, start=running.start if running else None)
+    embedder.server = running
+    return embedder
 
 
 def _normalise(vectors: np.ndarray) -> np.ndarray:

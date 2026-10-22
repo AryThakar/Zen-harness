@@ -24,12 +24,32 @@ from app.assistant import main as main_slot
 from app.assistant.store import Store
 from app.config import settings
 from app.connection import Connection, Live, LiveEmbedder
+from app.search_model import Setup
 from app.providers import Provider
 
 from .api import assistant
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 WEB_PAGE = WEB / "index.html"
+
+
+class OwnAddressOnly:
+    """Only requests to this computer's own names: a page elsewhere can point a name of its own at 127.0.0.1 (DNS
+    rebinding) and then read Zen as if it were its own site - the browser would send that name as the Host. Tests'
+    clients call it 'testserver'."""
+
+    def __init__(self, app, testing: bool = False):
+        self.app = app
+        self.names = {"127.0.0.1", "localhost"} | ({"testserver"} if testing else set())
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = dict(scope["headers"]).get(b"host", b"").decode("latin-1")
+            if urlsplit(f"//{host}").hostname not in self.names:
+                await JSONResponse({"detail": "Zen answers only at its own address (127.0.0.1 or localhost)."},
+                                   status_code=400)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class SameSiteOnly:
@@ -77,14 +97,19 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
         app.state.assistant_store = store
         app.state.assistant_main, app.state.assistant_worker = main, worker
         app.state.assistant_upload_limit = settings.max_upload_mb * 1024 * 1024
+        # Search by meaning on this computer, set up from Settings: into data\models; files already in a models or
+        # llama-b* folder beside Zen's own folder are used where they are
+        data = Path(settings.assistant_dir).resolve().parent
+        app.state.search_setup = Setup(settings.model_settings, data / "models", data.parent.parent)
         yield
         if own_store:
             store.close()
 
     app = FastAPI(title=f"{settings.assistant_name} - a local assistant",
                   description="Chat, workspaces, helpers (web, knowledge, data, code) and their tools.",
-                  version="0.6.0", lifespan=lifespan)
+                  version="1.3.0", lifespan=lifespan)
     app.add_middleware(SameSiteOnly)
+    app.add_middleware(OwnAddressOnly, testing=assistant_parts is not None)
     app.include_router(assistant.router)
     app.mount("/static", PageFiles(directory=WEB), name="static")
 

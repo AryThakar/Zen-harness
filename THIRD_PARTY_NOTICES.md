@@ -182,8 +182,8 @@ None of these are in this repository or its releases.
 | Component | Use in Zen harness | License (as published by its authors) |
 | --- | --- | --- |
 | Qwen3.6-35B-A3B, as [Unsloth's GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) (`UD-Q4_K_S`, `mmproj-F16`) | The language model, downloaded by the Kaggle notebook | Apache-2.0, as listed on the model page |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) | Serves the model, downloaded by the notebook | MIT |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) | Serves the models, downloaded by the notebook - and its Windows Vulkan build by Zen's Settings, for search on this PC | MIT |
 | [cloudflared](https://github.com/cloudflare/cloudflared) | The notebook's tunnel | Apache-2.0 |
-| EmbeddingGemma 2 (optional), as [ggml-org's GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) (`Q8_0` and its `mmproj`) | Search by meaning | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) |
+| EmbeddingGemma 2 (optional), as [ggml-org's GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) (`Q8_0` and its `mmproj`) | Search by meaning, downloaded by the notebook or by Zen's Settings | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) |
 | Microsoft Edge | The window Zen-harness.exe opens, and the browser Playwright drives | Part of Windows |
 | [Pollinations](https://pollinations.ai/) (optional, with your own key) | Pictures | A web service, under its own terms |

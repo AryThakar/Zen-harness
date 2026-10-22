@@ -185,6 +185,27 @@ def model_settings_set(body: ModelSettingsIn, request: Request) -> dict:
     return {"ok": True, "use": body.use, "model": said}
 
 
+class SearchSetupIn(BaseModel):
+    action: Literal["start", "stop"]
+
+
+# Search by meaning on this computer (app/search_model.py): what is set up, and setting it up - files already here used,
+# the rest downloaded in the background while the page shows how far it is.
+@router.get("/search-model")
+def search_model_get(request: Request) -> dict:
+    return request.app.state.search_setup.state()
+
+
+@router.post("/search-model")
+def search_model_set(body: SearchSetupIn, request: Request) -> dict:
+    origin = request.headers.get("origin")
+    if origin and origin.split("://", 1)[-1] != request.headers.get("host"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only Zen's own page can set up its search model.")
+    setup = request.app.state.search_setup
+    setup.start() if body.action == "start" else setup.stop()
+    return setup.state()
+
+
 class WindowThemeIn(BaseModel):
     theme: Literal["dark", "light"]
 

@@ -176,9 +176,10 @@ month look like? Show me a chart."*
 - *Search by meaning* - EmbeddingGemma 2, which finds pictures too. **On Kaggle:** the notebook runs it beside Qwen,
   and Zen finds it by itself. **On this computer:** a llama.cpp build that knows it and its two files
   (`embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set the three `ASSISTANT_EMBED_*`
-  settings to their paths and the app starts it itself - it comes first when both are there. Both run the same file,
-  so their vectors are one model's: a switch between them vectorises nothing again. Without either, search is by
-  keywords.
+  settings to their paths, or in Zen's Settings click *Search by meaning* - it uses the files already on this PC or
+  downloads them (about 900 MB) - and the app starts it itself, for This PC and Cloud (with Kaggle, the notebook's is
+  used). Both run the same file, so their vectors are one model's: a switch vectorises nothing again. Without either,
+  search is by keywords.
 - *A real browser* - Node and Microsoft Edge, with [Playwright MCP](https://github.com/microsoft/playwright-mcp) in a
   folder of its own (`npm install @playwright/mcp`) named by `ASSISTANT_PLAYWRIGHT_MCP`. It reads pages drawn by
   JavaScript, and it tries the pages and games Zen writes before they are called ready.
@@ -198,7 +199,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 
 | Setting | What it is |
 |---|---|
-| `ZEN_MODEL_SETTINGS` | the file Zen's Model settings are kept in (default `model.env` beside `.env`; Zen-harness.exe's: its `settings.env`). Written from the app: `ZEN_MODEL` (`kaggle`, `local` or `cloud`), `KAGGLE_URL` and `KAGGLE_PASSWORD`, `LOCAL_URL`, `CLOUD_URL`, `CLOUD_KEY` and `CLOUD_MODEL` |
+| `ZEN_MODEL_SETTINGS` | the file Zen's Model settings are kept in (default `model.env` beside `.env`; Zen-harness.exe's: its `settings.env`). Written from the app: `ZEN_MODEL` (`kaggle`, `local` or `cloud`), `KAGGLE_URL` and `KAGGLE_PASSWORD`, `LOCAL_URL`, `CLOUD_URL`, `CLOUD_KEY` and `CLOUD_MODEL`; and search on this PC's `SEARCH_GGUF`, `SEARCH_MMPROJ`, `SEARCH_SERVER` |
 | `BIZ_LLAMACPP_URL` | this computer's llama-server when the Model settings name none (default `http://127.0.0.1:8080`) |
 | `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts (empty: one already running is used) |
 | `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector |

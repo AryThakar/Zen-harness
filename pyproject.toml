@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zen-harness"
-version = "1.2.0"
+version = "1.3.0"
 description = "Zen harness: a personal assistant that gets real work out of an open model you run yourself - a main assistant with web, knowledge, data and coding helpers."
 readme = "README.md"
 license = { file = "LICENSE" }  # PolyForm Noncommercial 1.0.0

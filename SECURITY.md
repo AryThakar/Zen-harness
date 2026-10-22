@@ -16,6 +16,8 @@ the properties it is meant to keep:
 - **Loopback only.** The app listens on `127.0.0.1:8000` and has no login: anyone who can reach that port can
   use it, so it must never be bound to another address or put behind a public tunnel as it is. The embedding
   server, when it runs here, listens on `127.0.0.1:8070`.
+- **Its own address only.** A request whose Host is not `127.0.0.1` or `localhost` is refused, so a web page that
+  points a name of its own at your computer (DNS rebinding) can't read Zen as if it were that page's site.
 - **The model is remote when it runs on Kaggle.** Your messages, and the parts of your files Zen reads to answer,
   go to the llama-server in your own Kaggle notebook, over the notebook's Cloudflare tunnel (HTTPS) and with its
   password (`--api-key`) - and, when the notebook runs the search model too, your files' text and pictures to be

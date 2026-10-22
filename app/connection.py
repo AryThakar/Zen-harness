@@ -3,27 +3,29 @@
 search model - made again when the settings file changes (its time stamp, looked at on each use), so a change from
 the app applies on the next request, with no restart.
 
-The app holds stand-ins (Live, LiveEmbedder) that pass every use on to what is current. Search by meaning, in order:
-EmbeddingGemma on this computer when it is set up (ASSISTANT_EMBED_*); else the Kaggle notebook's, when Kaggle is in
-use and the notebook runs one - kept, by name, while the notebook can't be reached, so a lost connection means
-keyword search for a while rather than every file vectorised again; else none (an older notebook, a llama-server here
-without it, a cloud): search by keywords. Both run the same model file, so their vectors are one model's - a switch
-between Kaggle and this computer vectorises nothing again.
+One rule for search by meaning: it runs on the chat model's machine.
+
+    Kaggle    the notebook's EmbeddingGemma (at its address's /embed, with its password) - this computer runs nothing
+    This PC   EmbeddingGemma on this computer, set up from Settings (app/search_model.py; or ASSISTANT_EMBED_*)
+    Cloud     the same, on this computer: a cloud's own embeddings would be another model's vectors, and every switch
+              would vectorise every file again
+
+Everywhere the same model file, so the vectors are one model's: a switch vectorises nothing again. Where it isn't (the
+notebook stopped or older, nothing set up here), search is by keywords - nothing is probed or put in its place; a
+search model that answers again is used again (app/rag/embed.py tries it after a pause).
+
+The app holds stand-ins (Live, LiveEmbedder) that pass every use on to what is current.
 """
 
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
-from app import model_link
+from app import model_link, search_model
 from app.providers import LlamaCppProvider
 from app.providers.cloud import CloudProvider
-from app.rag.embed import NoEmbedder, ServerEmbedder, make_embedder
-
-NOTEBOOK_SEARCH = "embeddinggemma-2-Q8_0"  # the notebook's search model (its EMBED_FILE), named while it is away
-SEARCH_RECHECK = 60  # seconds before a notebook that didn't answer about its search model is asked again
+from app.rag.embed import NoEmbedder, ServerEmbedder, local_embedder, make_embedder
 
 
 class Connection:
@@ -33,9 +35,8 @@ class Connection:
         self._stamp: object = object()  # never a file's: the first use makes everything
         self._values: dict[str, str] = {}
         self._providers: tuple = ()
-        self._search = None  # made on the first search after a change (asking the notebook takes a moment)
-        self._search_until = 0.0  # a guess about the notebook's search model holds until then
-        self._embedders: dict[tuple, object] = {}  # each made once: it remembers a server that failed
+        self._search = None
+        self._embedders: dict[tuple, object] = {}  # each made once: it remembers a server that failed, or runs one
 
     def _fresh(self) -> None:
         """Everything made again when the settings file has changed (or appeared, or gone)."""
@@ -47,7 +48,7 @@ class Connection:
             return
         self._stamp, self._values = stamp, model_link.read(self.path)
         self._providers = (self._provider(0), self._provider(1))
-        self._search, self._search_until = None, 0.0
+        self._search = self._search_model()
 
     @property
     def kind(self) -> str:
@@ -59,6 +60,11 @@ class Connection:
         with self._lock:
             self._fresh()
             return self._providers[role]
+
+    def embedder(self):
+        with self._lock:
+            self._fresh()
+            return self._search
 
     def _provider(self, role: int):
         s, values = self.settings, self._values
@@ -74,38 +80,28 @@ class Connection:
                                 cancel=self.cancel, thinking_budget=s.assistant_thinking_budget or None,
                                 api_key=key, place=place)
 
-    def embedder(self):
-        with self._lock:
-            self._fresh()
-            if self._search is not None and time.monotonic() < self._search_until:
-                return self._search
-            values = dict(self._values)
-        made = self._choose_search(values)  # outside the lock: it may ask the notebook
-        with self._lock:
-            if self._values == values:
-                self._search = made
-            return made
-
-    def _choose_search(self, values: dict[str, str]):
-        forever = float("inf")
-        if getattr(self.settings, "embed_gguf", ""):  # this computer's EmbeddingGemma comes first
-            self._search_until = forever
-            return self._once(("here",), lambda: make_embedder(self.settings))
-        if model_link.in_use(values) == "kaggle" and model_link.ready("kaggle", values):
-            found = model_link.search_at(values)
-            if found is not None:  # the notebook runs it
-                url, key, name = found
-                self._search_until = forever
-                return self._once(("kaggle", url, key, name),
-                                  lambda: ServerEmbedder(url, name.removesuffix(".gguf"), api_key=key))
-            if not model_link.check("kaggle", values, timeout=10)[0]:  # away for now: keep its model's name
-                url = values[model_link.KAGGLE_URL].rstrip("/") + model_link.EMBED
-                key = values[model_link.KAGGLE_PASSWORD]
-                self._search_until = time.monotonic() + SEARCH_RECHECK
-                return self._once(("kaggle", url, key, NOTEBOOK_SEARCH),
-                                  lambda: ServerEmbedder(url, NOTEBOOK_SEARCH, api_key=key))
-        self._search_until = forever  # an older notebook (Qwen only), a llama-server here, a cloud: keywords
+    def _search_model(self):
+        s, values = self.settings, self._values
+        if model_link.in_use(values) == "kaggle":
+            self._stop_here()  # this computer runs nothing
+            if not model_link.ready("kaggle", values):
+                return self._once(("none",), NoEmbedder)
+            url = values[model_link.KAGGLE_URL].rstrip("/") + model_link.EMBED
+            key = values[model_link.KAGGLE_PASSWORD]
+            return self._once(("kaggle", url, key), lambda: ServerEmbedder(url, search_model.NAME, api_key=key))
+        here = search_model.here(values)
+        if here:  # set up from Settings...
+            return self._once(("here", *here), lambda: local_embedder(
+                *here, s.embed_url, Path(s.assistant_dir) / "embed-server.log"))
+        if getattr(s, "embed_gguf", ""):  # ... or in the environment
+            return self._once(("here",), lambda: make_embedder(s))
         return self._once(("none",), NoEmbedder)
+
+    def _stop_here(self) -> None:
+        """The search server this computer runs, stopped while Kaggle is in use (a switch back starts it again)."""
+        for key, embedder in self._embedders.items():
+            if key[0] == "here" and getattr(embedder, "server", None) is not None:
+                embedder.server.close()
 
     def _once(self, key: tuple, make):
         if key not in self._embedders:

@@ -287,10 +287,6 @@ class Workspace:
         self._expect(key, "image")
         self.put("", data, key=key, meta=dict(meta or {}))
 
-    def replace_table(self, key: str, df: pd.DataFrame, meta: dict | None = None) -> None:
-        self._expect(key, "table")
-        self.put("", df, key=key, meta=dict(meta or {}))
-
     # ------------------------------------------------------------------ reading
 
     @_locked

@@ -125,7 +125,7 @@ def test_the_page_pins_files_and_points_at_one_with_its_message(tmp_path):
     app.state.assistant_store = store = Store(tmp_path / "a", HashEmbedder())
     app.state.assistant_main = main = ScriptedProvider([answer("It is a table of sales.")])
     app.state.assistant_worker = ScriptedProvider([])
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")  # the real app: its own address only
     ws_id = client.post("/assistant/workspaces", json={"name": "w"}).json()["id"]
     chat_id = client.post(f"/assistant/workspaces/{ws_id}/chats").json()["id"]
     ws, _ = store.open(ws_id)
