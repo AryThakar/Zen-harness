@@ -36,6 +36,8 @@ static class Zen
 {
     const string App = "http://127.0.0.1:8000/";
     const string Model = "http://127.0.0.1:8080/health";  // the bridge, or a llama-server on this computer
+    // Zen's app is up: its tool names answer at once (its status asks the model first - over Kaggle's tunnel, seconds)
+    const string Up = App + "assistant/tools";
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
     static readonly string SettingsFile = Path.Combine(Root, "settings.env");
     static readonly string Data = Path.Combine(Root, "data");
@@ -49,7 +51,7 @@ static class Zen
         using (var screen = Graphics.FromHwnd(IntPtr.Zero)) Scale = screen.DpiX / 96f;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        if (Answers(App + "assistant/status", 1500))  // already running: one more window
+        if (Answers(Up, 3000))  // already running: one more window
         {
             var another = OwnWindow();
             if (another != null) Application.Run(another);
@@ -64,7 +66,7 @@ static class Zen
             if (!Connect(settings, splash)) return 1;
             splash.Say("Starting Zen…");
             var app = Start(Python(), "-m uvicorn app.main:app --host 127.0.0.1 --port 8000", "zen.log", settings);
-            if (!WaitFor(App + "assistant/status", 120, app))
+            if (!WaitFor(Up, 120, app))
             {
                 splash.Hide();
                 Fail("Zen didn't start.", Path.Combine(Logs, "zen.log"));
@@ -164,6 +166,7 @@ static class Zen
         if (Directory.Exists(mcp) && string.IsNullOrEmpty(env["ASSISTANT_PLAYWRIGHT_MCP"])) env["ASSISTANT_PLAYWRIGHT_MCP"] = mcp;
         env["PATH"] = Path.Combine(Root, "tools", "node") + ";" + Path.Combine(Root, "runtime") + ";" + env["PATH"];
         env["PYTHONUTF8"] = "1";
+        env["PYTHONUNBUFFERED"] = "1";  // each log line as it happens (piped, Python would hold them back)
         var writer = new StreamWriter(Path.Combine(Logs, log), false, new UTF8Encoding(false)) { AutoFlush = true };
         var proc = new Process { StartInfo = info };
         DataReceivedEventHandler keep = (s, e) => { if (e.Data != null) lock (writer) writer.WriteLine(e.Data); };
@@ -182,7 +185,7 @@ static class Zen
         var end = DateTime.Now.AddSeconds(seconds);
         while (DateTime.Now < end)
         {
-            var ask = Task.Factory.StartNew(() => Answers(url, 1000));
+            var ask = Task.Factory.StartNew(() => Answers(url, 3000));
             while (!ask.IsCompleted) Pump(15);
             if (ask.Result) return true;
             if (proc.HasExited) return false;
@@ -222,6 +225,9 @@ static class Zen
     static Form LoadOwnWindow()
     {
         CoreWebView2Environment.GetAvailableBrowserVersionString();  // throws when there is no WebView2
+        // WebView2 resumes its start on this thread: the connect window, closing, may have taken WinForms' way back here
+        if (!(SynchronizationContext.Current is WindowsFormsSynchronizationContext))
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
         var window = new ZenWindow(App, Data);
         var loaded = window.Open();
         var end = DateTime.Now.AddSeconds(40);
@@ -326,7 +332,9 @@ static class Zen
         string tail = "";
         try
         {
-            var lines = File.ReadAllLines(log);
+            string[] lines;  // the server may still be writing it: read alongside
+            using (var file = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var text = new StreamReader(file, Encoding.UTF8)) lines = text.ReadToEnd().Split('\n');
             tail = string.Join("\n", lines, Math.Max(0, lines.Length - 12), Math.Min(12, lines.Length));
         }
         catch (Exception) { }
