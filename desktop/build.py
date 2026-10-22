@@ -48,7 +48,8 @@ SKIP_FILE = re.compile(r"(_d\.(exe|dll|pyd)|\.pdb|\dt\.(exe|dll)|_tkinter\.pyd|t
 SETTINGS = """\
 # Zen harness settings - NAME=value lines, read by Zen-harness.exe each time it starts.
 # The model: the Kaggle notebook (zen\\kaggle\\zen-qwen36-server.ipynb) prints these two in its last cell.
-# Zen-harness.exe asks for them the first time, and again when the notebook has a new address.
+# Zen-harness.exe asks for them the first time, and again when the notebook has a new address; while Zen runs, the
+# model's name at the top of a chat changes them (no restart).
 # Leave them empty to use a llama-server running on this computer at 127.0.0.1:8080.
 KAGGLE_URL=
 KAGGLE_PASSWORD=

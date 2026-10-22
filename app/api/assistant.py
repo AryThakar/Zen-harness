@@ -44,7 +44,7 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field
 
 from app.assistant import main as main_slot
 from app.assistant.workers import catalogue
+from app import model_link
 from app.assistant.store import Store
 from app.config import settings
 from app.tools import agent_md, approval, caption, console, file_ops, filetypes
@@ -122,6 +123,55 @@ def assistant_status(request: Request) -> dict:
             "model": (loaded() if ready and loaded else None) or main.name,
             **({"where": where()} if ready and where else {}),
             "assistant": settings.assistant_name, "user": settings.assistant_user_name}
+
+
+class ModelLinkIn(BaseModel):
+    url: str = Field(min_length=1, max_length=300)
+    password: str = Field("", max_length=300)  # empty: keep the one saved
+
+
+# The Kaggle notebook's address and password (app/model_link.py): read for the settings window - the password never
+# leaves the server - and changed from it, tested first; the bridge takes them on its next request.
+@router.get("/model-link")
+def model_link_get() -> dict:
+    values = model_link.read(Path(settings.model_settings))
+    return {"url": values.get(model_link.URL, ""), "password_set": bool(values.get(model_link.PASSWORD))}
+
+
+@router.post("/model-link")
+def model_link_set(body: ModelLinkIn, request: Request) -> dict:
+    # only this app's own page may change where the model runs (another site open in the browser could otherwise post
+    # here and send the chats to its own server)
+    origin = request.headers.get("origin")
+    if origin and origin.split("://", 1)[-1] != request.headers.get("host"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only Zen's own page can change the model's address.")
+    path = Path(settings.model_settings)
+    url = model_link.pasted(body.url, "address").rstrip("/")
+    password = model_link.pasted(body.password, "password") or model_link.read(path).get(model_link.PASSWORD, "")
+    if not url.startswith(("https://", "http://")):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The address starts with https:// - copy it whole from the notebook.")
+    if not password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The password is missing: copy it from the notebook's last cell.")
+    if any(c.isspace() for c in url + password):  # one line each: nothing else gets into the settings file
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Paste the address and the password one at a time, each on its own.")
+    ok_, said = model_link.check(url, password)
+    if not ok_:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, said)
+    model_link.write(path, url, password)
+    return {"ok": True, "model": said}
+
+
+class WindowThemeIn(BaseModel):
+    theme: Literal["dark", "light"]
+
+
+# The theme picked in the page, kept for Zen-harness.exe: Edge's app window draws its own title bar, dark or light only
+# as it opens, so the launcher reads this file to open it matching the page.
+@router.put("/window-theme", status_code=status.HTTP_204_NO_CONTENT)
+def window_theme(body: WindowThemeIn) -> None:
+    path = Path(settings.assistant_dir) / "window-theme"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body.theme, encoding="utf-8")
 
 
 @router.get("/tools")

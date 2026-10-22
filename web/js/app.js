@@ -19,15 +19,23 @@ const thread = $("#thread"), scroller = $("#scroller"), input = $("#input"), com
 const systemLight = matchMedia("(prefers-color-scheme: light)");
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
+  // an installed app's title bar takes the page's colour: one surface (Zen-harness.exe's window is told below instead)
+  let bar = document.querySelector('meta[name="theme-color"]');
+  if (!bar) document.head.append(bar = h("meta", { name: "theme-color" }));
+  bar.content = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
   if (window.Chart) redrawCharts();
   redrawDiagrams();
 }
+// Zen-harness.exe's Edge window draws its own title bar, dark or light as it opens: the server keeps the pick for it
+const tellWindow = theme => send("PUT", "/window-theme", { theme }).catch(() => {});
 applyTheme(load(KEYS.theme) || (systemLight.matches ? "light" : "dark"));
+if (load(KEYS.theme)) tellWindow(load(KEYS.theme));
 systemLight.addEventListener("change", e => { if (!load(KEYS.theme)) applyTheme(e.matches ? "light" : "dark"); });
 $("#themeBtn").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   save(KEYS.theme, next);
   applyTheme(next);
+  tellWindow(next);
 });
 
 /* ═══ The intro: once a session, its sound keeping the animation's clock; a click or a key skips it ═══ */
@@ -89,6 +97,31 @@ async function refreshStatus() {
   state.poll = setTimeout(refreshStatus, s.ready ? 30000 : 5000);
   updateComposer();
 }
+
+// The model's connection: the Kaggle notebook's address and password, changed without restarting anything - a new
+// notebook session prints new ones, and the chat carries on. Tried first; saved only when the model answers.
+async function openModelLink(tried = null) {
+  let now = { url: "", password_set: false };
+  try { now = await api("/model-link"); } catch {}
+  const url = h("input", { type: "url", placeholder: "https://….trycloudflare.com", value: tried?.url ?? now.url, spellcheck: "false", autocomplete: "off" });
+  const password = h("input", { type: "password", autocomplete: "off",
+    placeholder: now.password_set ? "Unchanged - paste a new one to replace it" : "The password the notebook printed" });
+  const form = h("div", { class: "link-form" }, h("label", {}, "Address", url), h("label", {}, "Password", password));
+  form.addEventListener("keydown", e => { if (e.key === "Enter") $("#dialogOk").click(); });
+  setTimeout(() => (url.value ? password : url).focus(), 30);
+  const go = await showDialog({ title: "Model connection", ok: "Connect", extra: form,
+    text: "The address and password the Kaggle notebook printed in its last cell. Zen tries them before saving, and your chat carries on." });
+  if (!go) return;
+  try {
+    const r = await send("POST", "/model-link", { url: url.value.trim(), password: password.value.trim() });
+    toast(`Connected: ${prettyModel(r.model)}`);
+    refreshStatus();
+  } catch (e) {
+    toast(e.message, true);
+    openModelLink({ url: url.value });
+  }
+}
+$("#modelState").addEventListener("click", () => openModelLink());
 
 /* ═══ Projects (workspaces on the server) ═══════════════════════════════ */
 const initial = name => (name.trim()[0] || "P").toUpperCase();
@@ -356,7 +389,8 @@ function renderHello() {
   const notice = $("#helloNotice");
   notice.hidden = !s || s.ready;
   if (s && !s.ready) notice.replaceChildren(h("b", {}, { loading: "The model is still loading", down: "The model can't be reached",
-    offline: "This app's server isn't running" }[s.state] || "The model isn't ready"), s.message || "");
+    offline: "This app's server isn't running" }[s.state] || "The model isn't ready"), s.message || "",
+    s.state === "down" ? h("button", { class: "btn-s link-btn", type: "button", onclick: () => openModelLink() }, "Connect the model") : "");
   const mine = i => !/^work\//.test(i.name || "");  // not a helper's working file (work/)
   const tables = state.items.filter(i => i.kind === "table" && !i.parent && mine(i));
   // a chart is no read, and agent.md is Zen's memory, not a document to summarise

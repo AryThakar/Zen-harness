@@ -1045,7 +1045,16 @@ body.landed .side, body.landed .main { animation: none; }
 .item .act.pin-act:not(.on) { opacity: .55; }
 .item:hover .act.pin-act { opacity: 1; }
 .model-state { display: inline-flex; align-items: center; gap: 7px; margin: 0 4px 0 0; padding: 4px 10px; border-radius: 999px;
-  font-size: 12.5px; color: var(--muted); background: var(--hover); }
+  font: inherit; font-size: 12.5px; color: var(--muted); background: var(--hover); border: 0; cursor: pointer; }
+.model-state:hover { color: var(--ink); }
+.model-state.ready:hover { background: var(--hover); }
+/* the model's connection: the Kaggle notebook's address and password */
+.link-form { display: grid; gap: 12px; margin-top: 4px; }
+.link-form label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.link-form input { font: inherit; font-size: 14px; padding: 9px 11px; border-radius: 10px; color: var(--ink);
+  background: var(--composer); border: 1px solid var(--line); }
+.link-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.notice .link-btn { display: block; margin-top: 10px; }
 .model-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #e0a43a; animation: pulse 1.4s ease-in-out infinite; }
 .model-state.down::before, .model-state.offline::before { background: var(--red); animation: none; }
 .model-state.ready { padding: 7px; gap: 0; background: none; }  /* ready: the dot alone, the model's name in its tooltip */

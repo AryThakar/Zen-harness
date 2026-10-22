@@ -11,15 +11,19 @@
 //
 // One click: the bridge to the model on Kaggle (when settings.env names one), then the app, then the window (Edge's
 // app mode, its own profile). Closing the window stops both. A second click while Zen runs opens another window.
+// Zen's model settings change the address and password in settings.env later, and the bridge takes them as it runs.
 // Built by desktop/build.py with the C# compiler every Windows has (.NET Framework 4): C# 5, no packages.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -36,41 +40,59 @@ static class Zen
     [STAThread]
     static int Main()
     {
+        SetProcessDPIAware();  // sharp on a scaled screen: the windows below size themselves with Px
+        using (var screen = Graphics.FromHwnd(IntPtr.Zero)) Scale = screen.DpiX / 96f;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         if (Answers(App + "assistant/status", 1500))  // already running: one more window
         {
-            OpenWindow(false);
+            OpenWindow();
             return 0;
         }
         Directory.CreateDirectory(Logs);
+        var splash = new Splash();
         try
         {
             var settings = ReadSettings();
-            if (!Connect(settings)) return 1;
-            using (var splash = new Splash("Starting Zen…"))
+            if (!Connect(settings, splash)) return 1;
+            splash.Say("Starting Zen…");
+            var app = Start(Python(), "-m uvicorn app.main:app --host 127.0.0.1 --port 8000", "zen.log", settings);
+            if (!WaitFor(App + "assistant/status", 120, app))
             {
-                splash.Show();
-                var app = Start(Python(), "-m uvicorn app.main:app --host 127.0.0.1 --port 8000", "zen.log", settings);
-                if (!WaitFor(App + "assistant/status", 120, app, splash))
-                {
-                    splash.Close();
-                    Fail("Zen didn't start.", Path.Combine(Logs, "zen.log"));
-                    return 1;
-                }
+                splash.Hide();
+                Fail("Zen didn't start.", Path.Combine(Logs, "zen.log"));
+                return 1;
             }
-            OpenWindow(true);
+            splash.Say("Opening Zen…");
+            var window = OpenWindow();
+            if (window == null)
+            {
+                splash.Hide();
+                Application.Run(new RunningForm());
+                return 0;
+            }
+            // the splash stays until Edge's window is there, so nothing blinks out in between
+            var end = DateTime.Now.AddSeconds(10);
+            while (DateTime.Now < end && !window.HasExited)
+            {
+                window.Refresh();
+                if (window.MainWindowHandle != IntPtr.Zero) { Pump(400); break; }
+                Pump(50);
+            }
+            splash.Hide();
+            window.WaitForExit();
             return 0;
         }
         finally
         {
+            splash.Dispose();
             StopAll();
         }
     }
 
     // The model: the Kaggle bridge when settings.env names an address - asked for when there is none, or when it no
     // longer answers (the notebook's tunnel gets a new address each time it starts) - or a llama-server already here.
-    static bool Connect(Dictionary<string, string> settings)
+    static bool Connect(Dictionary<string, string> settings, Splash splash)
     {
         string why = null;
         while (true)
@@ -84,17 +106,14 @@ static class Zen
             }
             else
             {
-                Process bridge = null;
-                using (var splash = new Splash("Reaching the model…"))
-                {
-                    splash.Show();
-                    bridge = Start(Python(), "\"" + Path.Combine(Root, "zen", "kaggle", "bridge.py") + "\"", "bridge.log", settings);
-                    if (WaitFor(Model, 25, bridge, splash)) return true;
-                }
+                splash.Say("Reaching the model on Kaggle…");
+                var bridge = Start(Python(), "\"" + Path.Combine(Root, "zen", "kaggle", "bridge.py") + "\"", "bridge.log", settings);
+                if (WaitFor(Model, 25, bridge)) return true;
                 Stop(bridge);
                 why = "The model didn't answer at that address. Is the notebook still running? It prints a new " +
                       "address and password each time it starts.";
             }
+            splash.Hide();
             using (var ask = new ConnectForm(why, settings))
             {
                 if (ask.ShowDialog() != DialogResult.OK) return false;
@@ -124,6 +143,8 @@ static class Zen
         // the user's own things live in data\, next to this launcher; the browser tool's node comes with it
         env["ASSISTANT_DATA_DIR"] = Path.Combine(Data, "assistant");
         env["BIZ_EMBED_CACHE_DIR"] = Path.Combine(Data, "models");
+        // the file the app's model settings write and the bridge reads again when it changes
+        env["ZEN_MODEL_SETTINGS"] = SettingsFile;
         if (!env.ContainsKey("BIZ_LLM_PROVIDER") || string.IsNullOrEmpty(env["BIZ_LLM_PROVIDER"])) env["BIZ_LLM_PROVIDER"] = "llamacpp";
         string mcp = Path.Combine(Root, "tools", "playwright-mcp");
         if (Directory.Exists(mcp) && string.IsNullOrEmpty(env["ASSISTANT_PLAYWRIGHT_MCP"])) env["ASSISTANT_PLAYWRIGHT_MCP"] = mcp;
@@ -141,17 +162,26 @@ static class Zen
         return proc;
     }
 
-    // Until url answers, the process exits or the time is up - the splash kept painting meanwhile
-    static bool WaitFor(string url, int seconds, Process proc, Form splash)
+    // Until url answers, the process exits or the time is up - asked off this thread, so the splash keeps moving
+    static bool WaitFor(string url, int seconds, Process proc)
     {
         var end = DateTime.Now.AddSeconds(seconds);
         while (DateTime.Now < end)
         {
-            if (Answers(url, 1000)) return true;
+            var ask = Task.Factory.StartNew(() => Answers(url, 1000));
+            while (!ask.IsCompleted) Pump(15);
+            if (ask.Result) return true;
             if (proc.HasExited) return false;
-            for (int i = 0; i < 5; i++) { Application.DoEvents(); Thread.Sleep(100); }
+            Pump(400);
         }
         return false;
+    }
+
+    // The windows kept painting for that long (the splash's bar, the moon's light)
+    static void Pump(int ms)
+    {
+        var end = DateTime.Now.AddMilliseconds(ms);
+        do { Application.DoEvents(); Thread.Sleep(10); } while (DateTime.Now < end);
     }
 
     static bool Answers(string url, int ms)
@@ -166,22 +196,31 @@ static class Zen
         catch (Exception) { return false; }
     }
 
-    // Edge's app mode, a profile of its own (a window, not a tab among the user's): it stays open until the window is
-    // closed. Without Edge, the default browser, and a small window that stops Zen when closed.
-    static void OpenWindow(bool wait)
+    // Edge's app mode, a profile of its own (a window, not a tab among the user's): its process lasts until the window
+    // is closed. Without Edge, the default browser, and null.
+    static Process OpenWindow()
     {
         string edge = FindEdge();
-        if (edge != null)
+        if (edge == null)
         {
-            var profile = Path.Combine(Data, "window");
-            var args = "--app=" + App + " --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check " +
-                       "--disable-features=msEdgeSidebarV2 --window-size=1320,880";
-            var window = Process.Start(new ProcessStartInfo(edge, args) { UseShellExecute = false });
-            if (wait && window != null) window.WaitForExit();
-            return;
+            Process.Start(App);
+            return null;
         }
-        Process.Start(App);
-        if (wait) Application.Run(new RunningForm());
+        var profile = Path.Combine(Data, "window");
+        // no syncing the user's Edge data (favourites, history, passwords) into Zen's window
+        var args = "--app=" + App + " --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check " +
+                   "--disable-sync --disable-features=msEdgeSidebarV2";
+        // the window draws its own title bar, dark or light only as it opens - dark, as Zen's page is, unless light was
+        // picked in it (the page tells the app, which keeps it here)
+        string theme = "";
+        try { theme = File.ReadAllText(Path.Combine(Data, "assistant", "window-theme")).Trim(); } catch (Exception) { }
+        if (theme != "light") args += " --force-dark-mode";
+        // 1320 x 880 where the screen has room, in the middle of it (Edge's sizes are 100 % pixels, the screen's real)
+        var area = Screen.PrimaryScreen.WorkingArea;
+        float aw = area.Width / Scale, ah = area.Height / Scale;
+        int w = (int)Math.Min(1320, aw - 64), h = (int)Math.Min(880, ah - 48);
+        args += " --window-size=" + w + "," + h + " --window-position=" + (int)(area.Left / Scale + (aw - w) / 2) + "," + (int)(area.Top / Scale + (ah - h) / 2);
+        return Process.Start(new ProcessStartInfo(edge, args) { UseShellExecute = false });
     }
 
     static string FindEdge()
@@ -259,22 +298,108 @@ static class Zen
         MessageBox.Show(what + "\n\nThe last lines of " + log + ":\n\n" + tail, "Zen harness", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 
-    // Zen's own colours (web/app.css, dark): the page, its text, the muted text, the line between things
-    internal static readonly Color Bg = Color.FromArgb(0x21, 0x21, 0x21);
+    // Zen's own colours (web/app.css, dark): the page, a raised surface, the text, the quieter texts, the line between
+    // things, the moon's two ends and its middle, and the error red
+    internal static readonly Color Bg = Color.FromArgb(0x1c, 0x1c, 0x1c);
+    internal static readonly Color Surface = Color.FromArgb(0x2a, 0x2a, 0x2a);
     internal static readonly Color Ink = Color.FromArgb(0xec, 0xec, 0xec);
-    internal static readonly Color Muted = Color.FromArgb(0x9b, 0x9b, 0x9b);
-    internal static readonly Color Field = Color.FromArgb(0x30, 0x30, 0x30);
+    internal static readonly Color Muted = Color.FromArgb(0xb4, 0xb4, 0xb4);
+    internal static readonly Color Soft = Color.FromArgb(0x8e, 0x8e, 0x8e);
+    internal static readonly Color Line = Color.FromArgb(0x38, 0x38, 0x38);
+    internal static readonly Color MoonA = Color.FromArgb(0xb9, 0xad, 0xff);
+    internal static readonly Color MoonB = Color.FromArgb(0x5a, 0x47, 0xe0);
     internal static readonly Color Moon = Color.FromArgb(0x8e, 0x7d, 0xf5);
+    internal static readonly Color Red = Color.FromArgb(0xff, 0x6b, 0x6b);
 
-    internal static Font UiFont(float size, FontStyle style = FontStyle.Regular) { return new Font("Segoe UI", size, style); }
+    // The screen's scale (1 at 100 %, 1.5 at 150 %): every size below is in 100 % pixels, through Px
+    internal static float Scale = 1;
+    internal static int Px(float v) { return (int)Math.Round(v * Scale); }
+
+    // Windows 11's Segoe UI Variable, else Segoe UI (Windows 10)
+    static readonly Dictionary<string, bool> fonts = new Dictionary<string, bool>();
+    static string FirstFont(string wanted, string fallback)
+    {
+        bool have;
+        if (!fonts.TryGetValue(wanted, out have))
+        {
+            try { using (new FontFamily(wanted)) have = true; } catch (ArgumentException) { have = false; }
+            fonts[wanted] = have;
+        }
+        return have ? wanted : fallback;
+    }
+    internal static Font UiFont(float size, bool strong = false)
+    {
+        return new Font(strong ? FirstFont("Segoe UI Variable Text Semibold", "Segoe UI Semibold") : FirstFont("Segoe UI Variable Text", "Segoe UI"), size);
+    }
+    internal static Font TitleFont(float size, bool strong = true)
+    {
+        // GDI keeps 31 letters of a name: the variable font's semibold is "...Display Semib"
+        return new Font(strong ? FirstFont("Segoe UI Variable Display Semib", "Segoe UI Semibold") : FirstFont("Segoe UI Variable Display", "Segoe UI"), size);
+    }
 
     internal static Icon AppIcon()
     {
         try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { return null; }
     }
 
-    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    // Zen's crescent (web/index.html's #mark): a disc of radius 9 at (12, 12) less the arc of radius 8.4 through the same
+    // two points, lit lower right, in the moon's gradient - drawn, so it is sharp at any size. box is its 17.334 view box.
+    internal static void DrawMark(Graphics g, RectangleF box)
+    {
+        float s = box.Width / 17.334f, o = 3.666f;
+        using (var path = new GraphicsPath())
+        {
+            path.AddArc(box.X + (3 - o) * s, box.Y + (3 - o) * s, 18 * s, 18 * s, -67.812f, 225.624f);
+            path.AddArc(box.X + (0.2029f - o) * s, box.Y + (0.2029f - o) * s, 16.8f * s, 16.8f * s, 125.996f, -161.991f);
+            path.CloseFigure();
+            using (var light = new LinearGradientBrush(new PointF(box.X - 1, box.Y - 1), new PointF(box.Right + 1, box.Bottom + 1), MoonA, MoonB))
+                g.FillPath(light, path);
+        }
+    }
+
+    // A soft round light of the moon's colour, strongest at its middle
+    internal static void DrawGlow(Graphics g, PointF middle, float radius, int alpha)
+    {
+        using (var path = new GraphicsPath())
+        {
+            path.AddEllipse(middle.X - radius, middle.Y - radius, 2 * radius, 2 * radius);
+            using (var light = new PathGradientBrush(path))
+            {
+                light.CenterColor = Color.FromArgb(alpha, Moon);
+                light.SurroundColors = new[] { Color.FromArgb(0, Moon) };
+                // fading out softly towards the edge (0 there, 1 at the middle), so no edge shows
+                light.Blend = new Blend { Factors = new[] { 0f, 0.06f, 0.25f, 0.6f, 1f }, Positions = new[] { 0f, 0.25f, 0.5f, 0.75f, 1f } };
+                g.FillPath(light, path);
+            }
+        }
+    }
+
+    internal static GraphicsPath Rounded(RectangleF r, float radius)
+    {
+        float d = Math.Min(2 * radius, Math.Min(r.Width, r.Height));
+        var path = new GraphicsPath();
+        path.AddArc(r.X, r.Y, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, string lParam);
+
+    [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct Margins { public int Left, Right, Top, Bottom; }
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
 
     // A dark title bar over a dark window (Windows 10 1809 and later; elsewhere nothing changes)
     internal static void DarkTitle(Form form)
@@ -283,112 +408,378 @@ static class Zen
         try { if (DwmSetWindowAttribute(form.Handle, 20, ref on, 4) != 0) DwmSetWindowAttribute(form.Handle, 19, ref on, 4); }
         catch (Exception) { }
     }
+
+    // A window without Windows' frame that still sits on the desktop like one: the shadow under it, and on Windows 11
+    // round corners and a hairline edge (elsewhere square corners)
+    internal static void Float(Form form)
+    {
+        int on = 2, round = 2, edge = 0x383838;  // a COLORREF, 0x00bbggrr
+        try
+        {
+            DwmSetWindowAttribute(form.Handle, 2, ref on, 4);      // DWMWA_NCRENDERING_POLICY enabled: the shadow
+            var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
+            DwmExtendFrameIntoClientArea(form.Handle, ref margins);
+            DwmSetWindowAttribute(form.Handle, 33, ref round, 4);  // DWMWA_WINDOW_CORNER_PREFERENCE: round
+            DwmSetWindowAttribute(form.Handle, 34, ref edge, 4);   // DWMWA_BORDER_COLOR
+        }
+        catch (Exception) { }
+    }
 }
 
-// "Starting Zen…": the crescent and a line, while the servers come up
-class Splash : Form
+// Zen's own windows: dark, without Windows' frame, moved by their background; with header, the crescent and the
+// name small at the top left, where a title bar would be
+class Floating : Form
 {
-    public Splash(string text)
+    protected bool header;
+
+    public Floating()
     {
-        FormBorderStyle = FormBorderStyle.None;
-        StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(360, 150);
-        BackColor = Zen.Bg;
-        ShowInTaskbar = true;
         Text = "Zen harness";
         Icon = Zen.AppIcon();
-        var label = new Label { Text = text, ForeColor = Zen.Ink, Font = Zen.UiFont(11f), AutoSize = false,
-                                TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Bottom, Height = 48 };
-        Controls.Add(label);
-        Paint += (s, e) =>
+        FormBorderStyle = FormBorderStyle.None;
+        StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.None;
+        BackColor = Zen.Bg;
+        ForeColor = Zen.Ink;
+        Font = Zen.UiFont(10f);
+        DoubleBuffered = true;
+    }
+
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Zen.Float(this); }
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+        if (m.Msg == 0x84 && (int)m.Result == 1) m.Result = (IntPtr)2;  // WM_NCHITTEST: the background is a title bar
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if (!header) return;
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        Zen.DrawMark(g, new RectangleF(Zen.Px(20), Zen.Px(17), Zen.Px(15), Zen.Px(15)));
+        using (var small = Zen.UiFont(9f))
+            TextRenderer.DrawText(g, "Zen harness", small, new Point(Zen.Px(42), Zen.Px(15)), Zen.Soft, Zen.Bg);
+    }
+}
+
+// While the servers come up: the crescent in its light, Zen's name, what is happening and a bar that keeps moving
+class Splash : Floating
+{
+    readonly System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer { Interval = 15 };
+    readonly Stopwatch clock = Stopwatch.StartNew();
+    readonly Font name = Zen.TitleFont(21f), name2 = Zen.TitleFont(21f, false), line = Zen.UiFont(10f);
+    string status = "";
+
+    public Splash()
+    {
+        ClientSize = new Size(Zen.Px(400), Zen.Px(260));
+        tick.Tick += (s, e) => Invalidate();
+    }
+
+    // The line under the name; shows the splash again if the connect window hid it
+    public void Say(string text)
+    {
+        status = text;
+        if (!Visible) Show();
+        Invalidate();
+        Update();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); tick.Enabled = Visible; }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        double t = clock.Elapsed.TotalSeconds;
+        float w = ClientSize.Width, size = Zen.Px(64), mid = Zen.Px(86);
+
+        Zen.DrawGlow(g, new PointF(w / 2, mid), size * 1.3f, (int)(40 + 22 * Math.Sin(t * 2.2)));
+        Zen.DrawMark(g, new RectangleF(w / 2 - size / 2, mid - size / 2, size, size));
+
+        // "Zen harness": the name in Zen's ink, the rest quieter
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+        Size a = TextRenderer.MeasureText(g, "Zen", name, Size.Empty, flags), b = TextRenderer.MeasureText(g, " harness", name2, Size.Empty, flags);
+        int x = (int)(w - a.Width - b.Width) / 2, y = Zen.Px(140);
+        TextRenderer.DrawText(g, "Zen", name, new Point(x, y), Zen.Ink, Zen.Bg, flags);
+        TextRenderer.DrawText(g, " harness", name2, new Point(x + a.Width, y), Zen.Soft, Zen.Bg, flags);
+
+        TextRenderer.DrawText(g, status, line, new Rectangle(0, Zen.Px(186), (int)w, Zen.Px(22)), Zen.Muted, Zen.Bg,
+                              TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+
+        // the bar: a stretch of moonlight that eases across a dark track, again and again
+        var track = new RectangleF((w - Zen.Px(160)) / 2, Zen.Px(224), Zen.Px(160), Zen.Px(3));
+        using (var path = Zen.Rounded(track, track.Height / 2))
         {
-            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var r = new Rectangle(Width / 2 - 22, 30, 44, 44);
-            using (var moon = new SolidBrush(Zen.Moon)) e.Graphics.FillEllipse(moon, r);
-            using (var cut = new SolidBrush(Zen.Bg)) e.Graphics.FillEllipse(cut, new Rectangle(r.X + 14, r.Y - 9, 42, 42));
-        };
+            using (var dark = new SolidBrush(Zen.Surface)) g.FillPath(dark, path);
+            double p = t % 1.5 / 1.5, eased = p < 0.5 ? 2 * p * p : 1 - Math.Pow(-2 * p + 2, 2) / 2;
+            float run = track.Width * 0.4f, from = track.X - run + (float)eased * (track.Width + run);
+            g.SetClip(path);
+            using (var lit = Zen.Rounded(new RectangleF(from, track.Y, run, track.Height), track.Height / 2))
+            using (var light = new LinearGradientBrush(new PointF(from - 1, 0), new PointF(from + run + 1, 0), Zen.MoonA, Zen.MoonB))
+                g.FillPath(light, lit);
+            g.ResetClip();
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { tick.Dispose(); name.Dispose(); name2.Dispose(); line.Dispose(); }
+        base.Dispose(disposing);
     }
 }
 
 // The model's address and password, from the Kaggle notebook's last cell
-class ConnectForm : Form
+class ConnectForm : Floating
 {
-    readonly TextBox address = new TextBox(), password = new TextBox();
-    public string Address { get { return address.Text.Trim().TrimEnd('/'); } }
-    public string Password { get { return password.Text.Trim(); } }
+    const string Help = "https://github.com/AryThakar/Zen-harness/tree/main/kaggle#start-it";
+    readonly Field address = new Field("https://….trycloudflare.com", false), password = new Field("The password it printed", true);
+    readonly Label error;
+
+    // as pasted, less what the notebook prints before each ("  address : https://…", "  password: …")
+    public string Address { get { return Pasted(address.Box.Text, "address").TrimEnd('/'); } }
+    public string Password { get { return Pasted(password.Box.Text, "password"); } }
+
+    static string Pasted(string text, string label)
+    {
+        text = text.Trim();
+        if (text.StartsWith(label, StringComparison.OrdinalIgnoreCase)) text = text.Substring(label.Length).TrimStart(' ', ':', '=');
+        return text;
+    }
 
     public ConnectForm(string why, Dictionary<string, string> settings)
     {
         Text = "Zen harness - connect the model";
-        Icon = Zen.AppIcon();
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Zen.Bg;
-        ForeColor = Zen.Ink;
-        Font = Zen.UiFont(10f);
-        ClientSize = new Size(520, 300);
-        Padding = new Padding(24);
+        header = true;
+        int pad = Zen.Px(32), width = Zen.Px(500), inner = width - 2 * pad, y = Zen.Px(60);
 
-        var title = new Label { Text = "Connect Zen to its model", Font = Zen.UiFont(15f, FontStyle.Bold), AutoSize = true, Location = new Point(24, 20) };
-        var lede = new Label { Text = why, ForeColor = Zen.Muted, AutoSize = false, Location = new Point(24, 58), Size = new Size(472, 62) };
-        var a = new Label { Text = "Address", AutoSize = true, Location = new Point(24, 128) };
-        var p = new Label { Text = "Password", AutoSize = true, Location = new Point(24, 184) };
-        foreach (var box in new[] { address, password })
-        {
-            box.BackColor = Zen.Field;
-            box.ForeColor = Zen.Ink;
-            box.BorderStyle = BorderStyle.FixedSingle;
-            box.Width = 472;
-        }
-        address.Location = new Point(24, 150);
-        password.Location = new Point(24, 206);
-        password.UseSystemPasswordChar = true;
+        var close = new CloseButton { DialogResult = DialogResult.Cancel, Location = new Point(width - Zen.Px(46), Zen.Px(10)) };
+        var title = new Label { Text = "Connect the model", Font = Zen.TitleFont(17f), AutoSize = true, Location = new Point(pad - Zen.Px(1), y) };
+        y += Zen.Px(42);
+        var lede = Wrapped(why, Zen.UiFont(10f), Zen.Muted, pad, inner, ref y);
+        y += Zen.Px(4);
+        var help = new LinkLabel { Text = "How to start the notebook  ↗", AutoSize = true, Location = new Point(pad, y), Font = Zen.UiFont(9.5f),
+                                   LinkColor = Zen.MoonA, ActiveLinkColor = Zen.Ink, VisitedLinkColor = Zen.MoonA, LinkBehavior = LinkBehavior.HoverUnderline };
+        help.LinkClicked += (s, e) => { try { Process.Start(Help); } catch (Exception) { } };
+        y += Zen.Px(40);
+
+        var a = new Label { Text = "Address", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
+        address.SetBounds(pad, y + Zen.Px(24), inner, Zen.Px(42));
+        y += Zen.Px(82);
+        var p = new Label { Text = "Password", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
+        password.SetBounds(pad, y + Zen.Px(24), inner, Zen.Px(42));
+        y += Zen.Px(74);
+        error = new Label { ForeColor = Zen.Red, Font = Zen.UiFont(9.5f), AutoSize = false, Location = new Point(pad, y), Size = new Size(inner, Zen.Px(22)) };
+        y += Zen.Px(34);
+
+        var connect = new Pill("Connect", true) { DialogResult = DialogResult.OK };
+        var cancel = new Pill("Cancel", false) { DialogResult = DialogResult.Cancel };
+        connect.Location = new Point(width - pad - connect.Width, y);
+        cancel.Location = new Point(connect.Left - Zen.Px(10) - cancel.Width, y);
+        ClientSize = new Size(width, y + connect.Height + Zen.Px(28));
+
+        // the last ones: the address is new each session, the password too unless it's the Kaggle secret LLAMA_API_KEY
         string old;
-        if (settings.TryGetValue("KAGGLE_URL", out old)) address.Text = old;
-
-        var connect = new Button { Text = "Connect", DialogResult = DialogResult.OK, Location = new Point(316, 252), Size = new Size(88, 30),
-                                   BackColor = Zen.Ink, ForeColor = Zen.Bg, FlatStyle = FlatStyle.Flat };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(408, 252), Size = new Size(88, 30),
-                                  BackColor = Zen.Field, ForeColor = Zen.Ink, FlatStyle = FlatStyle.Flat };
-        connect.FlatAppearance.BorderSize = 0;
-        cancel.FlatAppearance.BorderColor = Color.FromArgb(0x44, 0x44, 0x44);
+        if (settings.TryGetValue("KAGGLE_URL", out old)) address.Box.Text = old;
+        if (settings.TryGetValue("KAGGLE_PASSWORD", out old)) password.Box.Text = old;
         AcceptButton = connect;
         CancelButton = cancel;
         connect.Click += (s, e) =>
         {
-            if (!Address.StartsWith("https://") && !Address.StartsWith("http://") || Password.Length == 0)
+            Field wrong = null;
+            if (!Address.StartsWith("https://") && !Address.StartsWith("http://"))
             {
-                MessageBox.Show(this, "Paste both lines the notebook printed: an address starting with https:// and its password.", Text);
-                DialogResult = DialogResult.None;
+                error.Text = "The address starts with https:// - copy it from the notebook's last cell.";
+                wrong = address;
             }
+            else if (Password.Length == 0)
+            {
+                error.Text = "The password is missing: it's under the address in the notebook's last cell.";
+                wrong = password;
+            }
+            if (wrong == null) return;
+            DialogResult = DialogResult.None;
+            wrong.Box.Focus();
+            wrong.Box.SelectAll();
         };
-        Controls.AddRange(new Control[] { title, lede, a, address, p, password, connect, cancel });
+        foreach (var field in new[] { address, password }) field.Box.TextChanged += (s, e) => error.Text = "";
+        Controls.AddRange(new Control[] { close, title, lede, help, a, address, p, password, error, cancel, connect });
+        ActiveControl = address.Box;
+        Shown += (s, e) => address.Box.SelectAll();  // an old address is a stale one: pasting replaces it
     }
 
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Zen.DarkTitle(this); }
+    // A paragraph as tall as its words need at that width; y moves past it
+    static Label Wrapped(string text, Font font, Color color, int x, int width, ref int y)
+    {
+        var height = TextRenderer.MeasureText(text, font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak).Height;
+        var label = new Label { Text = text, Font = font, ForeColor = color, AutoSize = false, Location = new Point(x, y), Size = new Size(width, height + Zen.Px(2)) };
+        y += label.Height;
+        return label;
+    }
+}
+
+// A text box in a rounded field whose edge lights up while it has the caret; a secret one has Show / Hide
+class Field : Panel
+{
+    public readonly TextBox Box = new TextBox();
+    readonly Label reveal;
+
+    public Field(string cue, bool secret)
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        BackColor = Zen.Bg;  // the corners outside the field
+        Cursor = Cursors.IBeam;
+        Box.BorderStyle = BorderStyle.None;
+        Box.BackColor = Zen.Surface;
+        Box.ForeColor = Zen.Ink;
+        Box.Font = Zen.UiFont(10.5f);
+        Box.UseSystemPasswordChar = secret;
+        Box.GotFocus += (s, e) => Invalidate();
+        Box.LostFocus += (s, e) => Invalidate();
+        Box.HandleCreated += (s, e) => Zen.SendMessage(Box.Handle, 0x1501, (IntPtr)1, cue);  // EM_SETCUEBANNER, shown with the caret too
+        Click += (s, e) => Box.Focus();
+        Controls.Add(Box);
+        if (!secret) return;
+        reveal = new Label { Text = "Show", AutoSize = true, ForeColor = Zen.Muted, BackColor = Zen.Surface, Font = Zen.UiFont(9f), Cursor = Cursors.Hand };
+        reveal.Click += (s, e) =>
+        {
+            Box.UseSystemPasswordChar = !Box.UseSystemPasswordChar;
+            reveal.Text = Box.UseSystemPasswordChar ? "Show" : "Hide";
+            PerformLayout();
+        };
+        reveal.MouseEnter += (s, e) => reveal.ForeColor = Zen.Ink;
+        reveal.MouseLeave += (s, e) => reveal.ForeColor = Zen.Muted;
+        Controls.Add(reveal);
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        int pad = Zen.Px(14), right = pad;
+        if (reveal != null)
+        {
+            reveal.Location = new Point(Width - pad - reveal.Width, (Height - reveal.Height) / 2);
+            right = Width - reveal.Left + Zen.Px(10);
+        }
+        Box.Location = new Point(pad, (Height - Box.Height) / 2);
+        Box.Width = Width - pad - right;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(BackColor);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        bool lit = Box.Focused;
+        float edge = lit ? 1.6f * Zen.Scale : Zen.Scale;
+        using (var path = Zen.Rounded(new RectangleF(edge / 2, edge / 2, Width - edge - 1, Height - edge - 1), Zen.Px(10)))
+        using (var fill = new SolidBrush(Zen.Surface))
+        using (var line = new Pen(lit ? Zen.Moon : Zen.Line, edge))
+        {
+            g.FillPath(fill, path);
+            g.DrawPath(line, path);
+        }
+    }
+}
+
+// Zen's buttons, round-ended: the main one light on the dark window, as the app's send button is
+class Pill : Button
+{
+    readonly bool main;
+    bool hover, down;
+
+    public Pill(string text, bool main)
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        this.main = main;
+        Text = text;
+        Font = Zen.UiFont(10f, true);
+        Cursor = Cursors.Hand;
+        Size = new Size(Zen.Px(main ? 112 : 96), Zen.Px(40));
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = down = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { down = false; Invalidate(); base.OnMouseUp(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Parent.BackColor);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        Color fill = main ? (down ? Color.FromArgb(0xd0, 0xd0, 0xd0) : hover ? Color.White : Zen.Ink)
+                          : (down ? Color.FromArgb(0x3a, 0x3a, 0x3a) : hover ? Color.FromArgb(0x33, 0x33, 0x33) : Zen.Surface);
+        var box = new RectangleF(0.5f, 0.5f, Width - 2, Height - 2);
+        using (var path = Zen.Rounded(box, box.Height / 2))
+        using (var brush = new SolidBrush(fill))
+        {
+            g.FillPath(brush, path);
+            if (!main) using (var line = new Pen(Zen.Line, Zen.Scale)) g.DrawPath(line, path);
+        }
+        if (Focused && ShowFocusCues)  // the keyboard's place, in the moon's colour
+            using (var ring = Zen.Rounded(new RectangleF(1.5f, 1.5f, Width - 4, Height - 4), (Height - 4) / 2f))
+            using (var pen = new Pen(Zen.Moon, 1.6f * Zen.Scale)) g.DrawPath(pen, ring);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, main ? Zen.Bg : Zen.Ink, fill,
+                              TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+    }
+}
+
+// The window's ×, since it has no Windows frame
+class CloseButton : Button
+{
+    bool hover;
+
+    public CloseButton()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Size = new Size(Zen.Px(36), Zen.Px(32));
+        TabStop = false;
+        Cursor = Cursors.Hand;
+        AccessibleName = "Close";
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Parent.BackColor);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        if (hover)
+            using (var path = Zen.Rounded(new RectangleF(0, 0, Width - 1, Height - 1), Zen.Px(8)))
+            using (var brush = new SolidBrush(Zen.Surface)) g.FillPath(brush, path);
+        float c = Width / 2f, m = Height / 2f, r = Zen.Px(5);
+        using (var pen = new Pen(hover ? Zen.Ink : Zen.Soft, 1.4f * Zen.Scale))
+        {
+            g.DrawLine(pen, c - r, m - r, c + r, m + r);
+            g.DrawLine(pen, c + r, m - r, c - r, m + r);
+        }
+    }
 }
 
 // Without Edge: Zen opens in the default browser, and this small window keeps it running until it is closed
-class RunningForm : Form
+class RunningForm : Floating
 {
     public RunningForm()
     {
-        Text = "Zen harness";
-        Icon = Zen.AppIcon();
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Zen.Bg;
-        ForeColor = Zen.Ink;
-        Font = Zen.UiFont(10f);
-        ClientSize = new Size(380, 130);
-        var text = new Label { Text = "Zen is running at http://127.0.0.1:8000 in your browser.\nClose this window to stop it.",
-                               AutoSize = false, Location = new Point(20, 20), Size = new Size(340, 50) };
-        var stop = new Button { Text = "Stop Zen", Location = new Point(272, 84), Size = new Size(88, 30), BackColor = Zen.Field, FlatStyle = FlatStyle.Flat };
+        header = true;
+        int pad = Zen.Px(28), width = Zen.Px(420);
+        var close = new CloseButton { Location = new Point(width - Zen.Px(46), Zen.Px(10)) };
+        close.Click += (s, e) => Close();
+        var text = new Label { Text = "Zen is running at http://127.0.0.1:8000 in your browser. Closing this window stops it.",
+                               ForeColor = Zen.Muted, AutoSize = false, Location = new Point(pad, Zen.Px(58)), Size = new Size(width - 2 * pad, Zen.Px(44)) };
+        var stop = new Pill("Stop Zen", false);
+        stop.Location = new Point(width - pad - stop.Width, Zen.Px(114));
         stop.Click += (s, e) => Close();
-        Controls.AddRange(new Control[] { text, stop });
+        ClientSize = new Size(width, stop.Bottom + Zen.Px(24));
+        Controls.AddRange(new Control[] { close, text, stop });
     }
-
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Zen.DarkTitle(this); }
 }

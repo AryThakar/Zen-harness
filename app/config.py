@@ -44,6 +44,10 @@ class Settings:
     # Where llama-server listens, and the name to show (llama-server serves one model, whatever the name).
     llamacpp_url: str = os.environ.get("BIZ_LLAMACPP_URL", "http://127.0.0.1:8080")
     llamacpp_model: str = os.environ.get("BIZ_LLAMACPP_MODEL", "local")  # the --alias; the UI shows the loaded file
+    # The Kaggle notebook's address and password, in the file the bridge (kaggle/bridge.py) reads: the app's model
+    # settings change them there, and the bridge takes them on its next request. Zen-harness.exe names its own
+    # settings.env.
+    model_settings: str = os.environ.get("ZEN_MODEL_SETTINGS", str(ENV_FILE.parent / "kaggle" / "bridge.env"))
     # The assistant on Groq's cloud instead (BIZ_LLM_PROVIDER=groq): for testing the app with a large model.
     groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
     groq_model: str = os.environ.get("BIZ_GROQ_MODEL", "openai/gpt-oss-120b")

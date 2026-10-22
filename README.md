@@ -113,7 +113,8 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 3. Double-click **Zen-harness.exe** and paste the address and password the notebook printed. Zen opens in a window of its
    own; closing it stops Zen. Your projects stay in the folder's `data\`; other settings go in `settings.env`.
 
-The notebook prints a new address each time it starts: Zen-harness.exe notices and asks again. To build the folder yourself:
+The notebook prints a new address each time it starts: Zen-harness.exe notices and asks again, and while Zen runs, a
+click on the model's name at the top of a chat takes the new one - the chat carries on. To build the folder yourself:
 `.venv/Scripts/python.exe desktop/build.py --zip` (it copies this venv's Python and libraries - nothing is downloaded -
 and compiles [`desktop/Zen.cs`](desktop/Zen.cs) with the C# compiler every Windows has).
 
@@ -139,7 +140,8 @@ nothing in it is required to start.
    21 GB) and prints an **address** and a **password**.
 2. Copy `kaggle/bridge.env.example` to `kaggle/bridge.env` and paste them in.
 3. Run the bridge: `.venv/Scripts/python.exe kaggle/bridge.py` - the model now answers at `127.0.0.1:8080`, as if it
-   ran here.
+   ran here. A later session's address goes in from Zen itself (the model's name at the top of a chat); the bridge
+   takes it on its next request.
 
 **On your own GPU** (about 24 GB of GPU memory for this model), run llama-server with two slots and the vision
 projector:
@@ -206,7 +208,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 .venv/Scripts/python.exe -m pytest
 ```
 
-664 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
+671 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
 through its client, and every tool's contract and description against its schema. With Playwright MCP installed,
 one test also opens pages in the real headless browser. Measurements on the real model are scripts in `bench/` -
 each phase's acceptance and 20 jobs (10 held out) - with their reports beside them.
@@ -227,7 +229,7 @@ Zen-harness/
 ├── web/                    the chat page: plain HTML, CSS and JavaScript modules, no build step
 ├── kaggle/                 the notebook that serves the model on Kaggle, and the bridge to it
 ├── desktop/                the Windows app: Zen-harness.exe's source and the script that builds its zip
-├── tests/                  664 tests, no model needed
+├── tests/                  671 tests, no model needed
 ├── bench/                  measurements on the real model, with their reports
 ├── docs/                   architecture, the system map, the build history, screenshots and videos
 ├── data/samples/           sample tables to try it on (data/ also holds your projects: git-ignored)

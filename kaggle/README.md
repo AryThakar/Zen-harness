@@ -18,6 +18,8 @@ starts llama-server there and opens a password-protected address that Zen on you
 3. *Run All*. After a few minutes the last cell prints an **address** and a **password**.
 4. **The Windows app:** start `Zen-harness.exe` and paste them in. **From source:** copy `bridge.env.example` to `bridge.env`,
    paste them in, and run `python kaggle/bridge.py` beside the app.
+5. **A new session while Zen runs:** click the model's name at the top of a chat (*Model connection*) and paste the
+   new address (and password). Zen tries them first, then saves them; the bridge takes them on its next request.
 
 Keep the notebook's tab open while you use Zen. A session lasts up to 12 hours, and Kaggle gives about 30 GPU hours
 a week. Each session gets a new address; with the Kaggle secret `LLAMA_API_KEY` set (*Add-ons → Secrets*), the

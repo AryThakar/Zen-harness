@@ -20,6 +20,11 @@ the properties it is meant to keep:
   go to the llama-server in your own Kaggle notebook, over the notebook's Cloudflare tunnel (HTTPS) and with its
   password (`--api-key`). The notebook makes a new random password each session unless you set the Kaggle secret
   `LLAMA_API_KEY`. Treat the address and password like a key: whoever has both can use your model.
+- **Only Zen's page changes where the model runs.** `/assistant/model-link` refuses a request from another site's
+  page (its Origin), tries a new address with its password before saving it, takes each as one line, and never
+  sends the saved password back to the page.
+- **The Windows app's window** is Edge with a profile of its own (`data\window`) and Edge's sync turned off, so
+  your Edge favourites, history and passwords don't come into it.
 - **Asking first.** Downloads, deleting files and changing files you added wait for your click in the chat
   (`app/tools/approval.py`); the model cannot approve its own request.
 - **The code sandbox is not a security boundary.** Scripts the assistant writes run in a separate Python process,
