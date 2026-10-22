@@ -23,8 +23,10 @@ the properties it is meant to keep:
 - **Only Zen's page changes where the model runs.** `/assistant/model-link` refuses a request from another site's
   page (its Origin), tries a new address with its password before saving it, takes each as one line, and never
   sends the saved password back to the page.
-- **The Windows app's window** is Edge with a profile of its own (`data\window`) and Edge's sync turned off, so
-  your Edge favourites, history and passwords don't come into it.
+- **The Windows app's window** is Zen's own (WebView2) with a profile of its own (`data\webview`): no Microsoft
+  account signs in there and nothing syncs into it. It shows only Zen's page - links elsewhere open in your default
+  browser - and only that page may ask it to minimize, maximize or close. Without WebView2 it is Edge's app window
+  instead, also a profile of its own (`data\window`), with Edge's sync turned off.
 - **Asking first.** Downloads, deleting files and changing files you added wait for your click in the chat
   (`app/tools/approval.py`); the model cannot approve its own request.
 - **The code sandbox is not a security boundary.** Scripts the assistant writes run in a separate Python process,

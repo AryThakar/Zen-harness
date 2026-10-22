@@ -6,6 +6,9 @@
 
     dist/Zen-harness/
         Zen-harness.exe desktop/Zen.cs, compiled with the C# compiler every Windows has (.NET Framework 4)
+        Microsoft.Web.WebView2.Core.dll, Microsoft.Web.WebView2.WinForms.dll, WebView2Loader.dll
+                        Zen's own window: Microsoft's WebView2 SDK, kept in desktop/webview2 (the browser engine itself
+                        is Windows' own WebView2)
         settings.env    the model's address and password (Zen-harness.exe asks for them the first time) and other settings
         runtime/        the Python this venv was made from (the interpreter and its standard library) and the libraries
                         Zen needs: the files pip installed for them, copied from this venv - the versions the tests pass
@@ -37,6 +40,9 @@ from packaging.requirements import Requirement
 
 REPO = Path(__file__).resolve().parents[1]
 DIST = REPO / "dist" / "Zen-harness"
+# Microsoft's WebView2 SDK 1.0.4258.31 (NuGet Microsoft.Web.WebView2, BSD-3-Clause): the three files Zen's window needs
+WEBVIEW2 = REPO / "desktop" / "webview2"
+WEBVIEW2_FILES = ("Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll")
 PROJECT = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 PLAYWRIGHT_MCP = Path(os.environ.get("ASSISTANT_PLAYWRIGHT_MCP", REPO.parent / "playwright-mcp"))  # beside the repo
 
@@ -140,9 +146,12 @@ def compile_launcher() -> None:
     done = subprocess.run([str(csc), "/nologo", "/target:winexe", "/optimize+", "/platform:anycpu", "/codepage:65001",
                            f"/win32icon:{REPO / 'desktop' / 'zen.ico'}", f"/out:{DIST / 'Zen-harness.exe'}",
                            "/r:System.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll",
+                           *(f"/r:{WEBVIEW2 / name}" for name in WEBVIEW2_FILES[:2]),
                            str(REPO / "desktop" / "Zen.cs")], capture_output=True, text=True)
     if done.returncode:
         sys.exit("Zen.cs did not compile:\n" + done.stdout + done.stderr)
+    for name in WEBVIEW2_FILES:  # beside the exe, where it loads them
+        shutil.copy2(WEBVIEW2 / name, DIST / name)
 
 
 def smoke_test() -> None:

@@ -9,10 +9,12 @@
 //     tools\           node and Playwright MCP: the browser Zen reads blocked pages with and tries its games in
 //     data\            projects, chats and files - everything that is yours; logs\ holds the servers' output
 //
-// One click: the bridge to the model on Kaggle (when settings.env names one), then the app, then the window (Edge's
-// app mode, its own profile). Closing the window stops both. A second click while Zen runs opens another window.
-// Zen's model settings change the address and password in settings.env later, and the bridge takes them as it runs.
-// Built by desktop/build.py with the C# compiler every Windows has (.NET Framework 4): C# 5, no packages.
+// One click: the bridge to the model on Kaggle (when settings.env names one), then the app, then the window - Zen's own
+// (WebView2, its page drawing the title bar), or without WebView2 Edge's app mode. Closing the window stops both. A
+// second click while Zen runs opens another window. Zen's model settings change the address and password in
+// settings.env later, and the bridge takes them as it runs.
+// Built by desktop/build.py with the C# compiler every Windows has (.NET Framework 4): C# 5, and Microsoft's WebView2 SDK
+// (desktop/webview2: its three files go beside the exe).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -20,11 +22,14 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
 
 static class Zen
@@ -46,7 +51,9 @@ static class Zen
         Application.SetCompatibleTextRenderingDefault(false);
         if (Answers(App + "assistant/status", 1500))  // already running: one more window
         {
-            OpenWindow();
+            var another = OwnWindow();
+            if (another != null) Application.Run(another);
+            else OpenWindow();
             return 0;
         }
         Directory.CreateDirectory(Logs);
@@ -64,6 +71,13 @@ static class Zen
                 return 1;
             }
             splash.Say("Opening Zen…");
+            var own = OwnWindow();
+            if (own != null)
+            {
+                splash.Hide();
+                Application.Run(own);
+                return 0;
+            }
             var window = OpenWindow();
             if (window == null)
             {
@@ -194,6 +208,27 @@ static class Zen
             using (var res = (HttpWebResponse)req.GetResponse()) return (int)res.StatusCode < 400;
         }
         catch (Exception) { return false; }
+    }
+
+    // Zen's own window, its page loaded (the splash keeps moving meanwhile); null without WebView2 (Windows 11 has it,
+    // Edge installs it on Windows 10) or without its files beside this launcher
+    static Form OwnWindow()
+    {
+        try { return LoadOwnWindow(); }
+        catch (Exception) { return null; }  // FileNotFoundException (the SDK's files), WebView2RuntimeNotFoundException...
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]  // compiled at its call, so missing SDK files throw inside the try above
+    static Form LoadOwnWindow()
+    {
+        CoreWebView2Environment.GetAvailableBrowserVersionString();  // throws when there is no WebView2
+        var window = new ZenWindow(App, Data);
+        var loaded = window.Open();
+        var end = DateTime.Now.AddSeconds(40);
+        while (!loaded.IsCompleted && DateTime.Now < end) Pump(15);
+        if (loaded.IsCompleted && loaded.Result) return window;
+        window.Dispose();
+        return null;
     }
 
     // Edge's app mode, a profile of its own (a window, not a tab among the user's): its process lasts until the window
@@ -782,4 +817,243 @@ class RunningForm : Floating
         ClientSize = new Size(width, stop.Bottom + Zen.Px(24));
         Controls.AddRange(new Control[] { close, text, stop });
     }
+}
+
+// Zen's own window: Windows' frame without its title bar, Zen's page inside (WebView2). The page is the title bar
+// (web/index.html's .winbar): its top moves the window (app-region: drag), and it sends what its buttons and its top edge
+// ask ("minimize", "maximize", "close", "size:top") and its colour ("theme:#1c1c1c"); this tells it back whether the
+// window is maximized and active. Its own WebView2 profile (data\webview): no Edge account, no sync.
+class ZenWindow : Form
+{
+    readonly WebView2 view = new TitleBarView();
+    readonly string app, placeFile, folder;
+    readonly TaskCompletionSource<bool> loaded = new TaskCompletionSource<bool>();
+    FormWindowState shownAs, beforeFull;
+    Rectangle normal;
+    bool full;
+
+    public ZenWindow(string app, string data)
+    {
+        this.app = app;
+        placeFile = Path.Combine(data, "window.txt");
+        folder = Path.Combine(data, "webview");
+        Text = "Zen";
+        Icon = Zen.AppIcon();
+        AutoScaleMode = AutoScaleMode.None;
+        BackColor = Zen.Bg;
+        StartPosition = FormStartPosition.Manual;
+        MinimumSize = new Size(Zen.Px(400), Zen.Px(480));
+        Place();
+        view.DefaultBackgroundColor = Zen.Bg;
+        view.Dock = DockStyle.Fill;
+        Controls.Add(view);
+    }
+
+    // The page loaded in the window, not shown yet; true once it has
+    public Task<bool> Open()
+    {
+        view.CreateControl();  // the window and the view made, still hidden: WebView2 needs them
+        if (view.Handle == IntPtr.Zero) return Task.FromResult(false);
+        Start();
+        return loaded.Task;
+    }
+
+    async void Start()
+    {
+        try
+        {
+            await view.EnsureCoreWebView2Async(await CoreWebView2Environment.CreateAsync(null, folder));
+            var web = view.CoreWebView2;
+            web.Settings.IsNonClientRegionSupportEnabled = true;  // app-region: drag
+            web.Settings.IsStatusBarEnabled = false;
+            web.Settings.IsPasswordAutosaveEnabled = false;
+            web.Settings.IsGeneralAutofillEnabled = false;
+            web.DocumentTitleChanged += (s, e) => Text = web.DocumentTitle;
+            web.WebMessageReceived += Heard;
+            // Zen stays in its window; links to elsewhere open in the default browser
+            web.NewWindowRequested += (s, e) => { e.Handled = true; Outside(e.Uri); };
+            web.NavigationStarting += (s, e) => { if (!e.Uri.StartsWith(app)) { e.Cancel = true; Outside(e.Uri); } };
+            web.ContainsFullScreenElementChanged += (s, e) => FullScreen(web.ContainsFullScreenElement);
+            web.NavigationCompleted += (s, e) => { Tell(); loaded.TrySetResult(e.IsSuccess); };
+            web.Navigate(app);
+        }
+        catch (Exception) { loaded.TrySetResult(false); }
+    }
+
+    static void Outside(string uri)
+    {
+        if (uri.StartsWith("https://") || uri.StartsWith("http://") || uri.StartsWith("mailto:"))
+            try { Process.Start(uri); } catch (Exception) { }
+    }
+
+    void Heard(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        if (!e.Source.StartsWith(app)) return;
+        string said;
+        try { said = e.TryGetWebMessageAsString(); } catch (ArgumentException) { return; }  // JSON: not one of these
+        // asked of Windows, as its own title bar's buttons do (WinForms' WindowState would restore the window a title
+        // bar taller each time: it sizes it as if one were there)
+        if (said == "minimize") ShowWindow(Handle, 6);  // SW_MINIMIZE
+        else if (said == "maximize") ShowWindow(Handle, IsZoomed(Handle) ? 9 : 3);  // SW_RESTORE, SW_MAXIMIZE
+        else if (said == "close") Close();
+        else if (said.StartsWith("theme:")) Theme(said.Substring(6));
+        else if (said.StartsWith("size:") && WindowState == FormWindowState.Normal)
+        {
+            // the page's top edge, held down: Windows takes the resize from here, as from its own frame
+            int edge = said == "size:topleft" ? 13 : said == "size:topright" ? 14 : 12;  // HTTOPLEFT, HTTOPRIGHT, HTTOP
+            var at = Cursor.Position;
+            ReleaseCapture();
+            SendMessage(Handle, 0xA1, (IntPtr)edge, (IntPtr)((at.Y << 16) | (at.X & 0xffff)));  // WM_NCLBUTTONDOWN
+        }
+    }
+
+    // The window behind the page in the page's colour (seen while it resizes), and Windows' parts of it - the edge, the
+    // shadow, the system menu - dark on a dark page
+    void Theme(string colour)
+    {
+        try { BackColor = ColorTranslator.FromHtml(colour); } catch (Exception) { return; }
+        view.DefaultBackgroundColor = BackColor;
+        int dark = BackColor.GetBrightness() < 0.5f ? 1 : 0;
+        DwmSetWindowAttribute(Handle, 20, ref dark, 4);  // DWMWA_USE_IMMERSIVE_DARK_MODE
+    }
+
+    // Maximized or not (the page's middle button: maximize or restore), active or not (its buttons fade when it isn't)
+    void Tell()
+    {
+        if (view.CoreWebView2 == null) return;
+        try
+        {
+            view.CoreWebView2.PostWebMessageAsString("maximized:" + (WindowState == FormWindowState.Maximized ? 1 : 0));
+            view.CoreWebView2.PostWebMessageAsString("active:" + (ActiveForm == this ? 1 : 0));
+        }
+        catch (Exception) { }
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (WindowState != shownAs) { shownAs = WindowState; Tell(); }
+    }
+
+    protected override void OnActivated(EventArgs e) { base.OnActivated(e); Tell(); }
+    protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); Tell(); }
+
+    // A page's full screen (a video, a game, the viewer's button): the whole screen, then back as it was
+    void FullScreen(bool on)
+    {
+        if (on == full) return;
+        full = on;
+        if (on)
+        {
+            beforeFull = WindowState;
+            if (IsZoomed(Handle)) ShowWindow(Handle, 9);
+            normal = Bounds;
+            FormBorderStyle = FormBorderStyle.None;
+            Bounds = Screen.FromControl(this).Bounds;
+        }
+        else
+        {
+            FormBorderStyle = FormBorderStyle.Sizable;
+            Bounds = normal;
+            if (beforeFull == FormWindowState.Maximized) ShowWindow(Handle, 3);
+        }
+    }
+
+    // Where it was last closed, when that is still on a screen; else 1320 x 880 in the middle of this one
+    void Place()
+    {
+        try
+        {
+            var v = File.ReadAllText(placeFile).Split(' ');
+            var r = new Rectangle(int.Parse(v[0]), int.Parse(v[1]), int.Parse(v[2]), int.Parse(v[3]));
+            foreach (var screen in Screen.AllScreens)
+            {
+                if (!screen.WorkingArea.IntersectsWith(r)) continue;
+                Bounds = r;
+                if (v[4] == "max") WindowState = FormWindowState.Maximized;
+                return;
+            }
+        }
+        catch (Exception) { }
+        var area = Screen.PrimaryScreen.WorkingArea;
+        int w = Math.Min(Zen.Px(1320), area.Width - Zen.Px(64)), h = Math.Min(Zen.Px(880), area.Height - Zen.Px(48));
+        Bounds = new Rectangle(area.Left + (area.Width - w) / 2, area.Top + (area.Height - h) / 2, w, h);
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (full) FullScreen(false);
+        var r = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        try { File.WriteAllText(placeFile, r.X + " " + r.Y + " " + r.Width + " " + r.Height + " " + (WindowState == FormWindowState.Maximized ? "max" : "normal")); }
+        catch (Exception) { }
+        base.OnFormClosing(e);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        int dark = 1;
+        DwmSetWindowAttribute(Handle, 20, ref dark, 4);
+        SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x27);  // SWP_FRAMECHANGED | NOMOVE | NOSIZE | NOZORDER: the frame below
+    }
+
+    // Windows' frame without its title bar: the sizing edges (outside the window on Windows 10 and 11), the shadow, round
+    // corners and snapping stay; the client area goes up to the top, where the page draws the bar
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x83 && m.WParam != IntPtr.Zero && !full)  // WM_NCCALCSIZE
+        {
+            var before = (Rect)Marshal.PtrToStructure(m.LParam, typeof(Rect));
+            base.WndProc(ref m);
+            var after = (Rect)Marshal.PtrToStructure(m.LParam, typeof(Rect));
+            // maximized, a window reaches past the screen by its frame: the top comes down by as much as the sides do
+            after.Top = before.Top + (IsZoomed(Handle) ? after.Left - before.Left : 0);
+            Marshal.StructureToPtr(after, m.LParam, false);
+            m.Result = IntPtr.Zero;
+            return;
+        }
+        if (m.Msg == 0x47)  // WM_WINDOWPOSCHANGED
+        {
+            settling = true;
+            try { base.WndProc(ref m); } finally { settling = false; }
+            return;
+        }
+        base.WndProc(ref m);
+    }
+
+    // After a restore WinForms sizes the window again from the client size it remembers, as if Windows' title bar were
+    // there (it would grow by one each time): Windows has already put it back right, so that is left as it is
+    bool settling;
+    protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+    {
+        if (!settling) base.SetBoundsCore(x, y, width, height, specified);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct Rect { public int Left, Top, Right, Bottom; }
+
+    // WebView2 tells the window it sits in that the page's bar was pressed (title-bar messages: HTCAPTION) - here that is
+    // this control, a child that cannot move: they go on to Zen's window, which moves, maximizes on a double click and
+    // shows its menu on a right click, as from its own title bar
+    class TitleBarView : WebView2
+    {
+        protected override void WndProc(ref Message m)
+        {
+            // WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCLBUTTONDBLCLK, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP
+            if (m.Msg >= 0xA1 && m.Msg <= 0xA5 && (int)m.WParam == 2 && TopLevelControl != null)
+            {
+                if (m.Msg == 0xA1) ReleaseCapture();
+                m.Result = SendMessage(TopLevelControl.Handle, m.Msg, m.WParam, m.LParam);
+                return;
+            }
+            base.WndProc(ref m);
+        }
+    }
+
+    [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, int flags);
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

@@ -15,28 +15,49 @@ import { wireViewer } from "./viewer.js";
 
 const thread = $("#thread"), scroller = $("#scroller"), input = $("#input"), composer = $("#composer");
 
-/* ═══ Theme: the system's light or dark until the user picks one ════════ */
-const systemLight = matchMedia("(prefers-color-scheme: light)");
+/* ═══ Theme: dark until the user picks one ════════ */
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   // an installed app's title bar takes the page's colour: one surface (Zen-harness.exe's window is told below instead)
   let bar = document.querySelector('meta[name="theme-color"]');
   if (!bar) document.head.append(bar = h("meta", { name: "theme-color" }));
   bar.content = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  window.chrome?.webview?.postMessage("theme:" + bar.content);  // Zen-harness.exe's own window, behind the page
   if (window.Chart) redrawCharts();
   redrawDiagrams();
 }
 // Zen-harness.exe's Edge window draws its own title bar, dark or light as it opens: the server keeps the pick for it
 const tellWindow = theme => send("PUT", "/window-theme", { theme }).catch(() => {});
-applyTheme(load(KEYS.theme) || (systemLight.matches ? "light" : "dark"));
+applyTheme(load(KEYS.theme) || "dark");
 if (load(KEYS.theme)) tellWindow(load(KEYS.theme));
-systemLight.addEventListener("change", e => { if (!load(KEYS.theme)) applyTheme(e.matches ? "light" : "dark"); });
 $("#themeBtn").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   save(KEYS.theme, next);
   applyTheme(next);
   tellWindow(next);
 });
+
+/* ═══ Zen-harness.exe's own window: the page is its title bar (index.html's .winbar). Its buttons and its top edge ask
+   the window; it says back whether it is maximized (the middle button restores then) and active. ═══ */
+const zenWindow = window.chrome?.webview;
+if (zenWindow) {
+  const root = document.documentElement, max = $("#winMax");
+  $("#winMin").addEventListener("click", () => zenWindow.postMessage("minimize"));
+  max.addEventListener("click", () => zenWindow.postMessage("maximize"));
+  $("#winClose").addEventListener("click", () => zenWindow.postMessage("close"));
+  for (const edge of document.querySelectorAll(".win-edge"))
+    edge.addEventListener("pointerdown", e => { if (e.button === 0) zenWindow.postMessage("size:" + edge.dataset.edge); });
+  zenWindow.addEventListener("message", e => {
+    const [what, on] = String(e.data).split(":");
+    if (what === "maximized") {
+      root.classList.toggle("win-max", on === "1");
+      max.title = on === "1" ? "Restore" : "Maximize";
+      max.setAttribute("aria-label", max.title);
+    }
+    if (what === "active") root.classList.toggle("win-inactive", on === "0");
+  });
+  document.addEventListener("fullscreenchange", () => root.classList.toggle("win-full", !!document.fullscreenElement));
+}
 
 /* ═══ The intro: once a session, its sound keeping the animation's clock; a click or a key skips it ═══ */
 function playIntro() {

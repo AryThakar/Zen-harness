@@ -9,6 +9,7 @@ authors' licenses and is not affected by Zen harness's license.
 | Component | Use in Zen harness | License |
 | --- | --- | --- |
 | [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) and [Google Sans Code](https://fonts.google.com/specimen/Google+Sans+Code) typefaces | The interface's type, `web/fonts/` | SIL Open Font License 1.1 - full texts in [`web/fonts/OFL-google-sans-flex.txt`](web/fonts/OFL-google-sans-flex.txt) and [`web/fonts/OFL-google-sans-code.txt`](web/fonts/OFL-google-sans-code.txt) |
+| [Microsoft WebView2 SDK](https://www.nuget.org/packages/Microsoft.Web.WebView2) 1.0.4258.31 (`Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll`, `WebView2Loader.dll`), © Microsoft Corporation | Zen-harness.exe's own window, `desktop/webview2/` (also beside the exe in the Windows release) | BSD 3-Clause - full text in [`desktop/webview2/LICENSE.txt`](desktop/webview2/LICENSE.txt), notices in [`desktop/webview2/NOTICE.txt`](desktop/webview2/NOTICE.txt) |
 
 The startup sound (`web/sounds/startup.ogg`) is AryThakar's own, from [Zen](https://github.com/AryThakar/zen); the
 sample tables in `data/samples/` are hand-made for this project, every name and number in them made up.
@@ -36,6 +37,7 @@ carries, unmodified:
 | Component | Use in Zen harness | License |
 | --- | --- | --- |
 | [Python](https://www.python.org/) 3.13 | Runs the app and the scripts the code sandbox runs, `runtime\` | Python Software Foundation License - full text in `runtime\LICENSE.txt` |
+| [Microsoft WebView2 SDK](https://www.nuget.org/packages/Microsoft.Web.WebView2) 1.0.4258.31 | Zen's own window: the three files beside `Zen-harness.exe` (the engine itself is Windows' own WebView2) | BSD 3-Clause - see *In this repository* above |
 | [Node.js](https://nodejs.org/) 22 (`node.exe`) | Runs Playwright MCP, `tools\node\` | MIT, with the licenses of the code it bundles |
 | [Playwright](https://github.com/microsoft/playwright) and [Playwright MCP](https://github.com/microsoft/playwright-mcp) | The browser Zen reads blocked pages with and tries its games in, `tools\playwright-mcp\` | Apache-2.0 |
 | The Python libraries below, in `runtime\Lib\site-packages\` | Data, charts, forecasts, files, the web, the server | Each library's own license (as its metadata gives it, below); every one's license files are in its `.dist-info` folder |

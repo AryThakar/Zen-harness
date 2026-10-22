@@ -1417,3 +1417,35 @@ img.fav { object-fit: contain; }
 .trace .notes { margin-top: 4px; }
 .df-text pre.code { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--code); box-shadow: 0 0 0 1px var(--line);
   font-size: 12.5px; white-space: pre-wrap; color: var(--muted); }
+/* ---------------------------------------------------------------- Zen-harness.exe's own window */
+/* No Windows title bar there (index.html's head script marks it): the top 56 px of the page move the window - all that
+   is clicked up there keeps its clicks - the top edge resizes it, and its buttons sit where Windows puts them, at the
+   bar's full height. In a browser none of this shows. */
+.winbar { display: none; }
+:root[data-window="zen"] .winbar { position: fixed; top: 0; left: 0; right: 0; z-index: 200; height: 56px; display: flex;
+  justify-content: flex-end; pointer-events: none; app-region: drag; }
+:root[data-window="zen"] :is(button, a, input, textarea, select, label, summary, iframe, [role="button"], [contenteditable]) {
+  app-region: no-drag; }
+:root.win-full .winbar { display: none; }
+.win-btn { width: 46px; height: 56px; display: grid; place-items: center; color: var(--ink); pointer-events: auto;
+  transition: background .1s, color .1s; }
+.win-btn svg { width: 10px; height: 10px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1; }
+.win-btn:hover { background: var(--hover); }
+.win-btn:active { background: var(--active); }
+.win-close:hover { background: #c42b1c; color: #fff; }
+.win-close:active { background: #b3281b; color: #fff; }
+.win-btn:focus-visible { outline-offset: -3px; }
+:root.win-inactive .win-btn:not(:hover) { color: var(--soft); }
+.win-btn .to-restore, :root.win-max .win-btn .to-max { display: none; }
+:root.win-max .win-btn .to-restore { display: block; }
+.win-edge { position: absolute; top: 0; z-index: 1; height: 5px; pointer-events: auto; app-region: no-drag; }
+.win-edge[data-edge="topleft"] { left: 0; width: 10px; cursor: nwse-resize; }
+.win-edge[data-edge="top"] { left: 10px; right: 10px; cursor: ns-resize; }
+.win-edge[data-edge="topright"] { right: 0; width: 10px; cursor: nesw-resize; }
+:root.win-max .win-edge { display: none; }
+/* what sits at the top right moves over for the buttons (138 px) */
+:root[data-window="zen"] .top { padding-right: 152px; }
+:root[data-window="zen"] body.viewing .top { padding-right: 14px; }
+:root[data-window="zen"] .fv-head, :root[data-window="zen"] .fv-inner .fv-head { padding-right: 146px; }
+:root[data-window="zen"] .drawer-head { padding-right: 148px; }
+:root[data-window="zen"] .viewer-top { padding-right: 154px; }

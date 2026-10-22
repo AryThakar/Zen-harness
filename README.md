@@ -107,7 +107,7 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 
 ### The Windows app - the quickest way
 
-1. Download `Zen-harness-1.0.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
+1. Download `Zen-harness-1.1.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
    and unzip it anywhere (it needs no install: Python, its libraries and the browser tools are inside).
 2. Start the model on Kaggle (step 2 below, *On Kaggle*, point 1 only).
 3. Double-click **Zen-harness.exe** and paste the address and password the notebook printed. Zen opens in a window of its
