@@ -9,6 +9,7 @@ authors' licenses and is not affected by Zen harness's license.
 | Component | Use in Zen harness | License |
 | --- | --- | --- |
 | [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex) and [Google Sans Code](https://fonts.google.com/specimen/Google+Sans+Code) typefaces | The interface's type, `web/fonts/` | SIL Open Font License 1.1 - full texts in [`web/fonts/OFL-google-sans-flex.txt`](web/fonts/OFL-google-sans-flex.txt) and [`web/fonts/OFL-google-sans-code.txt`](web/fonts/OFL-google-sans-code.txt) |
+| Zen Sans (`desktop/fonts/`): Google Sans Flex's regular and semibold, made static by `desktop/make_fonts.py` and renamed | The type of Zen-harness.exe's own windows, inside the exe | SIL Open Font License 1.1 - [`desktop/fonts/OFL.txt`](desktop/fonts/OFL.txt) |
 | [Microsoft WebView2 SDK](https://www.nuget.org/packages/Microsoft.Web.WebView2) 1.0.4258.31 (`Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll`, `WebView2Loader.dll`), © Microsoft Corporation | Zen-harness.exe's own window, `desktop/webview2/` (also beside the exe in the Windows release) | BSD 3-Clause - full text in [`desktop/webview2/LICENSE.txt`](desktop/webview2/LICENSE.txt), notices in [`desktop/webview2/NOTICE.txt`](desktop/webview2/NOTICE.txt) |
 
 The startup sound (`web/sounds/startup.ogg`) is AryThakar's own, from [Zen](https://github.com/AryThakar/zen); the
@@ -66,20 +67,15 @@ carries, unmodified:
 | duckdb | 1.5.5 | MIT License |
 | et_xmlfile | 2.0.0 | MIT License |
 | fastapi | 0.141.1 | MIT |
-| fastembed | 0.8.1 | Apache Software License |
-| filelock | 4.0.4 | MIT |
-| flatbuffers | 25.12.19 | Apache Software License |
 | fonttools | 4.66.1 | MIT |
 | formulaic | 1.2.2 | MIT |
 | fsspec | 2026.9.0 | BSD-3-Clause |
 | fugue | 0.9.7 | Apache-2.0 |
 | h11 | 0.16.0 | MIT License |
-| hf-xet | 1.6.0 | Apache-2.0 |
 | httpcore | 1.0.9 | BSD-3-Clause |
 | httpcore2 | 2.13.1 | BSD-3-Clause |
 | httpx | 0.28.1 | BSD License |
 | httpx2 | 2.13.1 | BSD-3-Clause |
-| huggingface_hub | 1.33.0 | Apache Software License |
 | idna | 3.20 | BSD-3-Clause |
 | ImageIO | 2.38.0 | BSD-2-Clause |
 | imbalanced-learn | 0.14.2 | MIT License |
@@ -100,19 +96,16 @@ carries, unmodified:
 | langsmith | 0.14.1 | MIT |
 | lazy-loader | 0.6 | BSD-3-Clause |
 | lightgbm | 4.7.0 | MIT |
-| loguru | 0.7.3 | MIT License |
 | lxml | 6.1.3 | BSD-3-Clause |
 | MarkupSafe | 3.0.3 | BSD-3-Clause |
 | matplotlib | 3.11.2 | Python Software Foundation License |
 | mcp | 2.3.0 | MIT License |
 | mcp-types | 2.3.0 | MIT License |
-| mmh3 | 5.3.0 | MIT License |
 | mpmath | 1.3.0 | BSD License |
 | narwhals | 2.26.0 | MIT |
 | networkx | 3.7 | BSD-3-Clause |
 | nltk | 3.10.3 | Apache Software License |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
-| onnxruntime | 1.30.0 | MIT License |
 | opencv-python-headless | 5.0.0.93 | Apache Software License |
 | openpyxl | 3.1.5 | MIT License |
 | opentelemetry-api | 1.45.1 | Apache-2.0 |
@@ -125,8 +118,6 @@ carries, unmodified:
 | polars | 1.44.2 | MIT License |
 | polars-runtime-32 | 1.44.2 | MIT License |
 | primp | 2.0.1 | MIT License |
-| protobuf | 7.36.2 | 3-Clause BSD License |
-| py_rust_stemmers | 0.1.8 | MIT |
 | pyarrow | 25.0.1 | Apache-2.0 |
 | pycparser | 3.1 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
@@ -166,7 +157,6 @@ carries, unmodified:
 | tenacity | 9.1.4 | Apache Software License |
 | threadpoolctl | 3.7.0 | BSD-3-Clause |
 | tifffile | 2026.9.20 | BSD-3-Clause |
-| tokenizers | 0.23.2 | Apache Software License |
 | tqdm | 4.70.1 | MPL-2.0 AND MIT |
 | triad | 1.0.2 | Apache-2.0 |
 | truststore | 0.10.4 | MIT |
@@ -178,7 +168,6 @@ carries, unmodified:
 | uuid_utils | 0.17.1 | BSD-3-Clause |
 | uvicorn | 0.54.0 | BSD-3-Clause |
 | websockets | 16.1.1 | BSD-3-Clause |
-| win32_setctime | 1.2.0 | MIT License |
 | wrapt | 2.5.0 | BSD-2-Clause |
 | xgboost | 3.4.1 | Apache-2.0 |
 | xlrd | 2.0.2 | BSD License |
@@ -196,6 +185,5 @@ None of these are in this repository or its releases.
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) | Serves the model, downloaded by the notebook | MIT |
 | [cloudflared](https://github.com/cloudflare/cloudflared) | The notebook's tunnel | Apache-2.0 |
 | EmbeddingGemma 2 (optional), as [ggml-org's GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) (`Q8_0` and its `mmproj`) | Search by meaning | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) |
-| [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), as [Qdrant's ONNX copy](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q) (through fastembed) | Search by meaning without EmbeddingGemma, downloaded once | MIT |
 | Microsoft Edge | The window Zen-harness.exe opens, and the browser Playwright drives | Part of Windows |
 | [Pollinations](https://pollinations.ai/) (optional, with your own key) | Pictures | A web service, under its own terms |

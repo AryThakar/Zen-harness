@@ -34,7 +34,7 @@ def test_history_replays_calls_exactly_and_marks_errors():
 def test_a_steps_thinking_goes_back_with_it_and_a_cloud_drops_it():
     """Qwen 3.6's template shows the turn's earlier steps with their thinking; given none, each showed an empty
     <think></think> - its plan lost between tool calls (and Qwen's guide: dropping it degrades accuracy)."""
-    from app.providers.gemini import GeminiProvider
+    from app.providers.cloud import CloudProvider
     calls = [{"id": "a", "type": "function", "function": {"name": "calculate", "arguments": '{"expression": "2"}'}}]
     history = [{"role": "user", "content": "q"},
                {"role": "assistant", "text": "", "tool_calls": [], "raw": {"tool_calls": calls}, "provider": "llamacpp",
@@ -42,7 +42,7 @@ def test_a_steps_thinking_goes_back_with_it_and_a_cloud_drops_it():
                tool_result("a")]
     sent = to_openai_messages(history)[1]
     assert sent["reasoning_content"] == "The user wants 2; calculate it, then answer." and sent["tool_calls"] == calls
-    cloud = GeminiProvider("m", "k", "http://127.0.0.1:9")._body("s", history, [], True)
+    cloud = CloudProvider("gemini-3.5-flash", "k", "http://127.0.0.1:9")._body("s", history, [], True)
     assert all("reasoning_content" not in m for m in cloud["messages"])
 
 
@@ -94,7 +94,7 @@ class FakeServer:
     """Answers /health and streams a scripted /v1/chat/completions reply."""
 
     def __init__(self, chunks=(), status=200, error=None, props=None, cut=False, garbled=False, fail_first=0,
-                 page=None, host=None):  # page: an HTML error page, as a proxy or tunnel sends it; host: a bridge's
+                 page=None):  # page: an HTML error page, as a proxy or tunnel sends it
         self.requests = []
         fake = self
 
@@ -109,8 +109,6 @@ class FakeServer:
                     return self.page()
                 body = json.dumps(props).encode() if props is not None and self.path == "/props" else b""
                 self.send_response(status)
-                if host:
-                    self.send_header("X-Model-Host", host)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -296,9 +294,9 @@ def test_the_slot_size_comes_from_the_server():
 
 def test_ready_reports_loading_and_missing_server(fake):
     assert LlamaCppProvider("m", fake().url).ready() == (True, "m (llama.cpp, on this computer)")
-    # through the Kaggle bridge: said as it is (measured: the page said 'running on this computer' of a model on Kaggle)
-    bridged = LlamaCppProvider("m", fake(host="Kaggle").url)
-    assert bridged.ready() == (True, "m (llama.cpp, on Kaggle)") and bridged.location() == "on Kaggle"
+    # the Kaggle notebook: said as it is (measured: the page said 'running on this computer' of a model on Kaggle)
+    kaggle = LlamaCppProvider("m", fake().url, api_key="pw", place="Kaggle")
+    assert kaggle.ready() == (True, "m (llama.cpp, on Kaggle)") and kaggle.location() == "on Kaggle"
     loading = LlamaCppProvider("m", fake(status=503).url).ready()
     assert not loading[0] and "loading" in loading[1]
     missing = LlamaCppProvider("m", "http://127.0.0.1:9").ready()
@@ -306,7 +304,7 @@ def test_ready_reports_loading_and_missing_server(fake):
 
 
 def test_a_tunnels_error_page_is_said_plainly_never_shown(fake):
-    """Cloudflare's 530 page through the Kaggle bridge, when the tunnel is down: before, the status said 'llama-server
+    """Cloudflare's 530 page from the Kaggle notebook's address, when the tunnel is down: before, the status said 'llama-server
     answered 530; check its window' and a reply ended with the page's first 300 characters of HTML."""
     page = "<!DOCTYPE html><html><head><title>Error 1033</title></head><body>Cloudflare Tunnel error</body></html>"
     tunnel = fake(status=530, page=page)

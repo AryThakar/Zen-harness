@@ -6,7 +6,6 @@ answers passing through. The router's own code is taken from the notebook and ru
 from __future__ import annotations
 
 import ast
-import importlib.util
 import json
 import threading
 import urllib.error
@@ -123,34 +122,10 @@ def test_a_server_that_is_down_gets_a_clear_502(router):
     assert down.value.code == 502 and b"Nothing answers on the notebook" in down.value.read()
 
 
-def test_the_bridge_says_whether_the_notebook_has_the_search_model(monkeypatch):
-    class Notebook(BaseHTTPRequestHandler):
-        has_search, answers_anything = True, False
-
-        def log_message(self, *args):
-            pass
-
-        def do_GET(self):
-            ok = self.path == "/embed/props" and self.has_search and self.headers.get("Authorization") == "Bearer pw"
-            data = json.dumps({"model_path": "/tmp/models/embeddinggemma/embeddinggemma-2-Q8_0.gguf",
-                               "modalities": {"vision": True}}).encode() if ok else b"{}"
-            self.send_response(200 if ok or self.answers_anything else 404)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-    monkeypatch.setattr("sys.argv", ["bridge.py"])
-    spec = importlib.util.spec_from_file_location("bridge_search", ROOT / "kaggle" / "bridge.py")
-    bridge = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bridge)
-    notebook = serve(Notebook)
-    url = f"http://127.0.0.1:{notebook.server_address[1]}"
-    try:
-        assert bridge.search_model(url, "pw") == "embeddinggemma-2-Q8_0.gguf, pictures too"
-        Notebook.has_search = False  # an older notebook: Qwen only
-        assert "none on this notebook" in bridge.search_model(url, "pw")
-        Notebook.answers_anything = True  # something that answers but names no model is no search model either
-        assert "none on this notebook" in bridge.search_model(url, "pw")
-    finally:
-        notebook.shutdown()
-        notebook.server_close()
+def test_the_last_cell_prints_a_zen_code_that_zen_reads():
+    from app import model_link
+    line = next(x for x in CODE[-2].splitlines() if x.startswith("ZEN_CODE = "))  # the cell before the one that waits
+    names = {"base64": __import__("base64"), "URL": "https://a-b.trycloudflare.com", "API_KEY": "Pass_word-1"}
+    exec(line, names)
+    assert model_link.code(names["ZEN_CODE"]) == ("https://a-b.trycloudflare.com", "Pass_word-1")
+    assert "bridge" not in json.dumps(NOTEBOOK).lower()

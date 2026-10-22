@@ -6,8 +6,8 @@ styles, scripts, fonts and sound served from web/ under /static).
     open http://localhost:8000        (chat)
     open http://localhost:8000/docs   (API)
 
-Both model slots are served by one llama-server (settings.llamacpp_url): slot 0 is main, slot 1 the
-helpers - or, with BIZ_LLM_PROVIDER=groq, by a model on Groq's cloud (for testing).
+The model is where Zen's Model settings say - the Kaggle notebook, a llama-server on this computer, or a cloud's
+OpenAI-style API (app/model_link.py, app/connection.py); on llama-server, slot 0 is main and slot 1 the helpers.
 """
 
 from __future__ import annotations
@@ -23,11 +23,8 @@ from fastapi.staticfiles import StaticFiles
 from app.assistant import main as main_slot
 from app.assistant.store import Store
 from app.config import settings
-from app.providers import LlamaCppProvider, Provider
-from app.providers.gemini import GeminiProvider
-from app.providers.groq import GroqProvider
-from app.providers.nvidia import NvidiaProvider
-from app.rag.embed import make_embedder
+from app.connection import Connection, Live, LiveEmbedder
+from app.providers import Provider
 
 from .api import assistant
 
@@ -71,22 +68,10 @@ def create_app(assistant_parts: tuple[Store, Provider, Provider] | None = None) 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         own_store = assistant_parts is None
-        if own_store:
-            def slot(n: int) -> Provider:
-                if settings.llm_provider == "gemini":
-                    return GeminiProvider(settings.gemini_model, settings.gemini_api_key,
-                                          thinking=settings.assistant_thinking, cancel=main_slot.STOP,
-                                          slot_tokens=settings.gemini_slot or None)
-                if settings.llm_provider == "nvidia":
-                    return NvidiaProvider(settings.nvidia_model, settings.nvidia_api_key,
-                                          thinking=settings.assistant_thinking, cancel=main_slot.STOP)
-                if settings.llm_provider == "groq":
-                    return GroqProvider(settings.groq_model, settings.groq_api_key, thinking=settings.assistant_thinking,
-                                        cancel=main_slot.STOP)
-                return LlamaCppProvider(settings.llamacpp_model, settings.llamacpp_url, settings.assistant_thinking,
-                                        slot=n, max_tokens=settings.assistant_max_tokens, cancel=main_slot.STOP,
-                                        thinking_budget=settings.assistant_thinking_budget or None)
-            store, main, worker = Store(settings.assistant_dir, make_embedder(settings)), slot(0), slot(1)
+        if own_store:  # the model the Model settings say, made again whenever they change (app/connection.py)
+            connection = Connection(settings.model_settings, settings, cancel=main_slot.STOP)
+            store = Store(settings.assistant_dir, LiveEmbedder(connection))
+            main, worker = Live(connection, 0), Live(connection, 1)
         else:
             store, main, worker = assistant_parts
         app.state.assistant_store = store

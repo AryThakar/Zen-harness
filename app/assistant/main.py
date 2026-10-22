@@ -73,7 +73,7 @@ from . import snapshot
 from .context import (counter, cut_turns, lean_past, message_context, prompt_limit, shorten_call_args, shorten_tool_results,
                       standing_instructions,
                       without_notes)
-from .prompts import LAST_STEP, MAIN, MAIN_CUT_OFF, QUICK, SHOWN, call_cut_off
+from .prompts import LAST_STEP, MAIN, MAIN_CLOUD, MAIN_CUT_OFF, QUICK, SHOWN, call_cut_off
 from .registry import ToolContext, execute, split_confirm
 from .store import NEW_CHAT, Store
 from .workers import DELEGATES, main_tools
@@ -233,7 +233,8 @@ def _agent(state: TurnState, config) -> dict:
     history = [m for m in state["messages"] if m["role"] in ("user", "assistant", "tool")]
     # The fixed prompt, then agent.md as it is now - never in the history; the workspace travels on the user's
     # messages (context.py)
-    system = f"{MAIN}\n\n{agent_md.in_view(t.ws)}" if agent_md.key(t.ws) else MAIN
+    fixed = MAIN_CLOUD if t.main.name == "cloud" else MAIN
+    system = f"{fixed}\n\n{agent_md.in_view(t.ws)}" if agent_md.key(t.ws) else fixed
     limit, exact = prompt_limit(t.main), counter(t.main, system, specs)
     count = lambda messages: exact(t.with_snapshot(messages))  # the snapshot rides on this turn's message: it counts
     visible, dropped, fits = cut_turns(lean_past(history), limit, count, t.dropped)

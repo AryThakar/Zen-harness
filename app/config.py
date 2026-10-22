@@ -38,27 +38,14 @@ class Settings:
     """The assistant's settings. The variable names are the ones the .env file already uses (some keep the
     BIZ_ prefix of the project's first product)."""
     max_upload_mb: int = int(os.environ.get("BIZ_MAX_UPLOAD_MB", "100"))
-    # The model behind both slots: "llamacpp" (llama-server - local, or the Kaggle bridge), or a cloud for testing the
-    # app with a stronger model: "gemini" (Google's Gemini API) or "groq".
-    llm_provider: str = os.environ.get("BIZ_LLM_PROVIDER", "llamacpp")
-    # Where llama-server listens, and the name to show (llama-server serves one model, whatever the name).
+    # Where Zen's model runs - the Kaggle notebook, a llama-server here, or a cloud's OpenAI-style API - and each
+    # one's address and key: the Model settings, changed from the app, in this file (app/model_link.py).
+    # Zen-harness.exe names its settings.env; from source, model.env beside .env (git-ignored).
+    model_settings: str = os.environ.get("ZEN_MODEL_SETTINGS", str(ENV_FILE.parent / "model.env"))
+    # This computer's llama-server, when the Model settings name no address; and the name to show (llama-server serves
+    # one model, whatever the name).
     llamacpp_url: str = os.environ.get("BIZ_LLAMACPP_URL", "http://127.0.0.1:8080")
     llamacpp_model: str = os.environ.get("BIZ_LLAMACPP_MODEL", "local")  # the --alias; the UI shows the loaded file
-    # The Kaggle notebook's address and password, in the file the bridge (kaggle/bridge.py) reads: the app's model
-    # settings change them there, and the bridge takes them on its next request. Zen-harness.exe names its own
-    # settings.env.
-    model_settings: str = os.environ.get("ZEN_MODEL_SETTINGS", str(ENV_FILE.parent / "kaggle" / "bridge.env"))
-    # The assistant on Groq's cloud instead (BIZ_LLM_PROVIDER=groq): for testing the app with a large model.
-    groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
-    groq_model: str = os.environ.get("BIZ_GROQ_MODEL", "openai/gpt-oss-120b")
-    # Google's Gemini API (BIZ_LLM_PROVIDER=gemini): a key from aistudio.google.com; the model; the context a request
-    # may use (0: gemini.py's SLOT_TOKENS, about the local model's size).
-    gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
-    gemini_model: str = os.environ.get("BIZ_GEMINI_MODEL", "gemini-3.5-flash")
-    gemini_slot: int = int(os.environ.get("BIZ_GEMINI_SLOT", "0"))
-    # NVIDIA Build (BIZ_LLM_PROVIDER=nvidia): a key from build.nvidia.com; the model.
-    nvidia_api_key: str = os.environ.get("NVIDIA_API_KEY", "")
-    nvidia_model: str = os.environ.get("BIZ_NVIDIA_MODEL", "deepseek-ai/deepseek-v4.1-flash")
     # A real browser for pages a plain read can't get (app/tools/browser.py): the folder Playwright MCP is
     # installed in (npm install @playwright/mcp, run by node) or its cli.js, and the installed browser it drives.
     # Empty: no browser.
@@ -67,13 +54,11 @@ class Settings:
     # Search by meaning (files, chats and pictures): EmbeddingGemma 2 served by llama-server
     # (app/rag/embed_server.py) - the model file (its GGUF), its picture projector, where the server listens,
     # and the llama-server the app starts itself (empty: one started by hand at that address is used).
-    # No model file: fastembed's small CPU model (text only, downloaded once).
+    # No model file here: the Kaggle notebook's when it runs one, else search by keywords.
     embed_gguf: str = os.environ.get("ASSISTANT_EMBED_GGUF", "")
     embed_mmproj: str = os.environ.get("ASSISTANT_EMBED_MMPROJ", "")
     embed_url: str = os.environ.get("ASSISTANT_EMBED_URL", "http://127.0.0.1:8070")
     embed_server: str = os.environ.get("ASSISTANT_EMBED_SERVER", "")
-    embed_model: str = os.environ.get("BIZ_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
-    embed_cache_dir: str = os.environ.get("BIZ_EMBED_CACHE_DIR", "data/models")
     # Workspaces, chats and their files live here. Both model slots are served by the same llama-server
     # (BIZ_LLAMACPP_URL): slot 0 talks, slot 1 runs the helpers.
     assistant_dir: str = os.environ.get("ASSISTANT_DATA_DIR", "data/assistant")

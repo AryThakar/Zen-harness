@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-"""A local model served by llama.cpp's ``llama-server`` (its OpenAI-compatible chat API).
+"""A model served by llama.cpp's ``llama-server`` (its OpenAI-compatible chat API): on this computer, or on the
+Kaggle notebook - its address and password (api_key) - as Zen's Model settings say (app/model_link.py).
 
     llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf --temp 1.0 --top-p 0.95 --top-k 20 --presence-penalty 1.5 ...
-    BIZ_LLM_PROVIDER=llamacpp uvicorn app.main:app      (the full command: the Kaggle notebook zen-qwen36-server)
+    (the full command: the Kaggle notebook zen-qwen36-server)
 
 - Streams every turn: answer text appears as it is written, and tool calls arrive
   as deltas that are put together here. llama-server reads the calls out of the
@@ -52,6 +53,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+from app.tools.net import USER_AGENT
+
 from .base import Cancelled, EventCallback, ModelTurn, ProviderError, answered_ids, estimate_tokens
 from .gemma_calls import QUOTE, heal
 
@@ -73,12 +76,12 @@ TEXT_TOOL_CALL = re.compile(r"<tool_call>.*?(?:</tool_call>|$)", re.DOTALL)
 # part way - the Kaggle tunnel dropping mid-stream raises http.client.IncompleteRead, which is neither.
 NET_ERRORS = (urllib.error.URLError, OSError, http.client.HTTPException)
 # A request whose connection fails before anything comes back is tried again after these pauses (seconds): a
-# model on another computer - the 26B on Kaggle, through its bridge and a tunnel - drops a connection now and
-# then (2026-10-09: 2 of the first 5 acceptance jobs failed on one dropped request, the bridge's 502). A server
+# model on another computer - the 26B on Kaggle, through a tunnel - drops a connection now and then (2026-10-09:
+# 2 of the first 5 acceptance jobs failed on one dropped request, a 502 from the bridge Zen had then). A server
 # that answered with its own error (4xx, 500), a timeout and a stopped turn are not retried.
 RETRY_PAUSES = (2.0, 6.0)
 RETRY_STATUS = {502, 503, 504}
-# What a proxy or tunnel in front of the model answers when it can't reach it (the Kaggle bridge's 502, Cloudflare's
+# What a proxy or tunnel in front of the model answers when it can't reach it (the notebook's router's 502, Cloudflare's
 # 52x and 530 - an HTML page): the model is down, said in plain words, never the page itself.
 GATEWAY = {502, 504, *range(520, 531)}
 DOWN = "The model can't be reached right now: its connection is down. Try again in a minute."
@@ -100,8 +103,13 @@ class LlamaCppProvider:
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:8080", thinking: bool = False,
                  slot: int | None = None, max_tokens: int | None = None, sampling: dict | None = None,
-                 cancel: threading.Event | None = None, thinking_budget: int | None = THINKING_BUDGET):
+                 cancel: threading.Event | None = None, thinking_budget: int | None = THINKING_BUDGET,
+                 api_key: str = "", place: str | None = None):
         self.model = model
+        # A llama-server elsewhere is reached with its password (--api-key: the Kaggle notebook's), and named by
+        # where it runs ('Kaggle'), for the page
+        self.api_key = api_key
+        self.place = place
         # Set when the user stops: the call ends at the next streamed line and its connection
         # closes, which makes llama-server stop generating on that slot.
         self.cancel = cancel
@@ -115,13 +123,12 @@ class LlamaCppProvider:
         self.thinking_budget = thinking_budget  # None: unlimited (only for comparisons)
         self._vision: bool | None = None  # whether the server has the vision part loaded (sees_images)
         self._slot_tokens: int | None = None  # one slot's context, from /props
-        self.host: str | None = None  # where a bridge says the model runs (its X-Model-Host), e.g. 'Kaggle'
 
     def health(self) -> tuple[str, str]:
         """The model server's state - 'ready', 'loading' or 'down' - and what to tell the user, in plain words."""
         try:
-            with urllib.request.urlopen(f"{self.base_url}/health", timeout=3) as response:
-                self.host = response.headers.get("X-Model-Host") or self.host
+            with self._get("/health", 3 if self.place is None else 10):  # a tunnel takes longer
+                pass
         except urllib.error.HTTPError as exc:
             if exc.code == 503 and not _is_page(exc):  # llama-server's own "Loading model"
                 return "loading", "The model is still loading; it will be ready in a moment."
@@ -129,14 +136,18 @@ class LlamaCppProvider:
                 return "down", DOWN
             return "down", f"The model server answered with an error ({exc.code}); its window says why."
         except NET_ERRORS:
-            return "down", f"The model server isn't running (expected at {self.base_url}). Start it, then reload this page."
+            if self.place:  # a new notebook session has a new address
+                return "down", (f"The notebook on {self.place} isn't answering. Start it, then paste its new Zen code: "
+                                "click the dot by the chat's name.")
+            return "down", (f"llama-server isn't running at {self.base_url}. Start it, or choose where the model runs: "
+                            "click the dot by the chat's name.")
         return "ready", f"{self.loaded_model()} (llama.cpp, {self.location()})"
 
     def location(self) -> str:
-        """Where the model runs, in words: 'on Kaggle' when a bridge names its host, 'on this computer' for
+        """Where the model runs, in words: 'on Kaggle' (the place it was given), 'on this computer' for
         llama-server here, else its address."""
-        if self.host:
-            return f"on {self.host}"
+        if self.place:
+            return f"on {self.place}"
         where = urllib.parse.urlsplit(self.base_url).hostname or ""
         return "on this computer" if where in ("127.0.0.1", "localhost", "::1") else f"at {where}"
 
@@ -174,7 +185,7 @@ class LlamaCppProvider:
     def _props(self) -> dict:
         """llama-server's /props ({} when it doesn't answer), remembering the slot size it gives."""
         try:
-            with urllib.request.urlopen(f"{self.base_url}/props", timeout=3) as response:
+            with self._get("/props", 3 if self.place is None else 10) as response:
                 props = json.loads(response.read())
         except (*NET_ERRORS, ValueError):
             return {}
@@ -233,7 +244,13 @@ class LlamaCppProvider:
             return estimate_tokens(system, messages, tools)
 
     def _headers(self) -> dict:
-        return {"Content-Type": "application/json"}
+        return {"Content-Type": "application/json", "User-Agent": USER_AGENT,
+                **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})}
+
+    def _get(self, path: str, timeout: float):
+        """A GET under the server's address, with its password."""
+        return urllib.request.urlopen(urllib.request.Request(f"{self.base_url}{path}", headers=self._headers()),
+                                      timeout=timeout)
 
     def _clean(self, body: dict) -> dict:
         """A request as this server takes it (llama-server takes its own fields; a cloud strips them)."""
@@ -268,6 +285,8 @@ class LlamaCppProvider:
         return self.cancel is not None and self.cancel.is_set()
 
     def _unreachable(self) -> str:
+        if self.place:
+            return f"The notebook on {self.place} isn't answering. Start it (a new session: paste its new Zen code), then try again."
         return f"The model server isn't running (expected at {self.base_url}). Start it, then try again."
 
     def _http_error(self, exc: urllib.error.HTTPError) -> str:
@@ -376,7 +395,8 @@ def to_openai_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
-OPENAI_STYLE = {"llamacpp", "groq", "gemini", "nvidia"}  # providers whose raw tool calls are already in this format
+# providers whose raw tool calls are already in this format (the last three: chats from before one cloud provider)
+OPENAI_STYLE = {"llamacpp", "cloud", "groq", "gemini", "nvidia"}
 
 
 def _assistant_message(msg: dict, answered: set[str]) -> dict | None:

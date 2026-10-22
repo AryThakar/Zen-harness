@@ -13,6 +13,7 @@ The cut-off (min_similarity) for each model is chosen on half the questions (eve
 scores are reported on the other half (odd), so the number shown is not the one it was fitted to.
 
 Run: .venv/Scripts/python.exe bench/search_models.py [embedding server url]
+(bge-small needs fastembed - pip install fastembed - no longer one of Zen's libraries: it chose EmbeddingGemma 2.)
 """
 
 from __future__ import annotations
@@ -28,12 +29,26 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.rag.embed import FastEmbedder, ServerEmbedder  # noqa: E402
+from app.rag.embed import ServerEmbedder, _normalise  # noqa: E402
 from app.tools.search_index import MIN_SIMILARITY, SearchIndex  # noqa: E402
 
 SET = ROOT / "data/assistant/eval/search_heldout.json"
 WORKSPACES = ROOT / "data/assistant/workspaces"
 POOLS = {"files": (("document", "report"), 5), "notes": (("note",), 2), "chats": (("chat",), 4)}
+
+
+class FastEmbedder:
+    """bge-small on the CPU through fastembed, as Zen ran it before EmbeddingGemma 2 (2026-10-23)."""
+
+    def __init__(self, model: str, cache_dir: str):
+        from fastembed import TextEmbedding
+        self.name, self._model = model, TextEmbedding(model, cache_dir=cache_dir)
+
+    def embed_documents(self, texts, titles=None):
+        return _normalise(np.array(list(self._model.embed(texts, batch_size=64)), dtype=np.float32))
+
+    def embed_query(self, text):
+        return _normalise(np.array(list(self._model.query_embed([text])), dtype=np.float32))[0]
 
 
 def copy_index(ws: str, folder: Path) -> Path:

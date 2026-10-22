@@ -38,9 +38,9 @@ consistent is a limit to record, not a prompt to bend (section 5).
 | Fitting the slot | `context.py` (cut_turns, shorten_tool_results, shorten_call_args) and the provider's exact count | main and the runner use the same ladder |
 | Running a program | `sandbox.py` (the set-up, the audit hook, the clean environment): run_python to its end, start for the console | run.py (the helper's run, the report), console.py (the user's session) |
 | What a run left | `run.keep_report` - the facts, and a console session as it went | the next task and the model read the file's report |
-| The model server's state | `LlamaCppProvider.health` - ready, loading or down, in plain words; and `location` - this computer, Kaggle (the bridge names itself, X-Model-Host) or a cloud | /status, the header's dot, the start screen |
+| The model server's state | `LlamaCppProvider.health` - ready, loading or down, in plain words; and `location` - this computer, Kaggle (the place the Model settings give it) or a cloud | /status, the header's dot, the start screen |
 | Zen-harness.exe's window | `desktop/Zen.cs` ZenWindow - WebView2 in Windows' frame without its title bar; the page draws the bar (`.winbar` in index.html: `app-region: drag`, the window's buttons, the top edge) and says its theme; Edge's app window when WebView2 is missing | the page only talks to it through `chrome.webview` messages |
-| The model's connection (Kaggle) | `model_link.py` - the address and password, tried (/props, which needs the password) before they are written in place; the file is `ZEN_MODEL_SETTINGS` (kaggle/bridge.env; the Windows app's settings.env), and kaggle/bridge.py reads it again when it changes | /model-link (the page's own Origin only; the password never goes back), the model's name in a chat's header, Zen-harness.exe's connect window |
+| Where the model runs | `model_link.py` - Kaggle (address and password, or the notebook's Zen code), this PC (an address) or a cloud (address, key, model): tried first (llama-server's /props, which needs the password; a cloud's /models, which needs the key) and written in place; the file is `ZEN_MODEL_SETTINGS` (model.env; the Windows app's settings.env). `connection.py` makes the providers and the search model again when it changes | /model-settings (the page's own Origin only; a password or key never goes back), the dot by a chat's name, Settings - which open by themselves the first time |
 | A helper's working files | `work/` - its scripts and in-between tables (the engineer's prompt and run's contract say so) | the page: inside the helper's step in the chat; a closed section of the file panel |
 | How a tool is named while it works | `Tool.labels` in registry.py, served at /tools | the page keeps no list of its own |
 | Instructions | prompts.py (roles, nudges), registry.py (tools), contracts.py (delegates), the tools' own results | each rule in one place (tests/test_prompts.py: no model reads a sentence twice) |
@@ -129,7 +129,7 @@ a limit both models show is the models' class, not one model:
   Each project's runs rebuilt matplotlib's font cache (1-4 s per new project); past 5 s matplotlib says so on
   stderr, and the chart read as an error. The cache is now one for every project, and the notice is not an error.
 - **The model is remote**: Qwen 3.6 runs on a Kaggle notebook through a quick tunnel (kaggle/); a new session gets
-  a new address (kaggle/bridge.env, or the model's name in a chat's header: no restart), and while it is down the page
+  a new address (its Zen code, pasted from the dot by a chat's name: no restart), and while it is down the page
   says so - nothing else can answer.
 - **The analyst can over-work a simple question** - five forecasts and three charts for "what sells best, and what
   might next month look like", then scripts to combine them (2026-10-22). A finish sent back on its last step now

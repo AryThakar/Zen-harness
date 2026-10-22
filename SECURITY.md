@@ -14,16 +14,19 @@ Zen harness is a personal assistant for one person on their own computer. When r
 the properties it is meant to keep:
 
 - **Loopback only.** The app listens on `127.0.0.1:8000` and has no login: anyone who can reach that port can
-  use it, so it must never be bound to another address or put behind a public tunnel as it is. The Kaggle
-  bridge listens on `127.0.0.1:8080`; the embedding server, when used, on `127.0.0.1:8070`.
+  use it, so it must never be bound to another address or put behind a public tunnel as it is. The embedding
+  server, when it runs here, listens on `127.0.0.1:8070`.
 - **The model is remote when it runs on Kaggle.** Your messages, and the parts of your files Zen reads to answer,
   go to the llama-server in your own Kaggle notebook, over the notebook's Cloudflare tunnel (HTTPS) and with its
   password (`--api-key`) - and, when the notebook runs the search model too, your files' text and pictures to be
   made into search vectors, and each search (the vectors themselves are kept on your PC). The notebook makes a new random password each session unless you set the Kaggle secret
-  `LLAMA_API_KEY`. Treat the address and password like a key: whoever has both can use your model.
-- **Only Zen's page changes where the model runs.** `/assistant/model-link` refuses a request from another site's
-  page (its Origin), tries a new address with its password before saving it, takes each as one line, and never
-  sends the saved password back to the page.
+  `LLAMA_API_KEY`. Treat the address and password - and the Zen code, which holds both - like a key: whoever has
+  them can use your model.
+- **A cloud model sees what it is sent.** With Cloud chosen, your messages and the parts of your files Zen reads go
+  to that API's company, under its terms. Its key stays in the settings file on your PC.
+- **Only Zen's page changes where the model runs.** `/assistant/model-settings` refuses a request from another
+  site's page (its Origin), tries a choice before saving it, takes each value as one line, and never sends a saved
+  password or key back to the page.
 - **The Windows app's window** is Zen's own (WebView2) with a profile of its own (`data\webview`): no Microsoft
   account signs in there and nothing syncs into it. It shows only Zen's page - links elsewhere open in your default
   browser - and only that page may ask it to minimize, maximize or close. Without WebView2 it is Edge's app window

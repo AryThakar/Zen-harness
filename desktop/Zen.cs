@@ -3,16 +3,16 @@
 //
 // The folder it sits in (desktop/build.py makes it):
 //     Zen-harness.exe  this launcher
-//     settings.env     the model's address and password, and any other setting (NAME=value lines)
+//     settings.env     Zen's Model settings - where the model runs, its address and key - and any other setting
 //     runtime\         Python with Zen's libraries (the code sandbox runs scripts with this Python too)
-//     zen\             app\, web\ and kaggle\bridge.py
+//     zen\             app\ and web\
 //     tools\           node and Playwright MCP: the browser Zen reads blocked pages with and tries its games in
 //     data\            projects, chats and files - everything that is yours; logs\ holds the servers' output
 //
-// One click: the bridge to the model on Kaggle (when settings.env names one), then the app, then the window - Zen's own
-// (WebView2, its page drawing the title bar), or without WebView2 Edge's app mode. Closing the window stops both. A
-// second click while Zen runs opens another window. Zen's model settings change the address and password in
-// settings.env later, and the bridge takes them as it runs.
+// One click: the app, then the window - Zen's own (WebView2, its page drawing the title bar), or without WebView2 Edge's
+// app mode. Closing the window stops the app. A second click while Zen runs opens another window. The app reaches the
+// model itself - the Kaggle notebook, a llama-server here or a cloud - as its Model settings say (set in the app; the
+// first time, they open by themselves).
 // Built by desktop/build.py with the C# compiler every Windows has (.NET Framework 4): C# 5, and Microsoft's WebView2 SDK
 // (desktop/webview2: its three files go beside the exe).
 using System;
@@ -26,7 +26,6 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -37,10 +36,8 @@ using Microsoft.Win32;
 static class Zen
 {
     const string App = "http://127.0.0.1:8000/";
-    const string Model = "http://127.0.0.1:8080/health";  // the bridge, or a llama-server on this computer
     // Zen's app is up: its tool names answer at once (its status asks the model first - over Kaggle's tunnel, seconds)
     const string Up = App + "assistant/tools";
-    const string KaggleSearch = "http://127.0.0.1:8080/embed";  // the notebook's search model, through the bridge
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
     static readonly string SettingsFile = Path.Combine(Root, "settings.env");
     static readonly string Data = Path.Combine(Root, "data");
@@ -67,8 +64,6 @@ static class Zen
         try
         {
             var settings = ReadSettings();
-            if (!Connect(settings, splash)) return 1;
-            SearchOnKaggle(settings);
             splash.Say("Starting Zen…");
             var app = Start(Python(), "-m uvicorn app.main:app --host 127.0.0.1 --port 8000", "zen.log", settings);
             if (!WaitFor(Up, 120, app))
@@ -111,68 +106,6 @@ static class Zen
         }
     }
 
-    // The model: the Kaggle bridge when settings.env names an address - asked for when there is none, or when it no
-    // longer answers (the notebook's tunnel gets a new address each time it starts) - or a llama-server already here.
-    static bool Connect(Dictionary<string, string> settings, Splash splash)
-    {
-        bool asked = false, failed = false;
-        while (true)
-        {
-            string url;
-            if (!settings.TryGetValue("KAGGLE_URL", out url) || url.Length == 0)
-            {
-                if (!asked && Answers(Model, 1500)) return true;  // a llama-server on this computer
-            }
-            else
-            {
-                splash.Say("Reaching the model on Kaggle…");
-                var bridge = Start(Python(), "\"" + Path.Combine(Root, "zen", "kaggle", "bridge.py") + "\"", "bridge.log", settings);
-                if (WaitFor(Model, 25, bridge)) return true;
-                Stop(bridge);
-                failed = true;
-            }
-            asked = true;
-            splash.Hide();
-            using (var ask = new ConnectForm(failed, settings))
-            {
-                if (ask.ShowDialog() != DialogResult.OK) return false;
-                settings["KAGGLE_URL"] = ask.Address;
-                settings["KAGGLE_PASSWORD"] = ask.Password;
-                WriteSettings(settings);
-            }
-        }
-    }
-
-    // Search by meaning on Kaggle too, when the notebook runs its search model beside Qwen (EmbeddingGemma 2, at /embed):
-    // the app asks it through the bridge, and this computer runs no model at all. An older notebook has none - then the
-    // small model here, as before - and a search model set up in settings.env is kept.
-    static void SearchOnKaggle(Dictionary<string, string> settings)
-    {
-        string url;
-        if (!settings.TryGetValue("KAGGLE_URL", out url) || url.Length == 0 || settings.ContainsKey("ASSISTANT_EMBED_GGUF")) return;
-        var ask = Task.Factory.StartNew(() => Fetch(KaggleSearch + "/props", 15000));
-        while (!ask.IsCompleted) Pump(15);
-        var model = ask.Result == null ? Match.Empty : Regex.Match(ask.Result, "\"model_path\"\\s*:\\s*\"([^\"]+)\"");
-        if (!model.Success) return;
-        // the model file's name: it tags the vectors it makes, as the same file does run here
-        var file = model.Groups[1].Value;
-        settings["ASSISTANT_EMBED_GGUF"] = file.Substring(file.LastIndexOfAny(new[] { '/', '\\' }) + 1);
-        settings["ASSISTANT_EMBED_URL"] = KaggleSearch;
-    }
-
-    static string Fetch(string url, int ms)
-    {
-        try
-        {
-            var req = (HttpWebRequest)WebRequest.Create(url);
-            req.Timeout = ms;
-            req.Proxy = null;
-            using (var res = (HttpWebResponse)req.GetResponse())
-            using (var text = new StreamReader(res.GetResponseStream(), Encoding.UTF8)) return text.ReadToEnd();
-        }
-        catch (Exception) { return null; }
-    }
-
     static string Python() { return Path.Combine(Root, "runtime", "python.exe"); }
 
     static Process Start(string exe, string args, string log, Dictionary<string, string> settings)
@@ -191,10 +124,8 @@ static class Zen
         foreach (var pair in settings) env[pair.Key] = pair.Value;
         // the user's own things live in data\, next to this launcher; the browser tool's node comes with it
         env["ASSISTANT_DATA_DIR"] = Path.Combine(Data, "assistant");
-        env["BIZ_EMBED_CACHE_DIR"] = Path.Combine(Data, "models");
-        // the file the app's model settings write and the bridge reads again when it changes
+        // the file the app's Model settings are in: written from the app, read again by it when it changes
         env["ZEN_MODEL_SETTINGS"] = SettingsFile;
-        if (!env.ContainsKey("BIZ_LLM_PROVIDER") || string.IsNullOrEmpty(env["BIZ_LLM_PROVIDER"])) env["BIZ_LLM_PROVIDER"] = "llamacpp";
         string mcp = Path.Combine(Root, "tools", "playwright-mcp");
         if (Directory.Exists(mcp) && string.IsNullOrEmpty(env["ASSISTANT_PLAYWRIGHT_MCP"])) env["ASSISTANT_PLAYWRIGHT_MCP"] = mcp;
         env["PATH"] = Path.Combine(Root, "tools", "node") + ";" + Path.Combine(Root, "runtime") + ";" + env["PATH"];
@@ -258,7 +189,7 @@ static class Zen
     static Form LoadOwnWindow()
     {
         CoreWebView2Environment.GetAvailableBrowserVersionString();  // throws when there is no WebView2
-        // WebView2 resumes its start on this thread: the connect window, closing, may have taken WinForms' way back here
+        // WebView2 resumes its start on this thread, through WinForms' way back to it
         if (!(SynchronizationContext.Current is WindowsFormsSynchronizationContext))
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
         var window = new ZenWindow(App, Data);
@@ -347,19 +278,6 @@ static class Zen
         return values;
     }
 
-    // The address and password replaced in place; every other line - comments, other settings - kept as it was
-    static void WriteSettings(Dictionary<string, string> settings)
-    {
-        var lines = File.Exists(SettingsFile) ? new List<string>(File.ReadAllLines(SettingsFile, Encoding.UTF8)) : new List<string>();
-        foreach (var name in new[] { "KAGGLE_URL", "KAGGLE_PASSWORD" })
-        {
-            int at = lines.FindIndex(l => l.TrimStart().StartsWith(name + "="));
-            var line = name + "=" + settings[name];
-            if (at >= 0) lines[at] = line; else lines.Add(line);
-        }
-        File.WriteAllLines(SettingsFile, lines.ToArray(), new UTF8Encoding(false));
-    }
-
     static void Fail(string what, string log)
     {
         string tail = "";
@@ -375,7 +293,7 @@ static class Zen
     }
 
     // Zen's own colours (web/app.css, dark): the page, a raised surface, the text, the quieter texts, the line between
-    // things, the moon's two ends and its middle, and the error red
+    // things, and the moon's two ends and its middle
     internal static readonly Color Bg = Color.FromArgb(0x1c, 0x1c, 0x1c);
     internal static readonly Color Surface = Color.FromArgb(0x2a, 0x2a, 0x2a);
     internal static readonly Color Ink = Color.FromArgb(0xec, 0xec, 0xec);
@@ -385,7 +303,6 @@ static class Zen
     internal static readonly Color MoonA = Color.FromArgb(0xb9, 0xad, 0xff);
     internal static readonly Color MoonB = Color.FromArgb(0x5a, 0x47, 0xe0);
     internal static readonly Color Moon = Color.FromArgb(0x8e, 0x7d, 0xf5);
-    internal static readonly Color Red = Color.FromArgb(0xff, 0x6b, 0x6b);
 
     // The screen's scale (1 at 100 %, 1.5 at 150 %): every size below is in 100 % pixels, through Px
     internal static float Scale = 1;
@@ -595,7 +512,7 @@ class Splash : Floating
         tick.Tick += (s, e) => Invalidate();
     }
 
-    // The line under the name; shows the splash again if the connect window hid it
+    // The line under the name
     public void Say(string text)
     {
         status = text;
@@ -650,245 +567,6 @@ class Splash : Floating
     }
 }
 
-// The model's address and password, from the Kaggle notebook's last cell: the first time, three steps; when the
-// notebook stopped answering (a new session has a new address), what happened
-class ConnectForm : Floating
-{
-    const string Help = "https://github.com/AryThakar/Zen-harness/tree/main/kaggle#start-it";
-    readonly Field address = new Field("https://….trycloudflare.com", false), password = new Field("Paste the password", true);
-    readonly Label error;
-
-    // as pasted, less what the notebook prints before each ("  address : https://…", "  password: …")
-    public string Address { get { return Pasted(address.Box.Text, "address").TrimEnd('/'); } }
-    public string Password { get { return Pasted(password.Box.Text, "password"); } }
-
-    static string Pasted(string text, string label)
-    {
-        text = text.Trim();
-        if (text.StartsWith(label, StringComparison.OrdinalIgnoreCase)) text = text.Substring(label.Length).TrimStart(' ', ':', '=');
-        return text;
-    }
-
-    public ConnectForm(bool failed, Dictionary<string, string> settings)
-    {
-        Text = "Zen harness - connect the model";
-        header = true;
-        int pad = Zen.Px(32), width = Zen.Px(500), inner = width - 2 * pad, y = Zen.Px(58);
-
-        var close = new CloseButton { DialogResult = DialogResult.Cancel, Location = new Point(width - Zen.Px(46), Zen.Px(10)) };
-        var title = new Label { Text = failed ? "Can't reach the model" : "Connect to Kaggle", Font = Zen.TitleFont(17f),
-                                AutoSize = true, Location = new Point(pad - Zen.Px(3), y) };
-        y = title.Top + title.PreferredHeight + Zen.Px(2);  // its height on screen (Bottom is not yet, before layout)
-        var lede = Wrapped(failed ? "The notebook didn't answer at this address. If it was started again, it has a new one."
-                                  : "Zen's AI model runs free on a Kaggle notebook.", Zen.UiFont(10f), Zen.Muted, pad, inner, ref y);
-        y += Zen.Px(14);
-        var steps = new List<Control>();
-        foreach (var step in new[] { "Start the Zen notebook on Kaggle", "Copy the address and password from its last cell",
-                                     "Paste them below" })
-        {
-            var row = new StepRow(steps.Count + 1, step) { Location = new Point(pad, y), Width = inner };
-            steps.Add(row);
-            y = row.Bottom + Zen.Px(4);
-        }
-        // "how?" beside the first step: the notebook's own steps, on GitHub
-        var first = (StepRow)steps[0];
-        var help = new LinkLabel { Text = "How?", AutoSize = true, Font = Zen.UiFont(10f), BackColor = Zen.Bg,
-                                   LinkColor = Zen.MoonA, ActiveLinkColor = Zen.Ink, VisitedLinkColor = Zen.MoonA, LinkBehavior = LinkBehavior.HoverUnderline };
-        help.Location = new Point(first.Left + first.TextRight + Zen.Px(8), first.Top + (first.Height - help.PreferredHeight) / 2);
-        help.LinkClicked += (s, e) => { try { Process.Start(Help); } catch (Exception) { } };
-        steps.Add(help);
-        y += Zen.Px(14);
-
-        // each field under its label, by the label's own height (the type's line height, not a guess)
-        var a = new Label { Text = "Address", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
-        address.SetBounds(pad, a.Top + a.PreferredHeight + Zen.Px(6), inner, Zen.Px(42));
-        y = address.Bottom + Zen.Px(16);
-        var p = new Label { Text = "Password", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
-        password.SetBounds(pad, p.Top + p.PreferredHeight + Zen.Px(6), inner, Zen.Px(42));
-        y = password.Bottom + Zen.Px(8);
-        error = new Label { ForeColor = Zen.Red, Font = Zen.UiFont(9.5f), AutoSize = false, Location = new Point(pad, y), Size = new Size(inner, Zen.Px(22)) };
-        y += Zen.Px(34);
-
-        var connect = new Pill("Connect", true) { DialogResult = DialogResult.OK };
-        var cancel = new Pill("Cancel", false) { DialogResult = DialogResult.Cancel };
-        connect.Location = new Point(width - pad - connect.Width, y);
-        cancel.Location = new Point(connect.Left - Zen.Px(10) - cancel.Width, y);
-        ClientSize = new Size(width, y + connect.Height + Zen.Px(28));
-
-        // the last ones: the address is new each session, the password too unless it's the Kaggle secret LLAMA_API_KEY
-        string old;
-        if (settings.TryGetValue("KAGGLE_URL", out old)) address.Box.Text = old;
-        if (settings.TryGetValue("KAGGLE_PASSWORD", out old)) password.Box.Text = old;
-        AcceptButton = connect;
-        CancelButton = cancel;
-        connect.Click += (s, e) =>
-        {
-            Field wrong = null;
-            if (!Address.StartsWith("https://") && !Address.StartsWith("http://"))
-            {
-                error.Text = "Paste the whole address - it starts with https://";
-                wrong = address;
-            }
-            else if (Password.Length == 0)
-            {
-                error.Text = "Paste the password too - it's just under the address.";
-                wrong = password;
-            }
-            if (wrong == null) return;
-            DialogResult = DialogResult.None;
-            wrong.Box.Focus();
-            wrong.Box.SelectAll();
-        };
-        foreach (var field in new[] { address, password }) field.Box.TextChanged += (s, e) => error.Text = "";
-        Controls.AddRange(new Control[] { close, title, lede, a, address, p, password, error, cancel, connect });
-        Controls.AddRange(steps.ToArray());
-        help.BringToFront();
-        ActiveControl = address.Box;
-        Shown += (s, e) => address.Box.SelectAll();  // an old address is a stale one: pasting replaces it
-    }
-
-    // A paragraph as tall as its words need at that width; y moves past it
-    static Label Wrapped(string text, Font font, Color color, int x, int width, ref int y)
-    {
-        var height = TextRenderer.MeasureText(text, font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak).Height;
-        var label = new Label { Text = text, Font = font, ForeColor = color, AutoSize = false, Location = new Point(x, y), Size = new Size(width, height + Zen.Px(2)) };
-        y += label.Height;
-        return label;
-    }
-}
-
-// One step of the connect window: its number in a small round badge, then what to do
-class StepRow : Control
-{
-    readonly int number;
-    readonly Font words = Zen.UiFont(10f), digit = Zen.UiFont(8.5f, true);
-
-    public StepRow(int number, string text)
-    {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        this.number = number;
-        Text = text;
-        BackColor = Zen.Bg;
-        Height = Zen.Px(30);
-    }
-
-    // where the words end, for a link beside them
-    public int TextRight { get { return Zen.Px(34) + TextRenderer.MeasureText(Text, words, Size.Empty, TextFormatFlags.NoPadding).Width; } }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.Clear(BackColor);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        float d = Zen.Px(22);
-        var badge = new RectangleF(0.5f, (Height - d) / 2, d, d);
-        using (var fill = new SolidBrush(Zen.Surface)) g.FillEllipse(fill, badge);
-        using (var line = new Pen(Zen.Line, Zen.Scale)) g.DrawEllipse(line, badge);
-        var flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
-        TextRenderer.DrawText(g, number.ToString(), digit, Rectangle.Round(badge), Zen.Muted, flags | TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(g, Text, words, new Rectangle(Zen.Px(34), 0, Width - Zen.Px(34), Height), Zen.Ink, BackColor,
-                              flags | TextFormatFlags.EndEllipsis);
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing) { words.Dispose(); digit.Dispose(); }
-        base.Dispose(disposing);
-    }
-}
-
-// A field's hint while it is empty, in Zen's quieter ink and its own type - where typing starts
-class Hint : Control
-{
-    public Hint(string text, Font font)
-    {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        Text = text;
-        Font = font;
-        BackColor = Zen.Surface;
-        ForeColor = Zen.Soft;
-        Cursor = Cursors.IBeam;
-        Size = TextRenderer.MeasureText(text, font, Size.Empty, TextFormatFlags.NoPadding);
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor, BackColor, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
-    }
-}
-
-// A text box in a rounded field whose edge lights up while it has the caret; a secret one has Show / Hide
-class Field : Panel
-{
-    public readonly TextBox Box = new TextBox();
-    readonly Hint hint;
-    readonly Label reveal;
-
-    public Field(string cue, bool secret)
-    {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Zen.Bg;  // the corners outside the field
-        Cursor = Cursors.IBeam;
-        Box.BorderStyle = BorderStyle.None;
-        Box.BackColor = Zen.Surface;
-        Box.ForeColor = Zen.Ink;
-        Box.Font = Zen.UiFont(10.5f);
-        Box.UseSystemPasswordChar = secret;
-        Box.GotFocus += (s, e) => Invalidate();
-        Box.LostFocus += (s, e) => Invalidate();
-        Box.HandleCreated += (s, e) => Zen.SendMessage(Box.Handle, 0xD3, (IntPtr)3, IntPtr.Zero);  // EM_SETMARGINS 0: text from its left edge, as the hint
-        hint = new Hint(cue, Box.Font);
-        hint.Click += (s, e) => Box.Focus();
-        Box.TextChanged += (s, e) => hint.Visible = Box.TextLength == 0;
-        Click += (s, e) => Box.Focus();
-        Controls.Add(hint);
-        Controls.Add(Box);
-        if (!secret) return;
-        reveal = new Label { Text = "Show", AutoSize = true, ForeColor = Zen.Muted, BackColor = Zen.Surface, Font = Zen.UiFont(9f), Cursor = Cursors.Hand };
-        reveal.Click += (s, e) =>
-        {
-            Box.UseSystemPasswordChar = !Box.UseSystemPasswordChar;
-            reveal.Text = Box.UseSystemPasswordChar ? "Show" : "Hide";
-            PerformLayout();
-        };
-        reveal.MouseEnter += (s, e) => reveal.ForeColor = Zen.Ink;
-        reveal.MouseLeave += (s, e) => reveal.ForeColor = Zen.Muted;
-        Controls.Add(reveal);
-    }
-
-    protected override void OnLayout(LayoutEventArgs e)
-    {
-        base.OnLayout(e);
-        int pad = Zen.Px(14), right = pad;
-        if (reveal != null)
-        {
-            reveal.Location = new Point(Width - pad - reveal.Width, (Height - reveal.Height) / 2);
-            right = Width - reveal.Left + Zen.Px(10);
-        }
-        Box.Location = new Point(pad, (Height - Box.Height) / 2);
-        Box.Width = Width - pad - right;
-        hint.Location = new Point(Box.Left, Box.Top + (Box.Height - hint.Height) / 2);
-        hint.BringToFront();
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.Clear(BackColor);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        bool lit = Box.Focused;
-        float edge = lit ? 1.6f * Zen.Scale : Zen.Scale;
-        using (var path = Zen.Rounded(new RectangleF(edge / 2, edge / 2, Width - edge - 1, Height - edge - 1), Zen.Px(10)))
-        using (var fill = new SolidBrush(Zen.Surface))
-        using (var line = new Pen(lit ? Zen.Moon : Zen.Line, edge))
-        {
-            g.FillPath(fill, path);
-            g.DrawPath(line, path);
-        }
-    }
-}
-
-// Zen's buttons, round-ended: the main one light on the dark window, as the app's send button is
 class Pill : Button
 {
     readonly bool main;

@@ -9,17 +9,17 @@
         Microsoft.Web.WebView2.Core.dll, Microsoft.Web.WebView2.WinForms.dll, WebView2Loader.dll
                         Zen's own window: Microsoft's WebView2 SDK, kept in desktop/webview2 (the browser engine itself
                         is Windows' own WebView2)
-        settings.env    the model's address and password (Zen-harness.exe asks for them the first time) and other settings
+        settings.env    Zen's Model settings (set in the app: it asks the first time) and any other setting
         runtime/        the Python this venv was made from (the interpreter and its standard library) and the libraries
                         Zen needs: the files pip installed for them, copied from this venv - the versions the tests pass
                         with, nothing downloaded. The code sandbox runs its scripts with this Python too.
-        zen/            app/, web/ and kaggle/ (the notebook and the bridge to it)
+        zen/            app/, web/ and kaggle/ (the notebook that runs Zen's model on Kaggle)
         samples/        the sample tables, to try Zen on
         README.md, LICENSE, THIRD_PARTY_NOTICES.md
         tools/          node.exe and Playwright MCP: the browser Zen reads blocked pages with and tries its games in
                         (Edge itself is Windows' own)
 
-Nothing of the user's goes in: no .env, no data/, no bridge.env - the folder is safe to share.
+Nothing of the user's goes in: no .env, no data/, no model.env - the folder is safe to share.
 """
 
 from __future__ import annotations
@@ -54,12 +54,8 @@ SKIP_FILE = re.compile(r"(_d\.(exe|dll|pyd)|\.pdb|\dt\.(exe|dll)|_tkinter\.pyd|t
                        r"|\.cp\d+t-win_amd64\.pyd)$", re.I)
 SETTINGS = """\
 # Zen harness settings - NAME=value lines, read by Zen-harness.exe each time it starts.
-# The model: the Kaggle notebook (zen\\kaggle\\zen-qwen36-server.ipynb) prints these two in its last cell.
-# Zen-harness.exe asks for them the first time, and again when the notebook has a new address; while Zen runs, the
-# model's name at the top of a chat changes them (no restart).
-# Leave them empty to use a llama-server running on this computer at 127.0.0.1:8080.
-KAGGLE_URL=
-KAGGLE_PASSWORD=
+# Where Zen's model runs - the Kaggle notebook, a llama-server on this computer or a cloud's API - is set in Zen itself:
+# click the dot by the chat's name, or Settings. Zen writes it here (ZEN_MODEL and the lines after it) - no restart.
 
 # Your name, as Zen greets you
 # ASSISTANT_USER_NAME=
@@ -123,7 +119,7 @@ def copy_runtime() -> int:
 
 
 def copy_code() -> None:
-    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "bridge.env")
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.env")  # an old bridge.env: someone's password
     for part in ("app", "web", "kaggle"):
         shutil.copytree(REPO / part, DIST / "zen" / part, ignore=ignore)
     shutil.copytree(REPO / "data" / "samples", DIST / "samples", ignore=ignore)
@@ -160,7 +156,7 @@ def smoke_test() -> None:
     """The copied Python imports the app from the folder, alone (no venv, no repository on its path)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "VIRTUAL_ENV"))}
     done = subprocess.run([str(DIST / "runtime" / "python.exe"), "-c",
-                           "import app.main, pandas, statsforecast, sklearn, matplotlib, duckdb, fastembed, uvicorn; print('ok')"],
+                           "import app.main, pandas, statsforecast, sklearn, matplotlib, duckdb, uvicorn; print('ok')"],
                           cwd=DIST / "zen", env=env, capture_output=True, text=True)
     if done.stdout.strip() != "ok":
         sys.exit("the built runtime can't import Zen:\n" + done.stdout + done.stderr)

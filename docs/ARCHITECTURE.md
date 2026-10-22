@@ -37,14 +37,13 @@ browser (web/)  --HTTP + server-sent events-->  FastAPI (app/main.py, app/api/as
 | Process | What it is | Who starts it |
 |---|---|---|
 | The app | `uvicorn app.main:app` - the API and the chat page on http://localhost:8000 | you |
-| The chat model | llama-server (OpenAI-compatible) at `BIZ_LLAMACPP_URL`, two slots: 0 is main, 1 the helpers. Today Qwen 3.6 35B-A3B on Kaggle's two T4s (`kaggle/zen-qwen36-server.ipynb`), reached through `kaggle/bridge.py` (a local address forwarding to the notebook's tunnel with its password; it names itself, so the page says the model runs on Kaggle); a local llama-server works the same way | you |
-| Or a cloud model | for testing the harness with a stronger model: `BIZ_LLM_PROVIDER=gemini`, `nvidia` or `groq` and its key in `.env` (app/providers/cloud.py) - each free plan measured too small for the full tests (section 12) | you |
-| The embedding server | llama-server with EmbeddingGemma and its picture projector: on Kaggle beside Qwen (the notebook's router serves it at `/embed`, reached through the bridge at `127.0.0.1:8080/embed`), or on this computer at port 8070 | the notebook; or the app, on first use, stopped when it exits (app/rag/embed_server.py) |
+| The chat model | wherever Zen's Model settings say (app/model_link.py; set from the page): **Kaggle** - Qwen 3.6 35B-A3B on two T4s (`kaggle/zen-qwen36-server.ipynb`), reached directly at the notebook's tunnel with its password; **This PC** - a llama-server here; **Cloud** - any OpenAI-style API: an address, a key, a model (app/providers/cloud.py; the free plans were measured too small for the full tests, section 12). On llama-server, two slots: 0 is main, 1 the helpers. A change applies on the next request: app/connection.py makes the providers again when the settings file changes | you |
+| The embedding server | llama-server with EmbeddingGemma and its picture projector: on this computer at port 8070, or on Kaggle beside Qwen (the notebook's router serves it at `/embed`) - the same model file, so one model's vectors either way | the app, on first use, stopped when it exits (app/rag/embed_server.py); or the notebook |
 | The browser | Playwright MCP (Edge, headless, no profile) for pages a plain read can't get | the app, on first use; closed when idle (app/tools/browser.py) |
 
 Settings come from environment variables or the project's `.env` (app/config.py): the chat model's address,
 the embedding server's files, Playwright MCP's folder, the data folder, thinking on or off, the assistant's and
-the user's names. Without the embedding server, search falls back to fastembed's bge-small on the CPU; without
+the user's names. Without an embedding server, search is by keywords (FTS5); without
 Playwright MCP, pages that need a browser are reported as unreadable. The prompt limit follows the model server
 (its slot size from /props, less the room for the reply): 65,536 tokens a slot on Kaggle today.
 
@@ -57,10 +56,11 @@ Playwright MCP, pages that need a browser are reported as unreadable. The prompt
 | `app/assistant/workers/` | the helpers: their contracts and profiles (`contracts.py`), the step loop (`runner.py`), the evidence and the guards before a call (`evidence.py`), the result checks (`checks.py`) |
 | `app/tools/` | the tools, each a plain function returning one result shape (`core.py`); the workspace (`workspace.py`), file types in one place (`filetypes.py`), agent.md (`agent_md.py`), the sandbox (`sandbox.py`), runs and the console (`run.py`, `console.py`), the search index (`search_index.py`) |
 | `app/rag/` | the document reader (`extract.py`), passages (`chunking.py`), embeddings (`embed.py`) and the embedding server (`embed_server.py`) |
-| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`); a cloud's OpenAI-compatible API (`cloud.py`) - Google's Gemini API, NVIDIA Build, Groq - for testing; a scripted model for tests |
+| `app/providers/` | model providers: llama-server (`llamacpp.py`, with Gemma's text-written calls read in `gemma_calls.py`); any cloud's OpenAI-style API (`cloud.py`: one provider - what a model reads differently, such as its thinking switch, is found by its name); a scripted model for tests |
 | `web/` | the chat page: `index.html`, `app.css` and `js/` - `app.js` (the chat, a reply's flow), `api.js`, `cards.js` (answer cards, page cards), `charts.js`, `steps.js` (the work behind a reply: its head, steps, the trace), `files.js` (the file panel, the page frame), `pdf.js` (the PDF viewer), `console.js`, `viewer.js`, `mention.js` (@), `pins.js`, `ask.js`, `util.js` |
-| `kaggle/` | the model on Kaggle: the notebook that runs llama-server with Qwen 3.6 on two T4s and opens a password-protected tunnel, and the bridge that makes it look local |
-| `tests/` | pytest, 676 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
+| `app/model_link.py`, `app/connection.py` | the Model settings - Kaggle, this PC or a cloud - read, tried and written in place; the providers and the search model made again when they change |
+| `kaggle/` | the models on Kaggle: the notebook that runs llama-server with Qwen 3.6 and EmbeddingGemma 2 on two T4s and opens a password-protected tunnel |
+| `tests/` | pytest, 681 tests - tools directly, the turn and the helpers with scripted models, the API through its client, the contracts of every tool and description, the page check in a real browser; no model needed |
 | `bench/` | measurements on the real model: each phase's acceptance (`phase2.py`, `phase4.py`, `phase5.py`), the 20 jobs (`combos.py`), main's probe suites (`main/`), the search and web measurements behind earlier decisions |
 
 ## 4. A turn

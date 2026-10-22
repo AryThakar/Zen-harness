@@ -9,7 +9,7 @@ Thanks for your interest in Zen harness. This covers setting it up, verifying a 
 - For the browser tool and the page checks: **Node.js 22+** and Playwright MCP, driving the installed
   Microsoft Edge (see the README's *Run it*)
 - For anything the model does: a llama-server with Qwen 3.6 35B-A3B - on your GPU, or the Kaggle notebook in
-  [`kaggle/`](kaggle/) and its bridge
+  [`kaggle/`](kaggle/) - or any OpenAI-style API, chosen in Zen's Model settings
 
 ## Setting up
 

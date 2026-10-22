@@ -20,6 +20,7 @@ export function h(tag, props = {}, ...kids) {
 // Line icons, 24 units, drawn with the page's stroke (svg.i)
 const ICONS = {
   check: '<path d="m5 12.5 4.5 4.5L19 7"/>',
+  sliders: '<path d="M4 7.5h8.5M17.5 7.5H20M4 16.5h2.5M11.5 16.5H20"/><circle cx="15" cy="7.5" r="2.5"/><circle cx="9" cy="16.5" r="2.5"/>',
   cross: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/>',
   chev: '<path d="m9 6 6 6-6 6"/>',

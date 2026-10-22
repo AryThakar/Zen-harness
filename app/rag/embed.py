@@ -10,10 +10,9 @@ them (search_index.py): search only compares vectors of the current model.
   space, so a typed question can find a picture. What is the model's own - its
   prompts for a query and a document (its model card) and the similarity below
   which a match is no match (measured) - is in MODELS.
-* FastEmbedder - a small ONNX model run on the CPU by fastembed (default
-  BAAI/bge-small-en-v1.5: 384 dimensions, ~65 MB, downloaded on first use).
-  No GPU, no PyTorch, no service to run. Text only. The fallback when no
-  embedding server is set up.
+* NoEmbedder - no search model (none downloaded, the notebook has none): every
+  use raises EmbedderUnavailable, so search is by keywords and tables are read
+  by their words (TF-IDF) - until EmbeddingGemma 2 is set up, here or on Kaggle.
 * HashEmbedder - word hashing, for tests: deterministic and instant, but only
   lexical, not semantic.
 """
@@ -26,7 +25,6 @@ import http.client
 import json
 import logging
 import re
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -73,10 +71,11 @@ class ServerEmbedder:
     embed_server.EmbedServer.start) starts the server when the app runs it: called when a request finds
     nothing listening, then the request is tried once more."""
 
-    def __init__(self, url: str, name: str, timeout: float = 120, start=None):
+    def __init__(self, url: str, name: str, timeout: float = 120, start=None, api_key: str = ""):
         self.name = name
         self.url = url.rstrip("/")
         self.timeout = timeout
+        self.api_key = api_key  # the Kaggle notebook's password, for its search model
         model = next((v for k, v in MODELS.items() if k in name.lower()), {})
         self._query, self._document = model.get("query", "{text}"), model.get("document", "{text}")
         if "min_similarity" in model:  # else search_index's default
@@ -129,14 +128,17 @@ class ServerEmbedder:
 
     def _media_marker(self) -> str | None:
         if self._marker is None:
-            props = self._call(urllib.request.Request(self.url + "/props"))
+            props = self._call(urllib.request.Request(self.url + "/props", headers=self._headers()))
             vision = (props.get("modalities") or {}).get("vision") if isinstance(props, dict) else None
             self._marker = (props.get("media_marker") or "") if vision else ""
         return self._marker or None
 
     def _post(self, path: str, body: dict):
         return self._call(urllib.request.Request(self.url + path, json.dumps(body).encode("utf-8"),
-                                                 {"Content-Type": "application/json"}))
+                                                 {"Content-Type": "application/json", **self._headers()}))
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
     def _call(self, req: urllib.request.Request):
         if self._failed_at and time.monotonic() - self._failed_at < RETRY_AFTER:
@@ -174,39 +176,18 @@ def _refused(exc: Exception) -> bool:
     return isinstance(reason, ConnectionRefusedError) or "refused" in str(reason).lower()
 
 
-class FastEmbedder:
-    """fastembed model, loaded lazily (the first upload or search pays the load)."""
+class NoEmbedder:
+    """No search model: whatever asks for a vector is told it can't have one, and falls back as when a model is
+    unreachable (search by keywords, tables by their words, web results in the engines' order)."""
 
-    def __init__(self, model: str, cache_dir: str | None = None):
-        self.name = model
-        self._cache_dir = cache_dir
-        self._model = None
-        self._error: str | None = None
-        self._lock = threading.Lock()
-
-    def _load(self):
-        with self._lock:
-            if self._model is None:
-                if self._error:
-                    raise EmbedderUnavailable(self._error)
-                try:
-                    from fastembed import TextEmbedding
-
-                    self._model = TextEmbedding(self.name, cache_dir=self._cache_dir)
-                except Exception as exc:  # download or runtime failure: remember, don't retry every call
-                    log.warning("Embedding model %s unavailable: %s", self.name, exc)
-                    self._error = f"The embedding model {self.name} couldn't be loaded ({exc})."
-                    raise EmbedderUnavailable(self._error) from exc
-            return self._model
+    name = "none"  # no passage has a vector of it: search by meaning sees nothing
+    images = False
 
     def embed_documents(self, texts: list[str], titles: list[str | None] | None = None) -> np.ndarray:
-        if not texts:
-            return np.zeros((0, 0), dtype=np.float32)
-        vectors = np.array(list(self._load().embed(texts, batch_size=64)), dtype=np.float32)
-        return _normalise(vectors)
+        raise EmbedderUnavailable("No search model is set up: search is by keywords.")
 
     def embed_query(self, text: str) -> np.ndarray:
-        return _normalise(np.array(list(self._load().query_embed([text])), dtype=np.float32))[0]
+        raise EmbedderUnavailable("No search model is set up: search is by keywords.")
 
 
 class HashEmbedder:
@@ -230,18 +211,18 @@ class HashEmbedder:
         return v
 
 
-def make_embedder(settings) -> Embedder:
-    """The embedding server when one is set up (ASSISTANT_EMBED_GGUF: the model file; the app starts
-    llama-server itself when ASSISTANT_EMBED_SERVER names it), else fastembed's small CPU model. Settings
-    without the embedding server's fields get fastembed's model too."""
-    if getattr(settings, "embed_gguf", ""):
-        start = None
-        if settings.embed_server:
-            from .embed_server import EmbedServer
-            start = EmbedServer(settings.embed_server, settings.embed_gguf, settings.embed_mmproj,
-                                settings.embed_url, Path(settings.assistant_dir) / "embed-server.log").start
-        return ServerEmbedder(settings.embed_url, Path(settings.embed_gguf).stem, start=start)
-    return FastEmbedder(settings.embed_model, settings.embed_cache_dir)
+def make_embedder(settings) -> Embedder | None:
+    """The embedding server on this computer when one is set up (ASSISTANT_EMBED_GGUF: the model file; the app
+    starts llama-server itself when ASSISTANT_EMBED_SERVER names it), else None: keyword search. The Kaggle
+    notebook's is chosen by app/connection.py."""
+    if not getattr(settings, "embed_gguf", ""):
+        return None
+    start = None
+    if settings.embed_server:
+        from .embed_server import EmbedServer
+        start = EmbedServer(settings.embed_server, settings.embed_gguf, settings.embed_mmproj,
+                            settings.embed_url, Path(settings.assistant_dir) / "embed-server.log").start
+    return ServerEmbedder(settings.embed_url, Path(settings.embed_gguf).stem, start=start)
 
 
 def _normalise(vectors: np.ndarray) -> np.ndarray:

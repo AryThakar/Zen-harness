@@ -19,7 +19,8 @@ from pathlib import Path
 from app.providers.llamacpp import LlamaCppProvider
 from app.assistant.registry import ToolContext
 from app.assistant.workers import PROFILES, run_worker
-from app.rag.embed import FastEmbedder
+from app.config import settings
+from app.rag.embed import make_embedder
 from app.tools.search_index import SearchIndex
 from app.tools.workspace import Workspace
 
@@ -88,7 +89,7 @@ def _short(out: dict) -> dict:
 def main() -> None:
     ids = sys.argv[1:] or DEFAULT
     tasks = {t.id: t for t in TASKS}
-    embedder = FastEmbedder("BAAI/bge-small-en-v1.5", "data/models")
+    embedder = make_embedder(settings)  # the app's own search model (none: keywords)
     parts = ["# Worker traces", "", "Real runs on the local model (Gemma 4 E4B, worker slot, thinking on). Each row is "
              "one event, in the order it happened; 'read N new tokens' is what llama.cpp had to process (the rest "
              "came from its prompt cache).", ""]

@@ -27,8 +27,9 @@ chats, and an analyst-programmer for your tables and programs - inside a **proje
 What must be right - facts, numbers, files, a game that actually starts - is checked by code before you see it, not
 left to the model.
 
-It runs on **Qwen 3.6 35B-A3B** through llama.cpp: on your own GPU, or free on a Kaggle notebook's two T4s reached
-through a small bridge (the notebook is in [`kaggle/`](kaggle/)).
+It runs on **Qwen 3.6 35B-A3B** through llama.cpp: free on a Kaggle notebook's two T4s (the notebook is in
+[`kaggle/`](kaggle/)), or on your own GPU - or on any OpenAI-style API (OpenAI, Gemini, Groq, OpenRouter, Ollama),
+picked in Zen's **Model settings** and switched from the chat, no restart.
 
 ## What it does
 
@@ -107,14 +108,16 @@ The whole design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every guard, che
 
 ### The Windows app - the quickest way
 
-1. Download `Zen-harness-1.2.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
+1. Download `Zen-harness-1.3.0-windows-x64.zip` from the [latest release](https://github.com/AryThakar/Zen-harness/releases/latest)
    and unzip it anywhere (it needs no install: Python, its libraries and the browser tools are inside).
 2. Start the model on Kaggle (step 2 below, *On Kaggle*, point 1 only).
-3. Double-click **Zen-harness.exe** and paste the address and password the notebook printed. Zen opens in a window of its
-   own; closing it stops Zen. Your projects stay in the folder's `data\`; other settings go in `settings.env`.
+3. Double-click **Zen-harness.exe**. Zen opens in a window of its own, and the first time its **Model settings**
+   open: paste the **Zen code** the notebook printed (its address and password in one line). Closing the window stops
+   Zen. Your projects stay in the folder's `data\`; the Model settings and any other setting in `settings.env`.
 
-The notebook prints a new address each time it starts: Zen-harness.exe notices and asks again, and while Zen runs, a
-click on the model's name at the top of a chat takes the new one - the chat carries on. To build the folder yourself:
+The notebook gets a new address each time it starts: click the dot by the chat's name, choose **Kaggle** and paste the
+new Zen code - the chat carries on. The same dot switches between Kaggle, **This PC** and **Cloud**. To build the
+folder yourself:
 `.venv/Scripts/python.exe desktop/build.py --zip` (it copies this venv's Python and libraries - nothing is downloaded -
 and compiles [`desktop/Zen.cs`](desktop/Zen.cs) with the C# compiler every Windows has).
 
@@ -137,11 +140,10 @@ nothing in it is required to start.
 
 1. Open [`kaggle/zen-qwen36-server.ipynb`](kaggle/zen-qwen36-server.ipynb) on Kaggle (*File → Import notebook*), set
    *Accelerator* to `GPU T4 x2` and *Internet* to `On`, and *Run All*. It downloads llama.cpp and the models (about
-   22 GB: Qwen, and EmbeddingGemma 2 for search) and prints an **address** and a **password**.
-2. Copy `kaggle/bridge.env.example` to `kaggle/bridge.env` and paste them in.
-3. Run the bridge: `.venv/Scripts/python.exe kaggle/bridge.py` - the model now answers at `127.0.0.1:8080`, as if it
-   ran here. A later session's address goes in from Zen itself (the model's name at the top of a chat); the bridge
-   takes it on its next request.
+   22 GB: Qwen, and EmbeddingGemma 2 for search) and prints a **Zen code**.
+2. Start the app (step 3) and paste the code in its Model settings - they open by themselves the first time; later,
+   click the dot by a chat's name. Zen talks to the notebook directly, with its password, and finds its search model
+   by itself. (With the Kaggle secret `LLAMA_API_KEY` set, the password stays the same from session to session.)
 
 **On your own GPU** (about 24 GB of GPU memory for this model), run llama-server with two slots and the vision
 projector:
@@ -152,7 +154,12 @@ llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf --mmproj mmproj-F16.gguf -c 13107
   --host 127.0.0.1 --port 8080
 ```
 
-Slot 0 is the conversation, slot 1 the helpers; the app's prompt limit follows each slot's size.
+Slot 0 is the conversation, slot 1 the helpers; the app's prompt limit follows each slot's size. In Zen's Model
+settings, choose **This PC** (its address, `http://127.0.0.1:8080` by default).
+
+**A cloud's API** - any OpenAI-style one: OpenAI, Gemini, Groq, OpenRouter, or Ollama and LM Studio on your own PC.
+In Model settings, choose **Cloud** and give its address (it usually ends in `/v1`), a key and a model. Zen's
+prompts and checks were tuned on Qwen; a cloud model is a way to try the harness with another model.
 
 ### 3. Start
 
@@ -160,18 +167,18 @@ Slot 0 is the conversation, slot 1 the helpers; the app's prompt limit follows e
 .venv/Scripts/python.exe -m uvicorn app.main:app
 ```
 
-Open http://localhost:8000, make a project, and ask - or start from
+Open http://localhost:8000 (the Model settings open the first time; from source they are kept in `model.env`,
+git-ignored), make a project, and ask - or start from
 [`data/samples/cafe_daily_sales.csv`](data/samples/cafe_daily_sales.csv): *"What sells best, and what might next
 month look like? Show me a chart."*
 
 **Optional, recommended:**
-- *Search by meaning* - EmbeddingGemma 2, which finds pictures too. **On Kaggle:** the notebook runs it beside Qwen;
-  set `ASSISTANT_EMBED_GGUF=embeddinggemma-2-Q8_0.gguf` and `ASSISTANT_EMBED_URL=http://127.0.0.1:8080/embed` and
-  the app asks it through the bridge (Zen-harness.exe does this by itself). **On this computer:** a llama.cpp build
-  that knows it and its two files (`embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set
-  the three `ASSISTANT_EMBED_*` settings to their paths and the app starts it itself. Without either, search uses a
-  small CPU model (bge-small, downloaded once, text only). A project's files are vectorised by one model at a time:
-  after a switch, Zen does them again in the background.
+- *Search by meaning* - EmbeddingGemma 2, which finds pictures too. **On Kaggle:** the notebook runs it beside Qwen,
+  and Zen finds it by itself. **On this computer:** a llama.cpp build that knows it and its two files
+  (`embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf`, below); set the three `ASSISTANT_EMBED_*`
+  settings to their paths and the app starts it itself - it comes first when both are there. Both run the same file,
+  so their vectors are one model's: a switch between them vectorises nothing again. Without either, search is by
+  keywords.
 - *A real browser* - Node and Microsoft Edge, with [Playwright MCP](https://github.com/microsoft/playwright-mcp) in a
   folder of its own (`npm install @playwright/mcp`) named by `ASSISTANT_PLAYWRIGHT_MCP`. It reads pages drawn by
   JavaScript, and it tries the pages and games Zen writes before they are called ready.
@@ -183,7 +190,6 @@ month look like? Show me a chart."*
 |---|---|---|
 | **Qwen 3.6 35B-A3B** (Unsloth's dynamic quant) | The assistant and its helpers; reads pictures | `Qwen3.6-35B-A3B-UD-Q4_K_S.gguf` and `mmproj-F16.gguf` from [unsloth/Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) - the Kaggle notebook downloads them itself |
 | **EmbeddingGemma 2** | Search by meaning across files, chats and pictures | `embeddinggemma-2-Q8_0.gguf` and `mmproj-embeddinggemma-2-Q8_0.gguf` from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) - the Kaggle notebook downloads them itself |
-| **bge-small-en-v1.5** | Search by meaning without EmbeddingGemma - a model on your own GPU, an older notebook (text only, CPU) | [Qdrant/bge-small-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q), downloaded once by fastembed |
 | **llama.cpp** | Serves both models | [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) - the notebook uses b11474's Linux CUDA build for Qwen and b11515's for EmbeddingGemma 2, which needs b11515 or later |
 
 ## Settings
@@ -192,10 +198,11 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 
 | Setting | What it is |
 |---|---|
-| `BIZ_LLAMACPP_URL` | the chat model's llama-server (default `http://127.0.0.1:8080`) |
-| `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts (empty: one already running is used - the notebook's, through the bridge) |
-| `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector (for the notebook's: its file name only) |
-| `ASSISTANT_EMBED_URL` | where the embedding server listens (default `http://127.0.0.1:8070`; the notebook's: `http://127.0.0.1:8080/embed`) |
+| `ZEN_MODEL_SETTINGS` | the file Zen's Model settings are kept in (default `model.env` beside `.env`; Zen-harness.exe's: its `settings.env`). Written from the app: `ZEN_MODEL` (`kaggle`, `local` or `cloud`), `KAGGLE_URL` and `KAGGLE_PASSWORD`, `LOCAL_URL`, `CLOUD_URL`, `CLOUD_KEY` and `CLOUD_MODEL` |
+| `BIZ_LLAMACPP_URL` | this computer's llama-server when the Model settings name none (default `http://127.0.0.1:8080`) |
+| `ASSISTANT_EMBED_SERVER` | llama-server's program, for the embedding server the app starts (empty: one already running is used) |
+| `ASSISTANT_EMBED_GGUF`, `ASSISTANT_EMBED_MMPROJ` | EmbeddingGemma 2's model file and picture projector |
+| `ASSISTANT_EMBED_URL` | where the embedding server listens (default `http://127.0.0.1:8070`) |
 | `ASSISTANT_PLAYWRIGHT_MCP`, `ASSISTANT_BROWSER` | Playwright MCP's folder; the browser it drives (default `msedge`) |
 | `POLLINATIONS_KEY` | for generating pictures |
 | `ASSISTANT_NAME`, `ASSISTANT_USER_NAME` | the assistant's name (default Zen) and yours |
@@ -203,8 +210,6 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 | `ASSISTANT_MAX_TOKENS` | a reply's limit, thinking included (default 4096) |
 | `ASSISTANT_DATA_DIR` | where projects, chats and files are kept (default `data/assistant`) |
 | `BIZ_MAX_UPLOAD_MB` | the largest file: an upload, a download, a file Zen's code makes (default 100) - reading one has no limit, it goes a page at a time |
-| `BIZ_LLM_PROVIDER` | `gemini`, `nvidia` or `groq` runs the app on a cloud model instead, for testing the harness (default `llamacpp`) |
-| `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY` | that cloud's key; `BIZ_GEMINI_MODEL`, `BIZ_NVIDIA_MODEL`, `BIZ_GROQ_MODEL` pick its model |
 
 ## Tests
 
@@ -212,7 +217,7 @@ Environment variables, or lines in `.env` in the project folder (`NAME=value`; i
 .venv/Scripts/python.exe -m pytest
 ```
 
-676 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
+681 tests, no model needed (CI runs them on Windows for every push): the tools directly, the conversation and the helpers with scripted models, the API
 through its client, and every tool's contract and description against its schema. With Playwright MCP installed,
 one test also opens pages in the real headless browser. Measurements on the real model are scripts in `bench/` -
 each phase's acceptance and 20 jobs (10 held out) - with their reports beside them.
@@ -228,12 +233,12 @@ Zen-harness/
 │   ├── tools/              the tools, each a plain function: data and charts, forecasts, the web, files,
 │   │                       the code sandbox, the browser page check, the project folder and its search index
 │   ├── rag/                reading documents, and the embedding model for search by meaning
-│   ├── providers/          the model behind both slots: llama.cpp (and clouds, for testing the harness)
+│   ├── providers/          the model behind both slots: llama.cpp, or any OpenAI-style cloud API
 │   └── api/                the HTTP API the page talks to
 ├── web/                    the chat page: plain HTML, CSS and JavaScript modules, no build step
-├── kaggle/                 the notebook that serves the model on Kaggle, and the bridge to it
+├── kaggle/                 the notebook that serves the models on Kaggle
 ├── desktop/                the Windows app: Zen-harness.exe's source and the script that builds its zip
-├── tests/                  676 tests, no model needed
+├── tests/                  681 tests, no model needed
 ├── bench/                  measurements on the real model, with their reports
 ├── docs/                   architecture, the system map, the build history, screenshots and videos
 ├── data/samples/           sample tables to try it on (data/ also holds your projects: git-ignored)
@@ -253,8 +258,7 @@ address). See [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md), section 5.
 
 - **Everything on Kaggle** - the app and its search model beside Qwen in the notebook, so a computer needs nothing
   installed.
-- **Connect by QR code** - the notebook shows a code; Zen-harness.exe or a phone scans it instead of copying an address and
-  a password.
+- **Connect by QR code** - the notebook shows its Zen code as a QR code, for a phone to scan instead of copying it.
 - **On a phone** - Zen already has a phone layout; with the app on Kaggle, a phone opens it from the QR code and adds
   it to its home screen.
 

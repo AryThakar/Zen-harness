@@ -117,32 +117,131 @@ async function refreshStatus() {
   clearTimeout(state.poll);
   state.poll = setTimeout(refreshStatus, s.ready ? 30000 : 5000);
   updateComposer();
+  offerSettings(s);
 }
 
-// The model's connection: the Kaggle notebook's address and password, changed without restarting anything - a new
-// notebook session prints new ones, and the chat carries on. Tried first; saved only when the model answers.
-async function openModelLink(tried = null) {
-  let now = { url: "", password_set: false };
-  try { now = await api("/model-link"); } catch {}
-  const url = h("input", { type: "url", placeholder: "https://….trycloudflare.com", value: tried?.url ?? now.url, spellcheck: "false", autocomplete: "off" });
-  const password = h("input", { type: "password", autocomplete: "off",
-    placeholder: now.password_set ? "Unchanged - paste a new one to replace it" : "The password the notebook printed" });
-  const form = h("div", { class: "link-form" }, h("label", {}, "Address", url), h("label", {}, "Password", password));
-  form.addEventListener("keydown", e => { if (e.key === "Enter") $("#dialogOk").click(); });
-  setTimeout(() => (url.value ? password : url).focus(), 30);
-  const go = await showDialog({ title: "Model connection", ok: "Connect", extra: form,
-    text: "The address and password the Kaggle notebook printed in its last cell. Zen tries them before saving, and your chat carries on." });
-  if (!go) return;
-  try {
-    const r = await send("POST", "/model-link", { url: url.value.trim(), password: password.value.trim() });
-    toast(`Connected: ${prettyModel(r.model)}`);
-    refreshStatus();
-  } catch (e) {
-    toast(e.message, true);
-    openModelLink({ url: url.value });
-  }
+/* ═══ Where the model runs: Kaggle, this PC or a cloud ════════════════════ */
+// The dot's menu switches between the ones set up; Settings sets each one up (app/model_link.py). A choice is tried
+// before it is saved, and the chat carries on - no restart.
+const PLACES = { kaggle: "Kaggle", local: "This PC", cloud: "Cloud" };
+const hostOf = url => { try { return new URL(url).host; } catch { return url; } };
+function modelMenu(button) {
+  if (menuEl) { closeMenu(); return; }
+  api("/model-settings").then(now => {
+    const s = state.status;
+    const sub = { kaggle: now.kaggle.ready ? hostOf(now.kaggle.url) : "Not set up", local: hostOf(now.local.url),
+                  cloud: now.cloud.ready ? `${now.cloud.model} · ${hostOf(now.cloud.url)}` : "Not set up" };
+    const choice = kind => h("button", { class: `menu-item model-choice${now.use === kind ? " on" : ""}`, type: "button",
+      role: "menuitemradio", "aria-checked": String(now.use === kind), onclick: () => { closeMenu(); switchTo(kind, now); } },
+      h("span", { class: "choice-text" }, h("b", {}, PLACES[kind]), h("small", {}, sub[kind])),
+      now.chosen && now.use === kind ? h("span", { class: "choice-on", html: svg("check") }) : "");
+    menuEl = h("div", { class: "menu model-menu", role: "menu", "aria-label": "Where the model runs" },
+      h("div", { class: "menu-head" }, s?.ready ? prettyModel(s.model) : STATE_WORDS[s?.state] || "Model"),
+      choice("kaggle"), choice("local"), choice("cloud"), h("div", { class: "menu-sep" }),
+      h("button", { class: "menu-item", type: "button", role: "menuitem", onclick: () => { closeMenu(); openSettings(); } },
+        h("span", { html: svg("sliders") }), "Model settings…"));
+    document.body.append(menuEl);
+    const r = button.getBoundingClientRect();
+    menuEl.style.top = `${r.bottom + 6}px`;
+    menuEl.style.left = `${Math.max(8, Math.min(r.left, innerWidth - menuEl.offsetWidth - 8))}px`;
+    setTimeout(() => document.addEventListener("pointerdown", outsideMenu, true));
+  }).catch(() => openSettings());
 }
-$("#modelState").addEventListener("click", () => openModelLink());
+async function switchTo(kind, now) {
+  if (kind === now.use && state.status?.ready) return;
+  if (!now[kind].ready) { openSettings(kind); return; }
+  const chip = $("#modelState");
+  chip.className = "model-state loading";
+  chip.textContent = `Connecting to ${PLACES[kind]}…`;
+  try {
+    const r = await send("POST", "/model-settings", { use: kind });
+    toast(`${PLACES[kind]}: ${prettyModel(r.model)}`);
+  } catch (e) { openSettings(kind, e.message); }
+  refreshStatus();
+}
+
+// Settings: each choice's address and key. A password or key saved is never shown - an empty box keeps it.
+async function openSettings(kind = null, error = "") {
+  let now;
+  try { now = await api("/model-settings"); } catch (e) { toast(e.message, true); return; }
+  const field = (label, attrs, hint = "") => {
+    const input = h("input", { spellcheck: "false", autocomplete: "off", ...attrs });
+    return [input, h("label", { class: "field" }, h("span", {}, label), input, hint ? h("small", {}, hint) : "")];
+  };
+  const kept = what => `Saved - paste a new ${what} to change it`;
+  const [kUrl, kUrlRow] = field("Zen code", { placeholder: "zen1.… or the notebook's address", value: now.kaggle.url },
+    "The notebook's last cell prints it. An address works too, with its password below.");
+  const [kPw, kPwRow] = field("Password", { type: "password", placeholder: now.kaggle.password_set ? kept("one") : "Only with an address" });
+  const [lUrl, lUrlRow] = field("Address", { type: "url", placeholder: "http://127.0.0.1:8080", value: now.local.url },
+    "Start it first, with two slots - one for the chat, one for Zen's helpers:");
+  const [cUrl, cUrlRow] = field("API address", { type: "url", placeholder: "https://api.openai.com/v1", value: now.cloud.url },
+    "Usually ends in /v1. Ollama on this PC: http://127.0.0.1:11434/v1");
+  const [cKey, cKeyRow] = field("API key", { type: "password", placeholder: now.cloud.key_set ? kept("key") : "From the provider's site - none for Ollama" });
+  const [cModel, cModelRow] = field("Model", { placeholder: "gpt-4.1-mini, gemini-2.5-flash, llama3.2…", value: now.cloud.model });
+  const lede = text => h("p", { class: "pane-lede" }, text);
+  const panes = {
+    kaggle: h("div", { class: "pane" }, lede("Qwen 3.6 on Kaggle's free GPUs: run the notebook, then paste what it prints."), kUrlRow, kPwRow),
+    local: h("div", { class: "pane" }, lede("A llama-server running on this computer, with a model of your choice."), lUrlRow,
+      h("code", { class: "pane-code" }, "llama-server -m model.gguf -np 2 --port 8080")),
+    cloud: h("div", { class: "pane" }, lede("Any OpenAI-style API: OpenAI, Gemini, Groq, OpenRouter - or Ollama and LM Studio here."),
+      cUrlRow, cKeyRow, cModelRow),
+  };
+  const first = { kaggle: [kUrl, kPw], local: [lUrl], cloud: [cUrl, cKey, cModel] };
+  const tabs = h("div", { class: "seg", role: "tablist", "aria-label": "Where the model runs" }, ...Object.keys(PLACES).map(k =>
+    h("button", { class: "seg-btn", type: "button", role: "tab", "data-kind": k, onclick: () => show(k) }, PLACES[k],
+      now.chosen && now.use === k ? h("i", { class: "in-use", title: "In use" }) : "")));
+  const err = h("p", { class: "settings-error", role: "alert", hidden: true });
+  const ok = $("#dialogOk");
+  let tab = kind || (now.chosen ? now.use : "kaggle");  // the first time: Kaggle, the free GPUs
+  function show(k) {
+    tab = k;
+    for (const b of tabs.children) b.setAttribute("aria-selected", String(b.dataset.kind === k));
+    for (const [name, pane] of Object.entries(panes)) { pane.classList.toggle("off", name !== k); pane.inert = name !== k; }
+    err.hidden = true;
+    ok.textContent = now.chosen && now.use === k ? "Save" : `Use ${PLACES[k]}`;
+    setTimeout(() => (first[k].find(i => !i.value && i.type !== "password") || first[k][0]).focus(), 30);
+  }
+  const form = h("div", { class: "settings" }, tabs, h("div", { class: "panes" }, ...Object.values(panes)), err);
+  form.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); ok.click(); } });
+  const closed = showDialog({ title: "Model settings", text: "Where Zen's model runs. Zen tries it before saving, and your chat carries on.",
+    ok: "Save", extra: form });
+  show(tab);
+  if (error) { err.textContent = error; err.hidden = false; }
+  ok.onclick = async () => {
+    const body = { use: tab, ...{ kaggle: { url: kUrl.value, password: kPw.value }, local: { url: lUrl.value },
+                                  cloud: { url: cUrl.value, key: cKey.value, model: cModel.value } }[tab] };
+    const label = ok.textContent;
+    ok.disabled = true;
+    ok.textContent = "Connecting…";
+    err.hidden = true;
+    try {
+      const r = await send("POST", "/model-settings", body);
+      ok.disabled = false;
+      closeDialog();
+      toast(`${PLACES[tab]}: ${prettyModel(r.model)}`);
+      refreshStatus();
+    } catch (e) {
+      ok.disabled = false;
+      ok.textContent = label;
+      err.textContent = e.message;
+      err.hidden = false;
+    }
+  };
+  await closed;
+  ok.disabled = false;
+}
+$("#modelState").addEventListener("click", e => modelMenu(e.currentTarget));
+$("#settingsBtn").addEventListener("click", () => openSettings());
+
+// The first run (no choice saved yet, nothing answering): Settings opens by itself, once, after the intro.
+let settingsOffered = false;
+async function offerSettings(s) {
+  if (settingsOffered || s.ready || s.state !== "down") return;
+  settingsOffered = true;
+  try { if ((await api("/model-settings")).chosen) return; } catch { return; }
+  while (!document.body.classList.contains("landed")) await new Promise(r => setTimeout(r, 200));
+  if (!dialogOpen()) openSettings();
+}
 
 /* ═══ Projects (workspaces on the server) ═══════════════════════════════ */
 const initial = name => (name.trim()[0] || "P").toUpperCase();
@@ -411,7 +510,7 @@ function renderHello() {
   notice.hidden = !s || s.ready;
   if (s && !s.ready) notice.replaceChildren(h("b", {}, { loading: "The model is still loading", down: "The model can't be reached",
     offline: "This app's server isn't running" }[s.state] || "The model isn't ready"), s.message || "",
-    s.state === "down" ? h("button", { class: "btn-s link-btn", type: "button", onclick: () => openModelLink() }, "Connect the model") : "");
+    s.state === "down" ? h("button", { class: "btn-s link-btn", type: "button", onclick: () => openSettings() }, "Model settings") : "");
   const mine = i => !/^work\//.test(i.name || "");  // not a helper's working file (work/)
   const tables = state.items.filter(i => i.kind === "table" && !i.parent && mine(i));
   // a chart is no read, and agent.md is Zen's memory, not a document to summarise
@@ -949,7 +1048,8 @@ $("#newProjectBtn").addEventListener("click", newProject);
 // Esc, from the top layer down (the viewer and a question in the box take theirs first)
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
-  if (dialogOpen()) closeDialog();
+  if (menuEl) closeMenu();
+  else if (dialogOpen()) closeDialog();
   else if (drawerOpen()) closeDrawer();
   else if (fileOpen()) closeAsked();
   else if (searching()) closeSearch();

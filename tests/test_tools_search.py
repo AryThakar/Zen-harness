@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.rag.embed import EmbedderUnavailable, FastEmbedder
+from app.rag.embed import EmbedderUnavailable, make_embedder
 from app.tools.files import add_document, expire_webpages, find_files, index_webpage
 from app.tools.memory import recall, remember_turn
 from app.tools.search_index import SearchIndex
@@ -132,11 +132,14 @@ def test_documents_and_chats_do_not_mix(ws, index, policy):
 
 @pytest.fixture(scope="module")
 def embedder():
-    e = FastEmbedder("BAAI/bge-small-en-v1.5", "data/models")
+    from app.config import settings
+    e = make_embedder(settings)  # EmbeddingGemma 2 on this computer, when it is set up
+    if e is None:
+        pytest.skip("no search model on this computer (ASSISTANT_EMBED_GGUF)")
     try:
         e.embed_query("probe")
     except EmbedderUnavailable:
-        pytest.skip("embedding model not available offline")
+        pytest.skip("the search model's server is not running")
     return e
 
 

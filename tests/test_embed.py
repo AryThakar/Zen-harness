@@ -218,13 +218,18 @@ def test_a_start_that_fails_means_keywords_only():
         e.embed_query("x")
 
 
-def test_settings_without_an_embedding_server_get_the_cpu_model():
-    """Settings that know nothing of the embedding server get the CPU model."""
+def test_without_a_search_model_search_is_by_keywords(tmp_path):
+    """No model file here: no embedder; the stand-in for none refuses every vector, so search falls back to keywords."""
     from types import SimpleNamespace
 
-    from app.rag.embed import FastEmbedder, make_embedder
-    e = make_embedder(SimpleNamespace(embed_model="BAAI/bge-small-en-v1.5", embed_cache_dir="data/models"))
-    assert isinstance(e, FastEmbedder) and e.name == "BAAI/bge-small-en-v1.5"
+    from app.rag.embed import NoEmbedder, make_embedder
+    from app.tools.search_index import Passage, SearchIndex
+    assert make_embedder(SimpleNamespace(embed_gguf="")) is None
+    index = SearchIndex(tmp_path / "s.sqlite", NoEmbedder())
+    index.add("document", "file_1", "a.md", [Passage("Opened phones can be returned within 14 days.")])
+    assert index.reindex() == 0
+    with pytest.raises(EmbedderUnavailable):
+        NoEmbedder().embed_query("x")
 
 
 # ---------------------------------------------------------------- the server the app runs

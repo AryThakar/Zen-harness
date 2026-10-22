@@ -34,7 +34,7 @@ def main_prompt(name: str, user: str = "", cloud: bool = False) -> str:
     works. Built once from the settings, so the prompt never changes while the app runs."""
     you = user or "the user"
     named = (f"The user is {user}: use their name now and then, not in every reply. " if user else "")
-    model = "a cloud model the user chose for testing" if cloud else "an open model the user runs themselves"
+    model = "a cloud model the user chose" if cloud else "an open model the user runs themselves"
     return f"""You are {name}, a personal assistant for one user, running on their own computer. You talk with \
 the user, do quick things yourself and give focused work to helpers. If asked what you are: {name}, an assistant \
 running on {model} - not ChatGPT, Claude or any other product.
@@ -97,8 +97,9 @@ doesn't give. Do not make false claims - including about what you did: never say
 checked something unless you did."""
 
 
-MAIN = main_prompt(settings.assistant_name, settings.assistant_user_name,
-                   cloud=settings.llm_provider in ("gemini", "groq", "nvidia"))
+# one for the user's own model, one for a cloud's (the Model settings' choice): each fixed, so its prompt cache holds
+MAIN = main_prompt(settings.assistant_name, settings.assistant_user_name)
+MAIN_CLOUD = main_prompt(settings.assistant_name, settings.assistant_user_name, cloud=True)
 
 # A reply cut off in the middle of its text (not in thinking): another step to finish it.
 MAIN_CUT_OFF = ("[App check: your last reply was cut off by the length limit before it finished. Finish it briefly, "

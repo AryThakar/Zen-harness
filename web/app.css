@@ -1048,12 +1048,35 @@ body.landed .side, body.landed .main { animation: none; }
   font: inherit; font-size: 12.5px; color: var(--muted); background: var(--hover); border: 0; cursor: pointer; }
 .model-state:hover { color: var(--ink); }
 .model-state.ready:hover { background: var(--hover); }
-/* the model's connection: the Kaggle notebook's address and password */
-.link-form { display: grid; gap: 12px; margin-top: 4px; }
-.link-form label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
-.link-form input { font: inherit; font-size: 14px; padding: 9px 11px; border-radius: 10px; color: var(--ink);
-  background: var(--composer); border: 1px solid var(--line); }
-.link-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* where the model runs: the dot's menu, and the Settings window's three choices */
+.menu.model-menu { min-width: 248px; }
+.menu-head { padding: 8px 10px 6px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+.menu-sep { height: 1px; margin: 5px 6px; background: var(--line); }
+.model-choice { align-items: center; }
+.choice-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.choice-text b { font-weight: 500; }
+.choice-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
+.choice-on svg.i { color: var(--ok); }
+.settings { display: grid; gap: 14px; margin: 2px 0 18px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 12px; background: var(--hover); }
+.seg-btn { position: relative; padding: 7px 8px; border-radius: 9px; font: inherit; font-size: 13.5px; font-weight: 500; color: var(--muted); }
+.seg-btn:hover { color: var(--ink); }
+.seg-btn[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 1px var(--line); }
+.seg-btn .in-use { position: absolute; top: 7px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.panes { display: grid; }
+.pane { grid-area: 1 / 1; display: grid; gap: 12px; align-content: start; }
+.pane.off { visibility: hidden; }  /* every pane takes room: the window keeps its size as the tabs change */
+.pane-lede { margin: 0 !important; font-size: 13.5px !important; }
+.field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink); }
+.field input { margin: 0 !important; font-size: 14px; }
+.field input::placeholder { color: var(--soft); }
+.field small { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.45; }
+.pane-code { display: block; padding: 9px 12px; border-radius: 10px; background: var(--hover); color: var(--ink);
+  font-size: 12.5px; overflow-x: auto; white-space: nowrap; user-select: all; }
+.settings-error { margin: 0 !important; padding: 9px 12px; border-radius: 10px; font-size: 13px !important; color: var(--red) !important;
+  background: color-mix(in srgb, var(--red) 10%, transparent); }
+.settings-error[hidden] { display: none; }
 .notice .link-btn { display: block; margin-top: 10px; }
 .model-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #e0a43a; animation: pulse 1.4s ease-in-out infinite; }
 .model-state.down::before, .model-state.offline::before { background: var(--red); animation: none; }

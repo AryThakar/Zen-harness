@@ -27,5 +27,6 @@ data/assistant/
 # Claude Code settings for this machine (local paths to llama-server and models)
 .claude/
 
-# the bridge's address and password for this session (kaggle/bridge.env.example shows its two lines)
+# Zen's Model settings from source: the notebook's password, a cloud's key (app/model_link.py); and the old bridge's
+model.env
 kaggle/bridge.env

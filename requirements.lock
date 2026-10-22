@@ -1,5 +1,6 @@
 # The exact versions the tests passed with (pip freeze of .venv, 2026-10-09; the first product's leftovers -
-# streamlit, plotly and what only they used - taken out 2026-10-21). Install them with:
+# streamlit, plotly and what only they used - taken out 2026-10-21; fastembed and what only it used,
+# 2026-10-23: search by meaning is EmbeddingGemma 2's, on llama-server). Install them with:
 #   pip install -r requirements.lock -e .
 # Update one library at a time, then run the tests (and, for ddgs, a real search) before keeping it.
 adagio==0.2.6
@@ -24,20 +25,15 @@ distro==1.9.0
 duckdb==1.5.5
 et_xmlfile==2.0.0
 fastapi==0.141.1
-fastembed==0.8.1
-filelock==4.0.4
-flatbuffers==25.12.19
 fonttools==4.66.1
 formulaic==1.2.2
 fsspec==2026.9.0
 fugue==0.9.7
 h11==0.16.0
-hf-xet==1.6.0
 httpcore==1.0.9
 httpcore2==2.13.1
 httpx==0.28.1
 httpx2==2.13.1
-huggingface_hub==1.33.0
 idna==3.20
 ImageIO==2.38.0
 imbalanced-learn==0.14.2
@@ -59,19 +55,16 @@ langgraph-sdk==0.4.5
 langsmith==0.14.1
 lazy-loader==0.6
 lightgbm==4.7.0
-loguru==0.7.3
 lxml==6.1.3
 MarkupSafe==3.0.3
 matplotlib==3.11.2
 mcp==2.3.0
 mcp-types==2.3.0
-mmh3==5.3.0
 mpmath==1.3.0
 narwhals==2.26.0
 networkx==3.7
 nltk==3.10.3
 numpy==2.5.3
-onnxruntime==1.30.0
 opencv-python-headless==5.0.0.93
 openpyxl==3.1.5
 opentelemetry-api==1.45.1
@@ -85,8 +78,6 @@ pluggy==1.6.0
 polars==1.44.2
 polars-runtime-32==1.44.2
 primp==2.0.1
-protobuf==7.36.2
-py_rust_stemmers==0.1.8
 pyarrow==25.0.1
 pycparser==3.1
 pydantic==2.13.5
@@ -128,7 +119,6 @@ tabulate==0.10.0
 tenacity==9.1.4
 threadpoolctl==3.7.0
 tifffile==2026.9.20
-tokenizers==0.23.2
 tqdm==4.70.1
 triad==1.0.2
 truststore==0.10.4
@@ -140,7 +130,6 @@ utilsforecast==0.2.16
 uuid_utils==0.17.1
 uvicorn==0.54.0
 websockets==16.1.1
-win32_setctime==1.2.0
 wrapt==2.5.0
 xgboost==3.4.1
 xlrd==2.0.2
