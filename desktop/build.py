@@ -148,6 +148,7 @@ def compile_launcher() -> None:
                            f"/win32icon:{REPO / 'desktop' / 'zen.ico'}", f"/out:{DIST / 'Zen-harness.exe'}",
                            "/r:System.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll",
                            *(f"/r:{WEBVIEW2 / name}" for name in WEBVIEW2_FILES[:2]),
+                           *(f"/resource:{font},{font.name}" for font in sorted((REPO / "desktop" / "fonts").glob("*.ttf"))),
                            str(REPO / "desktop" / "Zen.cs")], capture_output=True, text=True)
     if done.returncode:
         sys.exit("Zen.cs did not compile:\n" + done.stdout + done.stderr)

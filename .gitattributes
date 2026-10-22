@@ -11,6 +11,7 @@
 *.woff2 binary
 *.xlsx  binary
 *.dll   binary
+*.ttf   binary
 
 # Measurement results are reviewed as reports (their .md), not line by line.
 bench/**/*.json -diff linguist-generated

@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.IO;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -51,6 +52,7 @@ static class Zen
     {
         SetProcessDPIAware();  // sharp on a scaled screen: the windows below size themselves with Px
         using (var screen = Graphics.FromHwnd(IntPtr.Zero)) Scale = screen.DpiX / 96f;
+        families = LoadZenType();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         if (Answers(Up, 3000))  // already running: one more window
@@ -113,15 +115,13 @@ static class Zen
     // longer answers (the notebook's tunnel gets a new address each time it starts) - or a llama-server already here.
     static bool Connect(Dictionary<string, string> settings, Splash splash)
     {
-        string why = null;
+        bool asked = false, failed = false;
         while (true)
         {
             string url;
             if (!settings.TryGetValue("KAGGLE_URL", out url) || url.Length == 0)
             {
-                if (why == null && Answers(Model, 1500)) return true;  // a llama-server on this computer
-                why = why ?? "Zen thinks with Qwen 3.6, which runs free on a Kaggle notebook (zen\\kaggle has it). " +
-                              "Start the notebook, then paste the address and password its last cell prints.";
+                if (!asked && Answers(Model, 1500)) return true;  // a llama-server on this computer
             }
             else
             {
@@ -129,11 +129,11 @@ static class Zen
                 var bridge = Start(Python(), "\"" + Path.Combine(Root, "zen", "kaggle", "bridge.py") + "\"", "bridge.log", settings);
                 if (WaitFor(Model, 25, bridge)) return true;
                 Stop(bridge);
-                why = "The model didn't answer at that address. Is the notebook still running? It prints a new " +
-                      "address and password each time it starts.";
+                failed = true;
             }
+            asked = true;
             splash.Hide();
-            using (var ask = new ConnectForm(why, settings))
+            using (var ask = new ConnectForm(failed, settings))
             {
                 if (ask.ShowDialog() != DialogResult.OK) return false;
                 settings["KAGGLE_URL"] = ask.Address;
@@ -391,7 +391,43 @@ static class Zen
     internal static float Scale = 1;
     internal static int Px(float v) { return (int)Math.Round(v * Scale); }
 
-    // Windows 11's Segoe UI Variable, else Segoe UI (Windows 10)
+    // Zen's own type, inside this exe (desktop/fonts: Google Sans Flex as the page sets it, made into Zen Sans by
+    // desktop/make_fonts.py), loaded for both of Windows' text drawers - GDI+ (a Font's family) and GDI (labels and
+    // TextRenderer, which find it by name); without it, Windows 11's Segoe UI Variable, else Segoe UI (Windows 10)
+    // (loaded by Main once the process is DPI aware: drawing anything earlier would lock it into Windows' stretching)
+    static PrivateFontCollection zenType;
+    static Dictionary<string, FontFamily> families = new Dictionary<string, FontFamily>();
+
+    static Dictionary<string, FontFamily> LoadZenType()
+    {
+        var found = new Dictionary<string, FontFamily>();
+        try
+        {
+            zenType = new PrivateFontCollection();
+            foreach (var file in new[] { "ZenSans-Regular.ttf", "ZenSans-SemiBold.ttf" })
+            {
+                byte[] data;
+                using (var stream = typeof(Zen).Assembly.GetManifestResourceStream(file))
+                {
+                    if (stream == null) return found;
+                    data = new byte[stream.Length];
+                    stream.Read(data, 0, data.Length);
+                }
+                var memory = Marshal.AllocCoTaskMem(data.Length);  // kept while Zen runs: both drawers read it
+                Marshal.Copy(data, 0, memory, data.Length);
+                zenType.AddMemoryFont(memory, data.Length);
+                uint count = 0;
+                AddFontMemResourceEx(memory, (uint)data.Length, IntPtr.Zero, ref count);
+            }
+            foreach (var family in zenType.Families) found[family.Name] = family;
+        }
+        catch (Exception) { }
+        return found;
+    }
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr AddFontMemResourceEx(IntPtr font, uint size, IntPtr reserved, ref uint fonts);
+
     static readonly Dictionary<string, bool> fonts = new Dictionary<string, bool>();
     static string FirstFont(string wanted, string fallback)
     {
@@ -405,10 +441,13 @@ static class Zen
     }
     internal static Font UiFont(float size, bool strong = false)
     {
+        FontFamily zen;
+        if (families.TryGetValue(strong ? "Zen Sans SemiBold" : "Zen Sans", out zen)) return new Font(zen, size);
         return new Font(strong ? FirstFont("Segoe UI Variable Text Semibold", "Segoe UI Semibold") : FirstFont("Segoe UI Variable Text", "Segoe UI"), size);
     }
     internal static Font TitleFont(float size, bool strong = true)
     {
+        if (families.Count > 0) return UiFont(size, strong);
         // GDI keeps 31 letters of a name: the variable font's semibold is "...Display Semib"
         return new Font(strong ? FirstFont("Segoe UI Variable Display Semib", "Segoe UI Semibold") : FirstFont("Segoe UI Variable Display", "Segoe UI"), size);
     }
@@ -465,8 +504,8 @@ static class Zen
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    internal static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, string lParam);
+    [DllImport("user32.dll")]
+    internal static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -611,11 +650,12 @@ class Splash : Floating
     }
 }
 
-// The model's address and password, from the Kaggle notebook's last cell
+// The model's address and password, from the Kaggle notebook's last cell: the first time, three steps; when the
+// notebook stopped answering (a new session has a new address), what happened
 class ConnectForm : Floating
 {
     const string Help = "https://github.com/AryThakar/Zen-harness/tree/main/kaggle#start-it";
-    readonly Field address = new Field("https://….trycloudflare.com", false), password = new Field("The password it printed", true);
+    readonly Field address = new Field("https://….trycloudflare.com", false), password = new Field("Paste the password", true);
     readonly Label error;
 
     // as pasted, less what the notebook prints before each ("  address : https://…", "  password: …")
@@ -629,28 +669,43 @@ class ConnectForm : Floating
         return text;
     }
 
-    public ConnectForm(string why, Dictionary<string, string> settings)
+    public ConnectForm(bool failed, Dictionary<string, string> settings)
     {
         Text = "Zen harness - connect the model";
         header = true;
-        int pad = Zen.Px(32), width = Zen.Px(500), inner = width - 2 * pad, y = Zen.Px(60);
+        int pad = Zen.Px(32), width = Zen.Px(500), inner = width - 2 * pad, y = Zen.Px(58);
 
         var close = new CloseButton { DialogResult = DialogResult.Cancel, Location = new Point(width - Zen.Px(46), Zen.Px(10)) };
-        var title = new Label { Text = "Connect the model", Font = Zen.TitleFont(17f), AutoSize = true, Location = new Point(pad - Zen.Px(1), y) };
-        y += Zen.Px(42);
-        var lede = Wrapped(why, Zen.UiFont(10f), Zen.Muted, pad, inner, ref y);
-        y += Zen.Px(4);
-        var help = new LinkLabel { Text = "How to start the notebook  ↗", AutoSize = true, Location = new Point(pad, y), Font = Zen.UiFont(9.5f),
+        var title = new Label { Text = failed ? "Can't reach the model" : "Connect to Kaggle", Font = Zen.TitleFont(17f),
+                                AutoSize = true, Location = new Point(pad - Zen.Px(3), y) };
+        y = title.Top + title.PreferredHeight + Zen.Px(2);  // its height on screen (Bottom is not yet, before layout)
+        var lede = Wrapped(failed ? "The notebook didn't answer at this address. If it was started again, it has a new one."
+                                  : "Zen's AI model runs free on a Kaggle notebook.", Zen.UiFont(10f), Zen.Muted, pad, inner, ref y);
+        y += Zen.Px(14);
+        var steps = new List<Control>();
+        foreach (var step in new[] { "Start the Zen notebook on Kaggle", "Copy the address and password from its last cell",
+                                     "Paste them below" })
+        {
+            var row = new StepRow(steps.Count + 1, step) { Location = new Point(pad, y), Width = inner };
+            steps.Add(row);
+            y = row.Bottom + Zen.Px(4);
+        }
+        // "how?" beside the first step: the notebook's own steps, on GitHub
+        var first = (StepRow)steps[0];
+        var help = new LinkLabel { Text = "How?", AutoSize = true, Font = Zen.UiFont(10f), BackColor = Zen.Bg,
                                    LinkColor = Zen.MoonA, ActiveLinkColor = Zen.Ink, VisitedLinkColor = Zen.MoonA, LinkBehavior = LinkBehavior.HoverUnderline };
+        help.Location = new Point(first.Left + first.TextRight + Zen.Px(8), first.Top + (first.Height - help.PreferredHeight) / 2);
         help.LinkClicked += (s, e) => { try { Process.Start(Help); } catch (Exception) { } };
-        y += Zen.Px(40);
+        steps.Add(help);
+        y += Zen.Px(14);
 
+        // each field under its label, by the label's own height (the type's line height, not a guess)
         var a = new Label { Text = "Address", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
-        address.SetBounds(pad, y + Zen.Px(24), inner, Zen.Px(42));
-        y += Zen.Px(82);
+        address.SetBounds(pad, a.Top + a.PreferredHeight + Zen.Px(6), inner, Zen.Px(42));
+        y = address.Bottom + Zen.Px(16);
         var p = new Label { Text = "Password", Font = Zen.UiFont(9.5f, true), AutoSize = true, Location = new Point(pad, y) };
-        password.SetBounds(pad, y + Zen.Px(24), inner, Zen.Px(42));
-        y += Zen.Px(74);
+        password.SetBounds(pad, p.Top + p.PreferredHeight + Zen.Px(6), inner, Zen.Px(42));
+        y = password.Bottom + Zen.Px(8);
         error = new Label { ForeColor = Zen.Red, Font = Zen.UiFont(9.5f), AutoSize = false, Location = new Point(pad, y), Size = new Size(inner, Zen.Px(22)) };
         y += Zen.Px(34);
 
@@ -671,12 +726,12 @@ class ConnectForm : Floating
             Field wrong = null;
             if (!Address.StartsWith("https://") && !Address.StartsWith("http://"))
             {
-                error.Text = "The address starts with https:// - copy it from the notebook's last cell.";
+                error.Text = "Paste the whole address - it starts with https://";
                 wrong = address;
             }
             else if (Password.Length == 0)
             {
-                error.Text = "The password is missing: it's under the address in the notebook's last cell.";
+                error.Text = "Paste the password too - it's just under the address.";
                 wrong = password;
             }
             if (wrong == null) return;
@@ -685,7 +740,9 @@ class ConnectForm : Floating
             wrong.Box.SelectAll();
         };
         foreach (var field in new[] { address, password }) field.Box.TextChanged += (s, e) => error.Text = "";
-        Controls.AddRange(new Control[] { close, title, lede, help, a, address, p, password, error, cancel, connect });
+        Controls.AddRange(new Control[] { close, title, lede, a, address, p, password, error, cancel, connect });
+        Controls.AddRange(steps.ToArray());
+        help.BringToFront();
         ActiveControl = address.Box;
         Shown += (s, e) => address.Box.SelectAll();  // an old address is a stale one: pasting replaces it
     }
@@ -700,10 +757,71 @@ class ConnectForm : Floating
     }
 }
 
+// One step of the connect window: its number in a small round badge, then what to do
+class StepRow : Control
+{
+    readonly int number;
+    readonly Font words = Zen.UiFont(10f), digit = Zen.UiFont(8.5f, true);
+
+    public StepRow(int number, string text)
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        this.number = number;
+        Text = text;
+        BackColor = Zen.Bg;
+        Height = Zen.Px(30);
+    }
+
+    // where the words end, for a link beside them
+    public int TextRight { get { return Zen.Px(34) + TextRenderer.MeasureText(Text, words, Size.Empty, TextFormatFlags.NoPadding).Width; } }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(BackColor);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float d = Zen.Px(22);
+        var badge = new RectangleF(0.5f, (Height - d) / 2, d, d);
+        using (var fill = new SolidBrush(Zen.Surface)) g.FillEllipse(fill, badge);
+        using (var line = new Pen(Zen.Line, Zen.Scale)) g.DrawEllipse(line, badge);
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
+        TextRenderer.DrawText(g, number.ToString(), digit, Rectangle.Round(badge), Zen.Muted, flags | TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(g, Text, words, new Rectangle(Zen.Px(34), 0, Width - Zen.Px(34), Height), Zen.Ink, BackColor,
+                              flags | TextFormatFlags.EndEllipsis);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { words.Dispose(); digit.Dispose(); }
+        base.Dispose(disposing);
+    }
+}
+
+// A field's hint while it is empty, in Zen's quieter ink and its own type - where typing starts
+class Hint : Control
+{
+    public Hint(string text, Font font)
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Text = text;
+        Font = font;
+        BackColor = Zen.Surface;
+        ForeColor = Zen.Soft;
+        Cursor = Cursors.IBeam;
+        Size = TextRenderer.MeasureText(text, font, Size.Empty, TextFormatFlags.NoPadding);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor, BackColor, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+    }
+}
+
 // A text box in a rounded field whose edge lights up while it has the caret; a secret one has Show / Hide
 class Field : Panel
 {
     public readonly TextBox Box = new TextBox();
+    readonly Hint hint;
     readonly Label reveal;
 
     public Field(string cue, bool secret)
@@ -718,8 +836,12 @@ class Field : Panel
         Box.UseSystemPasswordChar = secret;
         Box.GotFocus += (s, e) => Invalidate();
         Box.LostFocus += (s, e) => Invalidate();
-        Box.HandleCreated += (s, e) => Zen.SendMessage(Box.Handle, 0x1501, (IntPtr)1, cue);  // EM_SETCUEBANNER, shown with the caret too
+        Box.HandleCreated += (s, e) => Zen.SendMessage(Box.Handle, 0xD3, (IntPtr)3, IntPtr.Zero);  // EM_SETMARGINS 0: text from its left edge, as the hint
+        hint = new Hint(cue, Box.Font);
+        hint.Click += (s, e) => Box.Focus();
+        Box.TextChanged += (s, e) => hint.Visible = Box.TextLength == 0;
         Click += (s, e) => Box.Focus();
+        Controls.Add(hint);
         Controls.Add(Box);
         if (!secret) return;
         reveal = new Label { Text = "Show", AutoSize = true, ForeColor = Zen.Muted, BackColor = Zen.Surface, Font = Zen.UiFont(9f), Cursor = Cursors.Hand };
@@ -745,6 +867,8 @@ class Field : Panel
         }
         Box.Location = new Point(pad, (Height - Box.Height) / 2);
         Box.Width = Width - pad - right;
+        hint.Location = new Point(Box.Left, Box.Top + (Box.Height - hint.Height) / 2);
+        hint.BringToFront();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -903,7 +1027,9 @@ class ZenWindow : Form
     {
         try
         {
-            await view.EnsureCoreWebView2Async(await CoreWebView2Environment.CreateAsync(null, folder));
+            // Zen's entry sound plays as the window opens, before any click (a browser waits for one)
+            var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
+            await view.EnsureCoreWebView2Async(await CoreWebView2Environment.CreateAsync(null, folder, options));
             var web = view.CoreWebView2;
             web.Settings.IsNonClientRegionSupportEnabled = true;  // app-region: drag
             web.Settings.IsStatusBarEnabled = false;
